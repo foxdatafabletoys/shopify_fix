@@ -1,0 +1,16 @@
+[Unit]
+Description=Telemachus Live Supabase API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/telemachus-live-api
+Environment=NODE_ENV=production
+Environment=PORT=3001
+Environment=SUPABASE_DSN=postgresql://postgres:YOUR_PASSWORD@db.rnxqdcylvswfbvxgspuq.supabase.co:5432/postgres
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

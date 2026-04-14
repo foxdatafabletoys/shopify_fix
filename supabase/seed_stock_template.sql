@@ -1,0 +1,11 @@
+-- Replace this section with the provided stock list insert rows.
+-- Example structure:
+-- insert into products (name, sku, barcode, category, cost_price_gbp, sell_price_gbp, weight_kg)
+-- values
+--   ('Toy Example', 'SKU-001', '1234567890123', 'Educational', 4.50, 8.99, 0.320)
+-- returning id;
+--
+-- insert into warehouse_stock (product_id, warehouse, qty_on_hand, qty_reserved, reorder_point)
+-- values
+--   ('<product_uuid>', 'uk', 25, 2, 10),
+--   ('<product_uuid>', 'us', 8, 1, 10);
