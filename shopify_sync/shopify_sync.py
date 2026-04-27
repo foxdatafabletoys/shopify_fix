@@ -7,12 +7,13 @@ Reads two spreadsheets:
   - "everything else.xlsx"             (general inventory; only non-GW rows used)
 
 What it does:
-  --delete   Deletes existing Shopify products that have NO SKU on any variant.
-             (Products that already have a Product Code/SKU are kept.)
-  --import   Creates new Shopify products from the spreadsheets.
-  --all      Runs --delete then --import.
-  --dry-run  Reads sheets, builds the product list, writes preview.csv,
-             and makes ZERO API calls. Always run this first.
+  --delete     Deletes existing Shopify products that have NO SKU on any variant.
+               (Products that already have a Product Code/SKU are kept.)
+  --import     Creates new Shopify products from the spreadsheets.
+  --all        Runs --delete then --import.
+  --preflight  Validates Shopify auth and location readiness with no write side effects.
+  --dry-run    Reads sheets, builds the product list, writes preview.csv,
+               and makes ZERO API calls. Always run this first.
 
 Pricing logic:
   - Games Workshop:    price = UKR * 0.79   compare_at = UKR    (21% off)
@@ -25,10 +26,12 @@ Inventory tracking is enabled; quantities come from Store Quantity (GW) or Avail
 Required env vars (or .env file in same folder):
   SHOPIFY_STORE      e.g. "telemachus-foxfable"  (the part before .myshopify.com)
   SHOPIFY_TOKEN      Admin API access token starting with "shpat_..."
-  SHOPIFY_LOCATION   (optional) numeric location ID; auto-detected if not set
+  SHOPIFY_LOCATION   (optional) numeric location ID or gid://shopify/Location/...
+                     blank is the primary supported path and auto-detects the location
 
 Usage:
   python shopify_sync.py --dry-run
+  python shopify_sync.py --preflight
   python shopify_sync.py --delete
   python shopify_sync.py --import
   python shopify_sync.py --all
@@ -53,7 +56,7 @@ import requests
 
 API_VERSION = "2025-01"
 HERE = Path(__file__).resolve().parent
-SHEET_DIR = HERE.parent  # the "cleaning up inventory" folder
+SHEET_DIR = HERE
 GW_FILE = SHEET_DIR / "Games Workshop Store List.xlsx"
 INV_FILE = SHEET_DIR / "everything else.xlsx"
 PREVIEW_CSV = HERE / "preview.csv"
@@ -307,18 +310,36 @@ def parse_inventory(path: Path, skip_gw: bool = True) -> list[Product]:
     return products
 
 
-def build_product_list() -> list[Product]:
+def build_product_list(strict: bool = False) -> list[Product]:
     if not GW_FILE.exists():
-        log(f"WARNING: GW file not found: {GW_FILE}")
+        msg = f"GW file not found: {GW_FILE}"
+        if strict:
+            raise RuntimeError(msg)
+        log(f"WARNING: {msg}")
         gw: list[Product] = []
     else:
-        gw = parse_gw(GW_FILE)
+        try:
+            gw = parse_gw(GW_FILE)
+        except Exception as e:
+            if strict:
+                raise RuntimeError(f"Failed to parse {GW_FILE.name}: {e}") from e
+            log(f"WARNING: failed to parse {GW_FILE.name}: {e}")
+            gw = []
         log(f"Parsed {len(gw)} products from {GW_FILE.name}")
     if not INV_FILE.exists():
-        log(f"WARNING: Inventory file not found: {INV_FILE}")
+        msg = f"Inventory file not found: {INV_FILE}"
+        if strict:
+            raise RuntimeError(msg)
+        log(f"WARNING: {msg}")
         inv: list[Product] = []
     else:
-        inv = parse_inventory(INV_FILE, skip_gw=True)
+        try:
+            inv = parse_inventory(INV_FILE, skip_gw=True)
+        except Exception as e:
+            if strict:
+                raise RuntimeError(f"Failed to parse {INV_FILE.name}: {e}") from e
+            log(f"WARNING: failed to parse {INV_FILE.name}: {e}")
+            inv = []
         log(f"Parsed {len(inv)} non-GW products from {INV_FILE.name}")
 
     # final dedupe across both sheets by SKU
@@ -329,6 +350,8 @@ def build_product_list() -> list[Product]:
             continue
         seen.add(p.sku)
         merged.append(p)
+    if strict and not merged:
+        raise RuntimeError("No products found after parsing and dedupe; aborting before live sync.")
     log(f"Total unique products to import: {len(merged)}")
     return merged
 
@@ -377,20 +400,24 @@ class Shopify:
                 log(f"  server error {r.status_code}, retry in {wait}s")
                 time.sleep(wait)
                 continue
+            if r.status_code >= 400:
+                try:
+                    err_data = r.json()
+                    detail = json.dumps(err_data)[:1000]
+                except Exception:
+                    detail = r.text[:1000]
+                raise RuntimeError(f"Shopify HTTP {r.status_code}: {detail}")
             try:
                 data = r.json()
             except Exception as e:
                 raise RuntimeError(f"Bad JSON from Shopify: {e}\n{r.text[:500]}")
             if "errors" in data:
-                # If throttled, sleep based on cost info
-                throttled = any(
-                    err.get("extensions", {}).get("code") == "THROTTLED"
-                    for err in data.get("errors", [])
-                )
+                errors = data.get("errors", [])
+                throttled = any(_graphql_error_code(err) == "THROTTLED" for err in errors)
                 if throttled:
                     time.sleep(1.5)
                     continue
-                raise RuntimeError(f"GraphQL errors: {json.dumps(data['errors'])[:1000]}")
+                raise RuntimeError(f"GraphQL errors: {_format_graphql_errors(errors)}")
             # Respect cost throttle
             cost = data.get("extensions", {}).get("cost", {})
             ts = cost.get("throttleStatus", {})
@@ -401,13 +428,20 @@ class Shopify:
             return data["data"]
         raise RuntimeError("Exceeded max retries on GraphQL request")
 
+    def get_shop_name(self) -> str:
+        data = self.gql("""
+            query {
+              shop { name }
+            }
+        """)
+        return data["shop"]["name"]
+
     # ------------------------------------------------------------------
     # Locations
     # ------------------------------------------------------------------
     def get_primary_location_id(self) -> str:
         data = self.gql("""
             query {
-              shop { name }
               locations(first: 25) {
                 edges { node { id name isPrimary fulfillsOnlineOrders } }
               }
@@ -420,6 +454,21 @@ class Shopify:
             if e["node"].get("isPrimary"):
                 return e["node"]["id"]
         return edges[0]["node"]["id"]
+
+    def validate_location_id(self, location_id: str) -> str:
+        normalized = normalize_location_id(location_id)
+        data = self.gql("""
+            query($id: ID!) {
+              location(id: $id) {
+                id
+                name
+              }
+            }
+        """, {"id": normalized})
+        location = data.get("location")
+        if not location:
+            raise RuntimeError(f"Configured SHOPIFY_LOCATION not found or inaccessible: {normalized}")
+        return location["id"]
 
     # ------------------------------------------------------------------
     # Products: list + delete
@@ -571,7 +620,7 @@ class Shopify:
 # Phases: delete / import
 # ---------------------------------------------------------------------------
 
-def phase_delete(client: Shopify, products_to_keep_skus: set[str], dry: bool) -> None:
+def phase_delete(client: Shopify, dry: bool) -> None:
     log("=== DELETE phase: removing existing products with no SKU ===")
     deleted = 0
     kept = 0
@@ -620,6 +669,61 @@ def phase_import(client: Shopify, products: list[Product], location_id: str, dry
     log(f"IMPORT summary: created={created}, failed={failed}")
 
 
+def _graphql_error_code(err: Any) -> str | None:
+    if isinstance(err, dict):
+        return err.get("extensions", {}).get("code")
+    return None
+
+
+def _format_graphql_errors(errors: Any) -> str:
+    if not isinstance(errors, list):
+        return json.dumps(errors)[:1000]
+    formatted: list[str] = []
+    for err in errors:
+        if isinstance(err, dict):
+            formatted.append(json.dumps(err, sort_keys=True))
+        else:
+            formatted.append(str(err))
+    return " | ".join(formatted)[:1000]
+
+
+def normalize_location_id(location_id: str) -> str:
+    raw = (location_id or "").strip()
+    if not raw:
+        raise RuntimeError("SHOPIFY_LOCATION was provided but is blank.")
+    if raw.startswith("gid://shopify/Location/"):
+        return raw
+    if raw.isdigit():
+        return f"gid://shopify/Location/{raw}"
+    raise RuntimeError(
+        "SHOPIFY_LOCATION must be either a numeric location ID or a gid://shopify/Location/... value."
+    )
+
+
+def prepare_products_for_import() -> list[Product]:
+    products = build_product_list(strict=True)
+    try:
+        write_preview(products)
+    except Exception as e:
+        raise RuntimeError(f"Failed to write preview CSV: {e}") from e
+    return products
+
+
+def resolve_location_for_import(client: Shopify, env: dict[str, str]) -> str:
+    explicit = (env.get("SHOPIFY_LOCATION") or "").strip()
+    if explicit:
+        return client.validate_location_id(explicit)
+    return client.get_primary_location_id()
+
+
+def run_preflight(client: Shopify, env: dict[str, str]) -> str:
+    shop_name = client.get_shop_name()
+    location_id = resolve_location_for_import(client, env)
+    log(f"Preflight OK: authenticated shop {shop_name!r}")
+    log(f"Preflight OK: location {location_id}")
+    return location_id
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -627,6 +731,8 @@ def phase_import(client: Shopify, products: list[Product], location_id: str, dry
 def main() -> int:
     parser = argparse.ArgumentParser(description="Shopify bulk delete + import")
     parser.add_argument("--dry-run", action="store_true", help="Don't call Shopify; just preview.")
+    parser.add_argument("--preflight", action="store_true",
+                        help="Validate auth and location readiness without delete/import side effects.")
     parser.add_argument("--delete", action="store_true", help="Run delete phase.")
     parser.add_argument("--import", dest="do_import", action="store_true", help="Run import phase.")
     parser.add_argument("--all", action="store_true", help="Run delete then import.")
@@ -634,14 +740,12 @@ def main() -> int:
                         help="Resume import from this product index (after a partial run).")
     args = parser.parse_args()
 
-    if not (args.dry_run or args.delete or args.do_import or args.all):
+    if not (args.dry_run or args.preflight or args.delete or args.do_import or args.all):
         parser.print_help()
         return 1
 
-    products = build_product_list()
-    write_preview(products)
-
     if args.dry_run:
+        prepare_products_for_import()
         log("Dry run complete. Review preview.csv, then re-run with --delete and/or --import.")
         return 0
 
@@ -654,13 +758,20 @@ def main() -> int:
         return 2
 
     client = Shopify(store, token)
-    location_id = env.get("SHOPIFY_LOCATION") or client.get_primary_location_id()
+    if args.preflight:
+        run_preflight(client, env)
+        return 0
+
+    if args.delete and not args.all and not args.do_import:
+        phase_delete(client, dry=False)
+        return 0
+
+    products = prepare_products_for_import()
+    location_id = run_preflight(client, env)
     log(f"Using location: {location_id}")
 
-    sheet_skus = {p.sku for p in products}
-
     if args.delete or args.all:
-        phase_delete(client, sheet_skus, dry=False)
+        phase_delete(client, dry=False)
     if args.do_import or args.all:
         phase_import(client, products, location_id, dry=False, start_at=args.start_at)
     return 0

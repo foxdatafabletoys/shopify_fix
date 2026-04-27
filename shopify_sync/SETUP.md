@@ -60,14 +60,14 @@ SHOPIFY_TOKEN=shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 SHOPIFY_LOCATION=
 ```
 
-Leave `SHOPIFY_LOCATION` blank — the script will auto-detect your store's primary location. Only fill it in if you want to push stock to a non-primary location.
+Leave `SHOPIFY_LOCATION` blank unless you need to override the location. Blank is the supported default and the script auto-detects your store's primary location. If you do set it, the canonical example is a Shopify GID like `gid://shopify/Location/12345678901`; numeric IDs also work and are normalized internally.
 
 ## Step 4 — Install Python dependencies
 
 In a Terminal:
 
 ```bash
-cd "/Users/alessaweiler/Documents/telemachus_foxfable/cleaning up inventory/shopify_sync"
+cd "/Users/alessaweiler/Documents/telemachus/telemachus/shopify_sync"
 python3 -m pip install -r requirements.txt
 ```
 
@@ -83,17 +83,27 @@ python3 shopify_sync.py --dry-run
 
 Open `preview.csv` in Numbers/Excel. Spot-check 10–20 rows: prices, SKUs, vendors, quantities. If anything looks wrong, tell me and I'll fix the script before you run it live.
 
-## Step 6 — Live delete
+## Step 6 — Preflight
 
-When the preview looks right:
+Run this before any live delete/import pass:
+
+```bash
+python3 shopify_sync.py --preflight
+```
+
+This validates Shopify auth and resolves the location without deleting or creating anything. If it fails, fix the token, app scopes, or `SHOPIFY_LOCATION`, then rerun it.
+
+## Step 7 — Live delete
+
+When the preview and preflight both look right:
 
 ```bash
 python3 shopify_sync.py --delete
 ```
 
-This pages through every existing Shopify product and deletes any whose variants all have empty SKUs. Anything with a Product Code on Shopify is kept. Watch the log; it prints each title before deleting.
+This is still available as a standalone delete-only run. It pages through every existing Shopify product and deletes any whose variants all have empty SKUs. Anything with a Product Code on Shopify is kept.
 
-## Step 7 — Live import
+## Step 8 — Live import
 
 ```bash
 python3 shopify_sync.py --import
@@ -107,7 +117,17 @@ If the run dies partway through, look at `sync.log` and `failures.tsv`. Resume f
 python3 shopify_sync.py --import --start-at 850
 ```
 
-## Step 8 — Spot-check on Shopify
+## Step 9 — Guarded combined run
+
+If you are intentionally doing both live phases in one pass:
+
+```bash
+python3 shopify_sync.py --all
+```
+
+This runs the live delete phase and then the live import phase. Use it only after the dry run and preflight checks.
+
+## Step 10 — Spot-check on Shopify
 
 After it finishes, open `https://<your-store>.myshopify.com/admin/products` and:
 
@@ -131,11 +151,12 @@ After it finishes, open `https://<your-store>.myshopify.com/admin/products` and:
 
 ## Common gotchas
 
-- **"Could not authenticate"** → token is wrong or app isn't installed. Re-do step 1.8.
-- **"403 / scope missing"** → you forgot a scope in step 1.6. Edit the app, add it, click "Update" then re-install.
+- **"Could not authenticate"** → token is wrong or app isn't installed. Re-do step 1.8, then rerun `--preflight`.
+- **`read_locations` is missing or preflight says there are no locations** → add `read_locations` in step 1.6, save, reinstall the app, then rerun `--preflight`.
+- **`Configured SHOPIFY_LOCATION not found or inaccessible`** or **`SHOPIFY_LOCATION must be either...`** → the override is wrong. Delete `SHOPIFY_LOCATION` to use the auto-detected primary location, or replace it with a valid Shopify location GID / numeric ID.
 - **"Throttled"** in the log → fine, the script waits and retries. Just let it run.
 - **Some products fail with "Title has already been taken"** → Shopify enforces unique titles per product. Look at `failures.tsv`; usually a duplicate row in the sheet.
-- **Inventory shows 0 even though sheet has stock** → the script auto-picks the primary location. If your inventory lives at a different location, set `SHOPIFY_LOCATION` in `.env`. Find IDs at Settings → Locations.
+- **Inventory shows 0 even though sheet has stock** → the script is probably using the wrong location. Leave `SHOPIFY_LOCATION` blank for the primary location, or set a valid override if your stock lives elsewhere.
 
 ## Want this scheduled?
 
