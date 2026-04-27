@@ -6,6 +6,53 @@ import type { TranscriptTurn } from "@/lib/transcript";
 
 export type ConversationMode = "onboarding" | "update";
 export type ProfileRecord = Database["public"]["Tables"]["profiles"]["Row"];
+type ProfileInsert = Database["public"]["Tables"]["profiles"]["Insert"];
+type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
+type ConversationRunInsert =
+  Database["public"]["Tables"]["conversation_runs"]["Insert"];
+type ConversationRunUpdate =
+  Database["public"]["Tables"]["conversation_runs"]["Update"];
+
+type QueryResult<T> = Promise<{
+  data: T;
+  error: Error | null;
+}>;
+
+type ProfilesTableClient = {
+  upsert: (
+    payload: ProfileInsert,
+    options?: { onConflict?: string },
+  ) => Promise<{ error: Error | null }>;
+  select: (columns: string) => {
+    eq: (
+      column: string,
+      value: string,
+    ) => {
+      maybeSingle: () => QueryResult<ProfileRecord | null>;
+    };
+  };
+  update: (payload: ProfileUpdate) => {
+    eq: (column: string, value: string) => Promise<{ error: Error | null }>;
+  };
+};
+
+type ConversationRunsTableClient = {
+  insert: (payload: ConversationRunInsert) => {
+    select: (columns: string) => {
+      single: () => QueryResult<{ id: string }>;
+    };
+  };
+  update: (payload: ConversationRunUpdate) => {
+    eq: (column: string, value: string) => Promise<{ error: Error | null }>;
+  };
+};
+
+function getAdminDataClient() {
+  return getSupabaseAdminClient() as unknown as {
+    from(table: "profiles"): ProfilesTableClient;
+    from(table: "conversation_runs"): ConversationRunsTableClient;
+  };
+}
 
 function readString(value: unknown) {
   return typeof value === "string" && value.trim().length > 0
@@ -23,8 +70,10 @@ export function getProfileDisplayName(profile: ProfileRecord | null, user: User)
   );
 }
 
-export async function ensureProfileForUser(user: User) {
-  const admin = getSupabaseAdminClient();
+export async function ensureProfileForUser(
+  user: User,
+): Promise<ProfileRecord | null> {
+  const admin = getAdminDataClient();
 
   const profilePayload = {
     id: user.id,
@@ -55,7 +104,7 @@ export async function ensureProfileForUser(user: User) {
     throw error;
   }
 
-  return data;
+  return data as ProfileRecord | null;
 }
 
 export async function createConversationRun(options: {
@@ -64,7 +113,7 @@ export async function createConversationRun(options: {
   conversationId?: string | null;
   turns: TranscriptTurn[];
 }) {
-  const admin = getSupabaseAdminClient();
+  const admin = getAdminDataClient();
 
   const { data, error } = await admin
     .from("conversation_runs")
@@ -92,7 +141,7 @@ export async function completeConversationRun(options: {
   targetDocId: string;
   targetTabId?: string | null;
 }) {
-  const admin = getSupabaseAdminClient();
+  const admin = getAdminDataClient();
 
   const { error } = await admin
     .from("conversation_runs")
@@ -111,7 +160,7 @@ export async function completeConversationRun(options: {
 }
 
 export async function failConversationRun(runId: string, message: string) {
-  const admin = getSupabaseAdminClient();
+  const admin = getAdminDataClient();
 
   const { error } = await admin
     .from("conversation_runs")
@@ -133,7 +182,7 @@ export async function updateProfileDocumentRefs(options: {
   onboardingDocUrl?: string | null;
   updatesTabId?: string | null;
 }) {
-  const admin = getSupabaseAdminClient();
+  const admin = getAdminDataClient();
 
   const { error } = await admin
     .from("profiles")

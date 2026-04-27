@@ -2,7 +2,6 @@
 
 import {
   Conversation,
-  type IncomingSocketEvent,
   type Mode as ElevenMode,
   type Status,
   type VoiceConversation,
@@ -21,6 +20,13 @@ type VoiceWorkflowProps = {
     companyName: string | null;
     roleTitle: string | null;
   };
+};
+
+type MessagePayload = {
+  message: string;
+  event_id?: number;
+  role: "user" | "agent";
+  source: "user" | "ai";
 };
 
 function upsertTurn(
@@ -58,66 +64,17 @@ export function VoiceWorkflow({
   const conversationRef = useRef<VoiceConversation | null>(null);
   const conversationIdRef = useRef<string | null>(null);
 
-  function handleIncomingMessage(event: IncomingSocketEvent) {
-    if (event.type === "conversation_initiation_metadata") {
-      conversationIdRef.current =
-        event.conversation_initiation_metadata_event.conversation_id;
-      return;
-    }
-
-    if (event.type === "user_transcript") {
-      startTransition(() => {
-        setTurns((current) =>
-          upsertTurn(current, {
-            id: `user-${event.user_transcription_event.event_id}`,
-            role: "user",
-            eventId: event.user_transcription_event.event_id,
-            text: event.user_transcription_event.user_transcript,
-          }),
-        );
-      });
-      return;
-    }
-
-    if (event.type === "agent_response") {
-      startTransition(() => {
-        setTurns((current) =>
-          upsertTurn(current, {
-            id: `assistant-${event.agent_response_event.event_id}`,
-            role: "assistant",
-            eventId: event.agent_response_event.event_id,
-            text: event.agent_response_event.agent_response,
-          }),
-        );
-      });
-      return;
-    }
-
-    if (event.type === "agent_response_correction") {
-      startTransition(() => {
-        setTurns((current) => {
-          const matchingIndex = current.findIndex(
-            (turn) =>
-              turn.role === "assistant" &&
-              turn.text ===
-                event.agent_response_correction_event.original_agent_response,
-          );
-
-          if (matchingIndex === -1) {
-            return current;
-          }
-
-          return current.map((turn, index) =>
-            index === matchingIndex
-              ? {
-                  ...turn,
-                  text: event.agent_response_correction_event.corrected_agent_response,
-                }
-              : turn,
-          );
-        });
-      });
-    }
+  function handleIncomingMessage(payload: MessagePayload) {
+    startTransition(() => {
+      setTurns((current) =>
+        upsertTurn(current, {
+          id: `${payload.role}-${payload.event_id ?? current.length}`,
+          role: payload.role === "agent" ? "assistant" : "user",
+          eventId: payload.event_id,
+          text: payload.message,
+        }),
+      );
+    });
   }
 
   async function startSession() {
@@ -149,6 +106,9 @@ export function VoiceWorkflow({
         onConnect: ({ conversationId }) => {
           conversationIdRef.current = conversationId;
         },
+        onConversationMetadata: (metadata) => {
+          conversationIdRef.current = metadata.conversation_id;
+        },
         onDisconnect: () => {
           setConnectionStatus("disconnected");
         },
@@ -156,8 +116,12 @@ export function VoiceWorkflow({
           setError(String(message));
         },
         onMessage: handleIncomingMessage,
-        onModeChange: setAgentMode,
-        onStatusChange: setConnectionStatus,
+        onModeChange: ({ mode: nextMode }) => {
+          setAgentMode(nextMode);
+        },
+        onStatusChange: ({ status: nextStatus }) => {
+          setConnectionStatus(nextStatus);
+        },
       });
 
       conversationRef.current = conversation as VoiceConversation;

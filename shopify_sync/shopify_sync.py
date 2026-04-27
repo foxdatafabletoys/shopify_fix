@@ -621,20 +621,9 @@ class Shopify:
 # ---------------------------------------------------------------------------
 
 def phase_delete(client: Shopify, dry: bool) -> None:
-    log("=== DELETE phase: removing existing products with no SKU ===")
+    log("=== DELETE phase: removing ALL products in the shop ===")
     deleted = 0
-    kept = 0
-    skipped_with_sku = 0
     for prod in client.iter_all_products():
-        skus_on_variants = [
-            (v["node"].get("sku") or "").strip()
-            for v in prod["variants"]["edges"]
-        ]
-        any_sku = any(s for s in skus_on_variants)
-        if any_sku:
-            skipped_with_sku += 1
-            continue
-        kept += 0
         log(f"  delete: {prod['title']!r}  ({prod['id']})")
         if not dry:
             try:
@@ -642,7 +631,7 @@ def phase_delete(client: Shopify, dry: bool) -> None:
                 deleted += 1
             except Exception as e:
                 log(f"  ERROR deleting {prod['id']}: {e}")
-    log(f"DELETE summary: deleted={deleted}, kept(with SKU)={skipped_with_sku}, dry_run={dry}")
+    log(f"DELETE summary: deleted={deleted}, dry_run={dry}")
 
 
 def phase_import(client: Shopify, products: list[Product], location_id: str, dry: bool,
