@@ -127,6 +127,29 @@ python3 shopify_sync.py --all
 
 This runs the live delete phase and then the live import phase. Use it only after the dry run and preflight checks.
 
+## Step 9.5 — Refreshing prices and inventory from a new sheet (`--update`)
+
+When you receive an updated `Games Workshop Store List.xlsx` (or edit `everything else.xlsx`) and want Shopify to match without recreating products, use `--update`. It matches existing products by SKU and pushes only the fields that changed: `price`, `compare_at_price`, `cost`, and on-hand quantity.
+
+Workflow:
+
+1. Drop the new spreadsheet in this folder, replacing the old `Games Workshop Store List.xlsx`. Optionally rename the old one to `Games Workshop Store List.backup-YYYY-MM-DD.xlsx` so you have a rollback.
+2. Dry run — reads Shopify (no writes) and writes a diff to `update_preview.csv`:
+   ```bash
+   python3 shopify_sync.py --update --dry-run
+   ```
+   Each row in `update_preview.csv` shows `shopify_*` (current) vs `sheet_*` (new) for the SKUs that would change. Open it, sanity-check.
+3. Apply for real:
+   ```bash
+   python3 shopify_sync.py --update
+   ```
+
+Notes:
+
+- SKUs in the sheet that don't yet exist on Shopify are **skipped**, not created. If you also need to create new products, run `--import` first (or in a follow-up pass).
+- SKUs on Shopify that aren't in the sheet are left alone.
+- If you want to include the same on-hand quantity for items even when nothing changed, the current logic deliberately doesn't — it only writes when the value differs, to keep the run fast and the inventory adjustment log clean.
+
 ## Step 10 — Spot-check on Shopify
 
 After it finishes, open `https://<your-store>.myshopify.com/admin/products` and:
@@ -145,7 +168,8 @@ After it finishes, open `https://<your-store>.myshopify.com/admin/products` and:
 | `.env.example` | Template for credentials — copy to `.env` and fill in. |
 | `.env` | Your secrets. **Never share or commit.** |
 | `requirements.txt` | Python deps. |
-| `preview.csv` | Dry-run output: what will be sent to Shopify. |
+| `preview.csv` | Dry-run output for `--import`: what will be sent to Shopify. |
+| `update_preview.csv` | Diff produced by `--update` (real or dry-run): per-SKU before/after for changed rows. |
 | `sync.log` | Append-only run log. Safe to delete. |
 | `failures.tsv` | Any failed creates with their error. Useful for retry. |
 
@@ -160,4 +184,4 @@ After it finishes, open `https://<your-store>.myshopify.com/admin/products` and:
 
 ## Want this scheduled?
 
-Right now this is one-shot: delete + reload. If you later want it to keep Shopify in sync with edits to the spreadsheets nightly (or whenever they change), tell me and I'll switch the create logic to upsert-by-SKU and wire it to a scheduled task.
+Now that `--update` exists, scheduling is straightforward: a daily/weekly cron or scheduled task that runs `python3 shopify_sync.py --update` will keep Shopify's prices and inventory aligned with the sheets. Adding new products still goes through `--import`. Tell me if you want me to wire it up.
