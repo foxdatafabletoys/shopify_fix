@@ -1,8 +1,11 @@
 from contextlib import contextmanager
+import io
 import json
+import requests
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -259,7 +262,13 @@ class ProductCreateTests(unittest.TestCase):
                     "title": "ARMAGEDDON BATTALION: DEATHWATCH",
                     "vendor": "Games Workshop",
                     "productType": "Warhammer 40,000",
-                    "tags": ["Games Workshop", "Warhammer 40,000", "40K - Generic"],
+                    "tags": [
+                        "40K - Generic",
+                        "AUTO_COLLECTION::games-workshop",
+                        "AUTO_COLLECTION::warhammer-40k",
+                        "Games Workshop",
+                        "Warhammer 40,000",
+                    ],
                     "descriptionHtml": "SS Code: 39-13",
                     "status": "ACTIVE",
                 },
@@ -372,6 +381,194 @@ class ProductCreateTests(unittest.TestCase):
         )
 
 
+class CollectionManagementTests(unittest.TestCase):
+    def setUp(self):
+        self.client = shopify_sync.Shopify("example-store", "shpat_test")
+
+    def _collection(self, collection_id, title, handle, rule_set=None):
+        return {
+            "id": collection_id,
+            "title": title,
+            "handle": handle,
+            "productsCount": {"count": 0},
+            "ruleSet": rule_set,
+        }
+
+    def test_iter_all_collections_marks_custom_and_smart(self):
+        self.client.gql = mock.Mock(side_effect=[
+            {
+                "collections": {
+                    "edges": [
+                        {
+                            "cursor": "cur-1",
+                            "node": self._collection(
+                                "gid://shopify/Collection/1",
+                                "Wargames",
+                                "wargames",
+                            ),
+                        },
+                        {
+                            "cursor": "cur-2",
+                            "node": self._collection(
+                                "gid://shopify/Collection/2",
+                                "Plush Figures",
+                                "plush-figures",
+                                {"appliedDisjunctively": False},
+                            ),
+                        },
+                    ],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
+        ])
+
+        result = list(self.client.iter_all_collections())
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "id": "gid://shopify/Collection/1",
+                    "title": "Wargames",
+                    "handle": "wargames",
+                    "products_count": 0,
+                    "collection_type": "custom",
+                    "rules": [],
+                },
+                {
+                    "id": "gid://shopify/Collection/2",
+                    "title": "Plush Figures",
+                    "handle": "plush-figures",
+                    "products_count": 0,
+                    "collection_type": "smart",
+                    "rules": [],
+                },
+            ],
+        )
+
+    def test_managed_wayland_collection_tag_detects_marker_rule(self):
+        collection = {
+            "id": "gid://shopify/Collection/1",
+            "title": "Games Workshop",
+            "handle": "games-workshop",
+            "collection_type": "smart",
+            "rules": [
+                {
+                    "column": "TAG",
+                    "relation": "EQUALS",
+                    "condition": "AUTO_COLLECTION::games-workshop",
+                }
+            ],
+        }
+
+        self.assertEqual(
+            shopify_sync.managed_wayland_collection_tag(collection),
+            "AUTO_COLLECTION::games-workshop",
+        )
+        self.assertTrue(shopify_sync.is_managed_wayland_collection(collection))
+
+    def test_delete_collection_uses_collection_delete_mutation(self):
+        self.client.gql = mock.Mock(return_value={
+            "collectionDelete": {
+                "deletedCollectionId": "gid://shopify/Collection/2",
+                "userErrors": [],
+            }
+        })
+
+        self.client.delete_collection("gid://shopify/Collection/2")
+
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("collectionDelete", query)
+        self.assertEqual(
+            variables,
+            {"input": {"id": "gid://shopify/Collection/2"}},
+        )
+
+    def test_create_smart_collection_uses_tag_rule_input(self):
+        self.client.gql = mock.Mock(return_value={
+            "collectionCreate": {
+                "collection": {
+                    "id": "gid://shopify/Collection/3",
+                    "title": "Games Workshop",
+                    "handle": "games-workshop",
+                },
+                "userErrors": [],
+            }
+        })
+
+        result = self.client.create_smart_collection(
+            "Games Workshop",
+            "games-workshop",
+            "AUTO_COLLECTION::games-workshop",
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "id": "gid://shopify/Collection/3",
+                "title": "Games Workshop",
+                "handle": "games-workshop",
+            },
+        )
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("collectionCreate", query)
+        self.assertEqual(
+            variables,
+            {
+                "input": {
+                    "title": "Games Workshop",
+                    "handle": "games-workshop",
+                    "descriptionHtml": "",
+                    "ruleSet": {
+                        "appliedDisjunctively": False,
+                        "rules": [
+                            {
+                                "column": "TAG",
+                                "relation": "EQUALS",
+                                "condition": "AUTO_COLLECTION::games-workshop",
+                            }
+                        ],
+                    },
+                }
+            },
+        )
+
+    def test_publish_to_all_channels_uses_publications_query_and_publishable_publish(self):
+        self.client.gql = mock.Mock(side_effect=[
+            {
+                "publications": {
+                    "edges": [
+                        {"node": {"id": "gid://shopify/Publication/1", "name": "Online Store"}},
+                        {"node": {"id": "gid://shopify/Publication/2", "name": "Shop"}},
+                    ],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            },
+            {
+                "publishablePublish": {
+                    "publishable": {"id": "gid://shopify/Collection/3"},
+                    "userErrors": [],
+                }
+            },
+        ])
+
+        count = self.client.publish_to_all_channels("gid://shopify/Collection/3")
+
+        self.assertEqual(count, 2)
+        publish_query, publish_vars = self.client.gql.call_args_list[1].args
+        self.assertIn("publishablePublish", publish_query)
+        self.assertEqual(
+            publish_vars,
+            {
+                "id": "gid://shopify/Collection/3",
+                "input": [
+                    {"publicationId": "gid://shopify/Publication/1"},
+                    {"publicationId": "gid://shopify/Publication/2"},
+                ],
+            },
+        )
+
+
 class MainFlowTests(unittest.TestCase):
     def test_gw_refresh_cache_runs_without_shopify_credentials(self):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--gw-refresh-cache"]), \
@@ -432,6 +629,52 @@ class MainFlowTests(unittest.TestCase):
         phase_import.assert_not_called()
         client.get_primary_location_id.assert_not_called()
         client.validate_location_id.assert_not_called()
+
+    def test_delete_collections_flag_runs_without_location_lookup(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--delete-collections"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_delete_collections") as phase_delete_collections, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_delete_collections.assert_called_once_with(client, dry=False)
+        run_preflight.assert_not_called()
+        prepare_products.assert_not_called()
+
+    def test_delete_collections_rejects_import_combination(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--delete-collections", "--import"]):
+            with self.assertRaisesRegex(RuntimeError, "--delete-collections must run separately"):
+                shopify_sync.main()
+
+    def test_generate_collections_flag_runs_without_preflight(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--generate-collections"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_generate_collections") as phase_generate_collections, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_generate_collections.assert_called_once_with(client, dry=False)
+        run_preflight.assert_not_called()
+
+    def test_generate_collections_rejects_delete_combination(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--generate-collections", "--delete"]):
+            with self.assertRaisesRegex(RuntimeError, "--generate-collections must run separately"):
+                shopify_sync.main()
 
     def test_all_flag_runs_prepare_then_preflight_then_delete_then_import(self):
         events = []
@@ -593,6 +836,256 @@ class PhaseUpdateTests(unittest.TestCase):
         self.assertEqual(set_qty.call_count, 1)
         # A's inventory was set
         set_qty.assert_called_once_with("i-A", self.location, 7)
+
+
+class PhaseDeleteCollectionsTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+
+    def _collection(self, collection_id, title, handle, collection_type):
+        return {
+            "id": collection_id,
+            "title": title,
+            "handle": handle,
+            "collection_type": collection_type,
+        }
+
+    def test_dry_run_logs_collections_without_deleting(self):
+        self.client.iter_all_collections.return_value = iter([
+            self._collection("gid://shopify/Collection/1", "Wargames", "wargames", "custom"),
+            self._collection("gid://shopify/Collection/2", "Plush Figures", "plush-figures", "smart"),
+        ])
+
+        shopify_sync.phase_delete_collections(self.client, dry=True)
+
+        self.client.delete_collection.assert_not_called()
+
+    def test_live_run_deletes_each_collection(self):
+        self.client.iter_all_collections.return_value = iter([
+            {
+                "id": "gid://shopify/Collection/1",
+                "title": "Games Workshop",
+                "handle": "games-workshop",
+                "products_count": 10,
+                "collection_type": "smart",
+                "rules": [
+                    {
+                        "column": "TAG",
+                        "relation": "EQUALS",
+                        "condition": "AUTO_COLLECTION::games-workshop",
+                    }
+                ],
+            },
+            {
+                "id": "gid://shopify/Collection/2",
+                "title": "Wargames",
+                "handle": "wargames",
+                "products_count": 4,
+                "collection_type": "custom",
+                "rules": [],
+            },
+        ])
+
+        shopify_sync.phase_delete_collections(self.client, dry=False)
+
+        self.assertEqual(
+            [call.args[0] for call in self.client.delete_collection.call_args_list],
+            ["gid://shopify/Collection/1"],
+        )
+
+
+class CollectionClassificationTests(unittest.TestCase):
+    def _record(self, product_id, title, vendor, product_type="", tags=None, created_at="2026-01-01T00:00:00Z"):
+        tags = tags or []
+        return {
+            "id": product_id,
+            "title": title,
+            "vendor": vendor,
+            "product_type": product_type,
+            "tags": tags,
+            "created_at": created_at,
+            "skus": [product_id],
+            "search_text": shopify_sync._normalize_search_text(" ".join([title, vendor, product_type, *tags, product_id])),
+        }
+
+    def test_build_wayland_collection_matches_assigns_expected_buckets(self):
+        products = [
+            self._record(
+                "gw-1",
+                "KILL TEAM: STARTER SET",
+                "Games Workshop",
+                "Generic",
+                ["Games Workshop", "Kill Team - Generic"],
+                created_at="2026-04-28T10:00:00Z",
+            ),
+            self._record(
+                "gw-2",
+                "WHITE DWARF 512",
+                "Games Workshop",
+                "Generic",
+                ["Games Workshop"],
+                created_at="2026-04-29T10:00:00Z",
+            ),
+            self._record(
+                "mini-1",
+                "Band of Brothers Two-Player Starter Set",
+                "Warlord Games",
+                "Warlord Games",
+                ["Warlord Games"],
+            ),
+            self._record(
+                "puzzle-1",
+                "Mediterranean View Puzzle",
+                "Ravensburger",
+                "Ravensburger",
+                ["Ravensburger"],
+            ),
+            self._record(
+                "book-1",
+                "General Fiction Book",
+                "Simon & Schuster",
+                "Simon & Schuster",
+                ["Simon & Schuster"],
+            ),
+        ]
+
+        by_collection, unmatched, matches_by_product = shopify_sync.build_wayland_collection_matches(products)
+
+        self.assertEqual([item["id"] for item in by_collection["Games Workshop"]], ["gw-1", "gw-2"])
+        self.assertEqual([item["id"] for item in by_collection["Kill Team"]], ["gw-1"])
+        self.assertEqual([item["id"] for item in by_collection["White Dwarf"]], ["gw-2"])
+        self.assertIn("gw-2", [item["id"] for item in by_collection["Latest Releases"]])
+        self.assertEqual([item["id"] for item in by_collection["Miniatures Games"]], ["mini-1"])
+        self.assertEqual([item["id"] for item in by_collection["Two-Player Games"]], ["mini-1"])
+        self.assertEqual([item["id"] for item in by_collection["Getting Started"]], ["mini-1"])
+        self.assertEqual([item["id"] for item in by_collection["Jigsaws"]], ["puzzle-1"])
+        self.assertEqual([item["id"] for item in unmatched], ["book-1"])
+        self.assertIn("Games Workshop", matches_by_product["gw-1"])
+
+
+class PhaseGenerateCollectionsTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+
+    def test_dry_run_writes_preview_only(self):
+        products = [
+            {
+                "id": "gw-1",
+                "title": "KILL TEAM: STARTER SET",
+                "vendor": "Games Workshop",
+                "product_type": "Generic",
+                "tags": ["Games Workshop", "Kill Team - Generic"],
+                "created_at": "2026-04-29T10:00:00Z",
+                "skus": ["gw-1"],
+                "search_text": shopify_sync._normalize_search_text("KILL TEAM: STARTER SET Games Workshop Generic Kill Team - Generic"),
+            }
+        ]
+        self.client.iter_existing_for_collection_generation.return_value = iter(products)
+        self.client.iter_all_collections.return_value = iter([])
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("shopify_sync.COLLECTION_GENERATION_PREVIEW_CSV", new=Path(tmp) / "preview.csv"), \
+             mock.patch("shopify_sync.COLLECTION_GENERATION_UNMATCHED_CSV", new=Path(tmp) / "unmatched.csv"):
+            shopify_sync.phase_generate_collections(self.client, dry=True)
+
+        self.client.create_smart_collection.assert_not_called()
+        self.client.update_product_tags.assert_not_called()
+
+    def test_live_run_retags_products_and_upserts_smart_collections(self):
+        products = [
+            {
+                "id": "gw-1",
+                "title": "WHITE DWARF 512",
+                "vendor": "Games Workshop",
+                "product_type": "Generic",
+                "tags": ["Games Workshop"],
+                "created_at": "2026-04-29T10:00:00Z",
+                "skus": ["gw-1"],
+                "search_text": shopify_sync._normalize_search_text("WHITE DWARF 512 Games Workshop Generic"),
+            }
+        ]
+        self.client.iter_existing_for_collection_generation.return_value = iter(products)
+        self.client.iter_all_collections.return_value = iter([
+            {
+                "id": "gid://shopify/Collection/1",
+                "title": "Games Workshop",
+                "handle": "games-workshop",
+                "products_count": 1,
+                "collection_type": "smart",
+                "rules": [
+                    {
+                        "column": "TAG",
+                        "relation": "EQUALS",
+                        "condition": "AUTO_COLLECTION::games-workshop",
+                    }
+                ],
+            }
+        ])
+        self.client.create_smart_collection.side_effect = lambda title, handle, tag: {
+            "id": f"gid://shopify/Collection/{handle}",
+            "title": title,
+            "handle": handle,
+        }
+        self.client.publish_to_all_channels.return_value = 2
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("shopify_sync.COLLECTION_GENERATION_PREVIEW_CSV", new=Path(tmp) / "preview.csv"), \
+             mock.patch("shopify_sync.COLLECTION_GENERATION_UNMATCHED_CSV", new=Path(tmp) / "unmatched.csv"):
+            shopify_sync.phase_generate_collections(self.client, dry=False)
+
+        self.client.update_product_tags.assert_called_once_with(
+            "gw-1",
+            ["AUTO_COLLECTION::games-workshop", "AUTO_COLLECTION::latest-releases", "AUTO_COLLECTION::white-dwarf", "Games Workshop"],
+        )
+        self.client.update_smart_collection.assert_called_once_with(
+            "gid://shopify/Collection/1",
+            "Games Workshop",
+            "games-workshop",
+            "AUTO_COLLECTION::games-workshop",
+        )
+        self.assertEqual(self.client.publish_to_all_channels.call_count, len(shopify_sync.WAYLAND_COLLECTION_SPECS))
+        created_titles = {call.args[0] for call in self.client.create_smart_collection.call_args_list}
+        self.assertIn("White Dwarf", created_titles)
+        self.assertIn("Latest Releases", created_titles)
+
+    def test_live_run_refuses_to_overwrite_unmanaged_smart_collection(self):
+        products = [
+            {
+                "id": "gw-1",
+                "title": "WHITE DWARF 512",
+                "vendor": "Games Workshop",
+                "product_type": "Generic",
+                "tags": ["Games Workshop"],
+                "created_at": "2026-04-29T10:00:00Z",
+                "skus": ["gw-1"],
+                "search_text": shopify_sync._normalize_search_text("WHITE DWARF 512 Games Workshop Generic"),
+            }
+        ]
+        self.client.iter_existing_for_collection_generation.return_value = iter(products)
+        self.client.iter_all_collections.return_value = iter([
+            {
+                "id": "gid://shopify/Collection/1",
+                "title": "Games Workshop",
+                "handle": "games-workshop",
+                "products_count": 1,
+                "collection_type": "smart",
+                "rules": [
+                    {
+                        "column": "TITLE",
+                        "relation": "CONTAINS",
+                        "condition": "Workshop",
+                    }
+                ],
+            }
+        ])
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("shopify_sync.COLLECTION_GENERATION_PREVIEW_CSV", new=Path(tmp) / "preview.csv"), \
+             mock.patch("shopify_sync.COLLECTION_GENERATION_UNMATCHED_CSV", new=Path(tmp) / "unmatched.csv"):
+            with self.assertRaisesRegex(RuntimeError, "not managed by this script"):
+                shopify_sync.phase_generate_collections(self.client, dry=False)
+
+        self.client.update_smart_collection.assert_not_called()
 
 
 class PhotoAssetMatchingTests(unittest.TestCase):
@@ -826,6 +1319,53 @@ class PhotoSyncPhaseTests(unittest.TestCase):
         failures = (photo_root / "failures.tsv").read_text(encoding="utf-8")
         self.assertIn("unexpected number of targets", failures)
 
+    def test_photo_sync_changed_fingerprint_resets_detach_state_and_old_media_snapshot(self):
+        photo_root = self._make_photo_root()
+        existing = dict(self.existing)
+        existing["media_ids"] = ["gid://shopify/MediaImage/current1", "gid://shopify/MediaImage/current2"]
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+        self.client.staged_uploads_create.return_value = [
+            {"url": "https://upload/1", "resourceUrl": "https://resource/1", "parameters": []},
+            {"url": "https://upload/2", "resourceUrl": "https://resource/2", "parameters": []},
+        ]
+        self.client.file_create.return_value = [
+            {"id": "gid://shopify/MediaImage/new1", "fileStatus": "UPLOADED"},
+            {"id": "gid://shopify/MediaImage/new2", "fileStatus": "UPLOADED"},
+        ]
+        manifest_path = photo_root / "manifest.json"
+        manifest_path.write_text(json.dumps({
+            self.product.sku: {
+                "state": "completed",
+                "product_id": "gid://shopify/Product/1",
+                "asset_fingerprint": "old-fingerprint",
+                "old_media_ids": ["gid://shopify/MediaImage/very-old1", "gid://shopify/MediaImage/very-old2"],
+                "new_file_ids": ["gid://shopify/MediaImage/prior1", "gid://shopify/MediaImage/prior2"],
+                "detached_old_media": True,
+                "error": "old error",
+            }
+        }), encoding="utf-8")
+
+        calls = []
+        self.client.upload_file_to_staged_target.side_effect = lambda path, target: target["resourceUrl"]
+        self.client.wait_for_files_ready.side_effect = lambda ids: calls.append(("ready", tuple(ids))) or ids
+        self.client.attach_files_to_product.side_effect = lambda ids, pid: calls.append(("attach", tuple(ids), pid))
+        self.client.reorder_product_media.side_effect = lambda pid, ids: calls.append(("reorder", pid, tuple(ids)))
+        self.client.detach_files_from_product.side_effect = lambda ids, pid: calls.append(("detach", tuple(ids), pid))
+
+        with self._patched_photo_sync_outputs(photo_root):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [self.product],
+                photo_root,
+                dry=False,
+                manifest_path=manifest_path,
+            )
+
+        self.assertIn(("detach", ("gid://shopify/MediaImage/current1", "gid://shopify/MediaImage/current2"), "gid://shopify/Product/1"), calls)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest[self.product.sku]["old_media_ids"], ["gid://shopify/MediaImage/current1", "gid://shopify/MediaImage/current2"])
+        self.assertEqual(manifest[self.product.sku]["error"], "")
+
 
 class PhotoSyncMainFlowTests(unittest.TestCase):
     def test_photo_sync_without_photo_root_uses_default_cache(self):
@@ -904,6 +1444,12 @@ class GWCacheRefreshTests(unittest.TestCase):
 
         def get(self, url, timeout=60):
             response = self.mapping[url]
+            if isinstance(response, list):
+                if not response:
+                    raise AssertionError(f"No more queued responses for {url}")
+                response = response.pop(0)
+            if isinstance(response, Exception):
+                raise response
             response.url = url
             return response
 
@@ -914,6 +1460,8 @@ class GWCacheRefreshTests(unittest.TestCase):
           <a href="https://trade.games-workshop.com/resource/deathwatch.html">Download jpg</a>
           <div>TR-39-13-99120109017-Armageddon-Battalion-Deathwatch</div>
           <a href="https://trade.games-workshop.com/resource/deathwatch-alt.html">Download jpg</a>
+          <div>TR-50-72-99120103128-Orks-Wazdakka-Gutsmek</div>
+          <a href="https://www.games-workshop.com/some-blocked-page">Download jpg</a>
         </body></html>
         """
 
@@ -925,11 +1473,34 @@ class GWCacheRefreshTests(unittest.TestCase):
         </body></html>
         """
 
+    def _alt_detail_page(self):
+        return """
+        <html><body>
+          <a href="https://trade.games-workshop.com/images/alt/01.jpg">One</a>
+          <a href="https://trade.games-workshop.com/images/alt/sub/01.jpg">Two</a>
+        </body></html>
+        """
+
+    def _archive_only_resources_page(self):
+        return """
+        <html><body>
+          <div>TR-39-13-99120109017-Armageddon-Battalion-Deathwatch</div>
+          <a href="https://trade.games-workshop.com/downloads/deathwatch-pack.zip">Download jpg</a>
+        </body></html>
+        """
+
+    def _zip_bytes(self, files):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            for name, data in files.items():
+                zf.writestr(name, data)
+        return buf.getvalue()
+
     def test_refresh_dry_run_does_not_create_status_file(self):
         session = self.FakeSession({
             "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
             "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
-            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._alt_detail_page()),
         })
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -946,12 +1517,13 @@ class GWCacheRefreshTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "dry_run")
         self.assertFalse(status_path.exists())
+        self.assertFalse(cache_root.exists())
 
     def test_refresh_dry_run_does_not_mutate_existing_status_file(self):
         session = self.FakeSession({
             "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
             "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
-            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._alt_detail_page()),
         })
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -973,9 +1545,11 @@ class GWCacheRefreshTests(unittest.TestCase):
         session = self.FakeSession({
             "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
             "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
-            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._alt_detail_page()),
             "https://trade.games-workshop.com/images/folder/01.jpg": FakeResponse(content=b"one"),
             "https://trade.games-workshop.com/images/folder/sub/01.jpg": FakeResponse(content=b"two"),
+            "https://trade.games-workshop.com/images/alt/01.jpg": FakeResponse(content=b"three"),
+            "https://trade.games-workshop.com/images/alt/sub/01.jpg": FakeResponse(content=b"four"),
         })
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -991,21 +1565,165 @@ class GWCacheRefreshTests(unittest.TestCase):
             )
             current = cache_root / "current"
             pack_dirs = sorted(path.name for path in current.iterdir() if path.is_dir())
+            image_names = sorted(path.name for path in current.rglob("*") if path.is_file())
+
+        self.assertEqual(status["status"], "published")
+        self.assertGreaterEqual(len(pack_dirs), 1)
+        self.assertEqual(len(image_names), 4)
+        self.assertEqual(len(set(image_names)), 4)
+
+    def test_refresh_skips_external_html_pages_that_would_403(self):
+        session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
+            "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._alt_detail_page()),
+            "https://trade.games-workshop.com/images/folder/01.jpg": FakeResponse(content=b"one"),
+            "https://trade.games-workshop.com/images/folder/sub/01.jpg": FakeResponse(content=b"two"),
+            "https://trade.games-workshop.com/images/alt/01.jpg": FakeResponse(content=b"three"),
+            "https://trade.games-workshop.com/images/alt/sub/01.jpg": FakeResponse(content=b"four"),
+            "https://www.games-workshop.com/some-blocked-page": FakeResponse(status_code=403),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "gw_photo_cache_status.json"
+            status = gw_cache_refresh.refresh_gw_cache(
+                resources_url="https://trade.games-workshop.com/resources/",
+                cache_root=cache_root,
+                status_path=status_path,
+                dry=False,
+                logger=lambda msg: None,
+                session=session,
+            )
+
+        self.assertEqual(status["status"], "published")
+
+    def test_refresh_extracts_images_from_zip_only_pack(self):
+        archive_bytes = self._zip_bytes({
+            "nested/99120109017-ArmageddonBattalionDeathwatch01.jpg": b"one",
+            "nested/sub/99120109017-ArmageddonBattalionDeathwatch02.jpg": b"two",
+            "notes/readme.txt": b"skip",
+        })
+        session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._archive_only_resources_page()),
+            "https://trade.games-workshop.com/downloads/deathwatch-pack.zip": FakeResponse(content=archive_bytes),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "gw_photo_cache_status.json"
+            status = gw_cache_refresh.refresh_gw_cache(
+                resources_url="https://trade.games-workshop.com/resources/",
+                cache_root=cache_root,
+                status_path=status_path,
+                dry=False,
+                logger=lambda msg: None,
+                session=session,
+            )
+            current = cache_root / "current"
+            pack_dirs = sorted(path.name for path in current.iterdir())
+            pack_dir = next(current.iterdir())
+            image_names = sorted(path.name for path in pack_dir.iterdir())
+
+        self.assertEqual(status["status"], "published")
+        self.assertEqual(status["archive_count"], 1)
+        self.assertEqual(status["image_count"], 2)
+        self.assertEqual(pack_dirs, ["99120109017-ArmageddonBattalionDeathwatch"])
+        self.assertEqual(
+            image_names,
+            [
+                "nested-99120109017-ArmageddonBattalionDeathwatch01.jpg",
+                "sub-99120109017-ArmageddonBattalionDeathwatch02.jpg",
+            ],
+        )
+
+    def test_refresh_rejects_unsupported_archive_only_sources(self):
+        session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text="""
+                <html><body>
+                  <div>TR-39-13-99120109017-Armageddon-Battalion-Deathwatch</div>
+                  <a href="https://trade.games-workshop.com/downloads/deathwatch-pack.7z">Download jpg</a>
+                </body></html>
+            """),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(RuntimeError, "Archive type '.7z' is not supported"):
+                gw_cache_refresh.refresh_gw_cache(
+                    resources_url="https://trade.games-workshop.com/resources/",
+                    cache_root=Path(tmp) / "gw_photo_cache",
+                    status_path=Path(tmp) / "gw_photo_cache_status.json",
+                    dry=False,
+                    logger=lambda msg: None,
+                    session=session,
+                )
+
+    def test_refresh_retries_transient_archive_download_reset(self):
+        archive_bytes = self._zip_bytes({
+            "nested/99120109017-ArmageddonBattalionDeathwatch01.jpg": b"one",
+        })
+        session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._archive_only_resources_page()),
+            "https://trade.games-workshop.com/downloads/deathwatch-pack.zip": [
+                requests.exceptions.ConnectionError("connection reset by peer"),
+                FakeResponse(content=archive_bytes),
+            ],
+        })
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("gw_cache_refresh.time.sleep") as sleep:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "gw_photo_cache_status.json"
+            status = gw_cache_refresh.refresh_gw_cache(
+                resources_url="https://trade.games-workshop.com/resources/",
+                cache_root=cache_root,
+                status_path=status_path,
+                dry=False,
+                logger=lambda msg: None,
+                session=session,
+            )
+
+        self.assertEqual(status["status"], "published")
+        sleep.assert_called_once_with(1.0)
+
+    def test_refresh_extracts_archive_only_pack_with_fallback_label(self):
+        archive_bytes = self._zip_bytes({
+            "nested/box-art.jpg": b"one",
+            "nested/sub/rear-shot.jpg": b"two",
+        })
+        session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._archive_only_resources_page()),
+            "https://trade.games-workshop.com/downloads/deathwatch-pack.zip": FakeResponse(content=archive_bytes),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "gw_photo_cache_status.json"
+            status = gw_cache_refresh.refresh_gw_cache(
+                resources_url="https://trade.games-workshop.com/resources/",
+                cache_root=cache_root,
+                status_path=status_path,
+                dry=False,
+                logger=lambda msg: None,
+                session=session,
+            )
+            current = cache_root / "current"
+            pack_dirs = sorted(path.name for path in current.iterdir())
             image_names = sorted(path.name for path in next(current.iterdir()).iterdir())
 
         self.assertEqual(status["status"], "published")
-        self.assertEqual(len(pack_dirs), 2)
-        self.assertNotEqual(pack_dirs[0], pack_dirs[1])
-        self.assertEqual(len(image_names), 2)
-        self.assertNotEqual(image_names[0], image_names[1])
+        self.assertEqual(pack_dirs, ["TR-39-13-99120109017-Armageddon-Battalion-Deathwatch"])
+        self.assertEqual(image_names, ["nested-box-art.jpg", "sub-rear-shot.jpg"])
 
     def test_refresh_failure_preserves_current_cache_and_marks_failed(self):
         session = self.FakeSession({
             "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
             "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
-            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._alt_detail_page()),
             "https://trade.games-workshop.com/images/folder/01.jpg": FakeResponse(status_code=500),
             "https://trade.games-workshop.com/images/folder/sub/01.jpg": FakeResponse(content=b"two"),
+            "https://trade.games-workshop.com/images/alt/01.jpg": FakeResponse(content=b"three"),
+            "https://trade.games-workshop.com/images/alt/sub/01.jpg": FakeResponse(content=b"four"),
         })
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1029,9 +1747,10 @@ class GWCacheRefreshTests(unittest.TestCase):
 
             after = gw_cache_refresh.compute_tree_fingerprint(cache_root / "current")
             status = json.loads(status_path.read_text(encoding="utf-8"))
+            preserved = existing.read_bytes()
 
         self.assertEqual(before, after)
-        self.assertEqual(existing.read_bytes(), b"keep")
+        self.assertEqual(preserved, b"keep")
         self.assertEqual(status["status"], "failed")
         self.assertTrue(status["failure_reason"])
 
@@ -1039,16 +1758,20 @@ class GWCacheRefreshTests(unittest.TestCase):
         fail_session = self.FakeSession({
             "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
             "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
-            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._alt_detail_page()),
             "https://trade.games-workshop.com/images/folder/01.jpg": FakeResponse(status_code=500),
             "https://trade.games-workshop.com/images/folder/sub/01.jpg": FakeResponse(content=b"two"),
+            "https://trade.games-workshop.com/images/alt/01.jpg": FakeResponse(content=b"three"),
+            "https://trade.games-workshop.com/images/alt/sub/01.jpg": FakeResponse(content=b"four"),
         })
         success_session = self.FakeSession({
             "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
             "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
-            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._alt_detail_page()),
             "https://trade.games-workshop.com/images/folder/01.jpg": FakeResponse(content=b"one"),
             "https://trade.games-workshop.com/images/folder/sub/01.jpg": FakeResponse(content=b"two"),
+            "https://trade.games-workshop.com/images/alt/01.jpg": FakeResponse(content=b"three"),
+            "https://trade.games-workshop.com/images/alt/sub/01.jpg": FakeResponse(content=b"four"),
         })
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1081,7 +1804,6 @@ class GWCacheRefreshTests(unittest.TestCase):
         self.assertTrue(published["last_success_at"])
         self.assertTrue(published["finished_at"])
         self.assertTrue(published["published_fingerprint"])
-
 
 if __name__ == "__main__":
     unittest.main()

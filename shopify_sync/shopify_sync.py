@@ -9,6 +9,11 @@ Reads two spreadsheets:
 What it does:
   --delete     Deletes existing Shopify products that have NO SKU on any variant.
                (Products that already have a Product Code/SKU are kept.)
+  --delete-collections
+               Deletes existing Shopify collections.
+  --generate-collections
+               Creates a Wayland-style smart collection set and auto-tags existing
+               Shopify products so they fall into those smart collections.
   --import     Creates new Shopify products from the spreadsheets.
   --update     Matches existing Shopify products by SKU and updates price,
                compare_at_price, cost, and on-hand quantity from the sheets.
@@ -38,6 +43,10 @@ Usage:
   python shopify_sync.py --dry-run
   python shopify_sync.py --preflight
   python shopify_sync.py --delete
+  python shopify_sync.py --delete-collections --dry-run
+  python shopify_sync.py --delete-collections
+  python shopify_sync.py --generate-collections --dry-run
+  python shopify_sync.py --generate-collections
   python shopify_sync.py --import
   python shopify_sync.py --update --dry-run
   python shopify_sync.py --update
@@ -54,7 +63,6 @@ import math
 import mimetypes
 import os
 import re
-import shutil
 import sys
 import time
 from dataclasses import dataclass, field
@@ -78,6 +86,8 @@ PHOTO_SYNC_MANIFEST_JSON = HERE / "photo_sync_manifest.json"
 PHOTO_SYNC_MISSING_TSV = HERE / "photo_sync_missing.tsv"
 PHOTO_SYNC_AMBIGUOUS_TSV = HERE / "photo_sync_ambiguous.tsv"
 PHOTO_SYNC_FAILURES_TSV = HERE / "photo_sync_failures.tsv"
+COLLECTION_GENERATION_PREVIEW_CSV = HERE / "collection_generation_preview.csv"
+COLLECTION_GENERATION_UNMATCHED_CSV = HERE / "collection_generation_unmatched.csv"
 GW_RESOURCES_URL = "https://trade.games-workshop.com/resources/"
 GW_PHOTO_CACHE_ROOT = HERE / "gw_photo_cache"
 GW_PHOTO_CACHE_CURRENT = GW_PHOTO_CACHE_ROOT / "current"
@@ -85,9 +95,160 @@ GW_PHOTO_CACHE_STAGING = GW_PHOTO_CACHE_ROOT / "_staging"
 GW_PHOTO_CACHE_STATUS_JSON = HERE / "gw_photo_cache_status.json"
 LOG_FILE = HERE / "sync.log"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+LATEST_GW_RELEASE_LIMIT = 60
+AUTO_COLLECTION_TAG_PREFIX = "AUTO_COLLECTION::"
 
 # Tolerance for treating two money values as equal (Shopify rounds to 2 dp).
 MONEY_EPSILON = 0.005
+NON_GW_MINIATURE_VENDORS = {
+    "archon studio",
+    "mantic games",
+    "warlord games",
+}
+CARD_PRODUCT_MARKERS = (
+    "card game",
+    "tcg",
+    "starter deck",
+    "starter set",
+    "booster",
+    "booster box",
+    "blister",
+    "gift collection",
+    "elite trainer box",
+    "etb",
+    "theme deck",
+    "structure deck",
+    "duel deck",
+    "deck",
+)
+RPG_PRODUCT_MARKERS = (
+    "roleplaying",
+    "role playing",
+    "starter set",
+    "starter box",
+    "beginner box",
+    "essentials kit",
+    "core rulebook",
+    "rulebook",
+    "player's handbook",
+    "players handbook",
+    "gm screen",
+    "game master's screen",
+    "adventure",
+    "campaign",
+)
+WAYLAND_COLLECTION_SPECS: list[tuple[str, str]] = [
+    ("Games Workshop", "games-workshop"),
+    ("Adeptus Titanicus", "adeptus-titanicus"),
+    ("Age of Sigmar", "age-of-sigmar"),
+    ("Black Library", "black-library"),
+    ("Blood Bowl", "blood-bowl"),
+    ("Citadel Colour", "citadel-colour"),
+    ("Kill Team", "kill-team"),
+    ("Legions Imperialis", "legions-imperialis"),
+    ("Middle-earth Strategy Battle Game", "middle-earth-strategy-battle-game"),
+    ("Necromunda", "necromunda"),
+    ("The Horus Heresy", "the-horus-heresy"),
+    ("The Old World", "the-old-world"),
+    ("Warcry", "warcry"),
+    ("Warhammer 40k", "warhammer-40k"),
+    ("Warhammer Underworlds", "warhammer-underworlds"),
+    ("Warhammer Quest", "warhammer-quest"),
+    ("White Dwarf", "white-dwarf"),
+    ("Pre-Orders", "pre-orders"),
+    ("Latest Releases", "latest-releases"),
+    ("Board & Card Games", "board-card-games"),
+    ("Board Game Pre-Orders", "board-game-pre-orders"),
+    ("Card Game Pre-Orders", "card-game-pre-orders"),
+    ("Two-Player Games", "two-player-games"),
+    ("Award Winning Games", "award-winning-games"),
+    ("Co-operative Games", "co-operative-games"),
+    ("Dice Games", "dice-games"),
+    ("Essential Games", "essential-games"),
+    ("Family Games", "family-games"),
+    ("Gateway Games", "gateway-games"),
+    ("Legacy Games", "legacy-games"),
+    ("Living Card Games", "living-card-games"),
+    ("Miniatures Games", "miniatures-games"),
+    ("Party Games", "party-games"),
+    ("Roll & Write", "roll-write"),
+    ("Strategy Games", "strategy-games"),
+    ("Thematic Games", "thematic-games"),
+    ("Wargames", "wargames"),
+    ("Getting Started", "getting-started"),
+    ("Get Started Board Gaming", "get-started-board-gaming"),
+    ("Get Started Card Gaming", "get-started-card-gaming"),
+    ("Get Started Role-Playing", "get-started-role-playing"),
+    ("Collectable Card Games", "collectable-card-games"),
+    ("Digimon Card Game", "digimon-card-game"),
+    ("Disney Lorcana", "disney-lorcana"),
+    ("Gundam Card Game", "gundam-card-game"),
+    ("Magic: The Gathering", "magic-the-gathering"),
+    ("One Piece Card Game", "one-piece-card-game"),
+    ("Oshi Push TCG", "oshi-push-tcg"),
+    ("Pokemon", "pokemon"),
+    ("Riftbound TCG", "riftbound-tcg"),
+    ("Star Wars: Unlimited", "star-wars-unlimited"),
+    ("Yu-Gi-Oh!", "yu-gi-oh"),
+    ("Role-Playing Games", "role-playing-games"),
+    ("Cosmere", "cosmere"),
+    ("Call of Cthulhu", "call-of-cthulhu"),
+    ("Dune: Adventures in the Imperium", "dune-adventures-in-the-imperium"),
+    ("Dungeons & Dragons", "dungeons-dragons"),
+    ("Fallout: The Roleplaying Game", "fallout-the-roleplaying-game"),
+    ("Pathfinder", "pathfinder"),
+    ("Starfinder", "starfinder"),
+    ("The One Ring", "the-one-ring"),
+    ("Vampire: The Masquerade", "vampire-the-masquerade"),
+    ("Jigsaws", "jigsaws"),
+]
+BOARD_CARD_CHILDREN = {
+    "Board Game Pre-Orders",
+    "Card Game Pre-Orders",
+    "Two-Player Games",
+    "Award Winning Games",
+    "Co-operative Games",
+    "Dice Games",
+    "Essential Games",
+    "Family Games",
+    "Gateway Games",
+    "Legacy Games",
+    "Living Card Games",
+    "Miniatures Games",
+    "Party Games",
+    "Roll & Write",
+    "Strategy Games",
+    "Thematic Games",
+    "Wargames",
+}
+GETTING_STARTED_CHILDREN = {
+    "Get Started Board Gaming",
+    "Get Started Card Gaming",
+    "Get Started Role-Playing",
+}
+CCG_CHILDREN = {
+    "Digimon Card Game",
+    "Disney Lorcana",
+    "Gundam Card Game",
+    "Magic: The Gathering",
+    "One Piece Card Game",
+    "Oshi Push TCG",
+    "Pokemon",
+    "Riftbound TCG",
+    "Star Wars: Unlimited",
+    "Yu-Gi-Oh!",
+}
+RPG_CHILDREN = {
+    "Cosmere",
+    "Call of Cthulhu",
+    "Dune: Adventures in the Imperium",
+    "Dungeons & Dragons",
+    "Fallout: The Roleplaying Game",
+    "Pathfinder",
+    "Starfinder",
+    "The One Ring",
+    "Vampire: The Masquerade",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +390,11 @@ def _round_money(x: float) -> float:
 def _normalize_slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower())
     return slug.strip("-")
+
+
+def _normalize_search_text(value: str) -> str:
+    compact = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+    return f" {compact} " if compact else " "
 
 
 def _extract_product_code(value: str) -> str:
@@ -622,6 +788,289 @@ def _is_games_workshop_record(record: dict[str, Any]) -> bool:
     return vendor == "games workshop" or "games workshop" in normalized_tags
 
 
+def _iter_chunks(items: list[str], size: int = 250) -> Iterable[list[str]]:
+    for start in range(0, len(items), size):
+        yield items[start:start + size]
+
+
+def _record_tags(record: dict[str, Any]) -> list[str]:
+    raw_tags = record.get("tags") or []
+    if isinstance(raw_tags, list):
+        return [str(tag).strip() for tag in raw_tags if str(tag).strip()]
+    return [str(raw_tags).strip()] if str(raw_tags).strip() else []
+
+
+def _record_tag_prefix(record: dict[str, Any], prefixes: Iterable[str]) -> bool:
+    tags = [tag.lower() for tag in _record_tags(record)]
+    return any(tag.startswith(prefix.lower()) for tag in tags for prefix in prefixes)
+
+
+def _record_has_phrase(record: dict[str, Any], phrase: str) -> bool:
+    return _normalize_search_text(phrase).strip() in record.get("search_text", " ")
+
+
+def _record_has_any_phrase(record: dict[str, Any], phrases: Iterable[str]) -> bool:
+    return any(_record_has_phrase(record, phrase) for phrase in phrases)
+
+
+def _record_has_all_phrases(record: dict[str, Any], phrases: Iterable[str]) -> bool:
+    return all(_record_has_phrase(record, phrase) for phrase in phrases)
+
+
+def _is_games_workshop_product(record: dict[str, Any]) -> bool:
+    return (record.get("vendor") or "").strip().lower() == "games workshop"
+
+
+def _is_non_gw_miniatures_product(record: dict[str, Any]) -> bool:
+    vendor = (record.get("vendor") or "").strip().lower()
+    return (
+        vendor in NON_GW_MINIATURE_VENDORS
+        or _record_has_any_phrase(record, ("miniature", "miniatures"))
+    )
+
+
+def _is_card_game_product(record: dict[str, Any]) -> bool:
+    return _record_has_any_phrase(record, CARD_PRODUCT_MARKERS)
+
+
+def _is_rpg_product(record: dict[str, Any]) -> bool:
+    return _record_has_any_phrase(record, RPG_PRODUCT_MARKERS)
+
+
+def _assign_collection(match_map: dict[str, set[str]], record: dict[str, Any], collection_title: str) -> None:
+    match_map.setdefault(record["id"], set()).add(collection_title)
+
+
+def classify_wayland_collection_titles(record: dict[str, Any]) -> set[str]:
+    matches: set[str] = set()
+    vendor = (record.get("vendor") or "").strip().lower()
+    is_gw = vendor == "games workshop"
+    is_card = _is_card_game_product(record)
+    is_rpg = _is_rpg_product(record)
+    is_non_gw_minis = _is_non_gw_miniatures_product(record)
+    is_preorder = _record_has_any_phrase(record, ("pre order", "preorder", "pre-orders"))
+
+    if is_gw:
+        matches.add("Games Workshop")
+        if _record_has_any_phrase(record, ("adeptus titanicus",)):
+            matches.add("Adeptus Titanicus")
+        if _record_tag_prefix(record, ("aos -",)) or _record_has_any_phrase(record, ("age of sigmar",)):
+            matches.add("Age of Sigmar")
+        if _record_has_any_phrase(record, ("black library",)):
+            matches.add("Black Library")
+        if _record_has_any_phrase(record, ("blood bowl",)):
+            matches.add("Blood Bowl")
+        if _record_tag_prefix(record, ("paint -", "spray -", "hobby -")) or _record_has_any_phrase(record, ("citadel",)):
+            matches.add("Citadel Colour")
+        if _record_has_any_phrase(record, ("kill team",)):
+            matches.add("Kill Team")
+        if _record_tag_prefix(record, ("l/imperialis ", "legions imperialis -")) or _record_has_any_phrase(record, ("legions imperialis",)):
+            matches.add("Legions Imperialis")
+        if _record_tag_prefix(record, ("middle-earth -", "middle earth -")) or _record_has_any_phrase(record, ("middle earth", "middle-earth")):
+            matches.add("Middle-earth Strategy Battle Game")
+        if _record_has_any_phrase(record, ("necromunda",)):
+            matches.add("Necromunda")
+        if _record_tag_prefix(record, ("hh ",)) or _record_has_any_phrase(record, ("horus heresy",)):
+            matches.add("The Horus Heresy")
+        if _record_tag_prefix(record, ("old world -",)) or _record_has_any_phrase(record, ("the old world", "old world")):
+            matches.add("The Old World")
+        if _record_has_any_phrase(record, ("warcry",)):
+            matches.add("Warcry")
+        if (
+            _record_tag_prefix(record, ("40k -",))
+            or _record_has_any_phrase(record, ("warhammer 40 000", "warhammer 40000", "warhammer 40k", "wh40k", "40k"))
+        ):
+            matches.add("Warhammer 40k")
+        if _record_has_any_phrase(record, ("underworlds",)):
+            matches.add("Warhammer Underworlds")
+        if _record_has_any_phrase(record, ("warhammer quest",)):
+            matches.add("Warhammer Quest")
+        if _record_has_any_phrase(record, ("white dwarf",)):
+            matches.add("White Dwarf")
+        if is_preorder:
+            matches.add("Pre-Orders")
+        return matches
+
+    if _record_has_phrase(record, "articulate"):
+        matches.update({"Party Games", "Family Games"})
+    if _record_has_any_phrase(record, ("two player", "two-player", "2 player", "duel")):
+        matches.add("Two-Player Games")
+    if _record_has_any_phrase(record, ("co operative", "co-operative", "cooperative", "co-op")):
+        matches.add("Co-operative Games")
+    if _record_has_any_phrase(record, ("dice game", "dice games", "dice throne")):
+        matches.add("Dice Games")
+    if _record_has_any_phrase(record, ("award winning",)):
+        matches.add("Award Winning Games")
+    if _record_has_any_phrase(record, ("legacy",)):
+        matches.add("Legacy Games")
+    if _record_has_any_phrase(record, ("living card game", "lcg")):
+        matches.add("Living Card Games")
+    if _record_has_any_phrase(record, ("roll write", "roll & write")):
+        matches.add("Roll & Write")
+    if _record_has_any_phrase(record, ("strategy",)):
+        matches.add("Strategy Games")
+    if _record_has_any_phrase(record, ("theme", "thematic")):
+        matches.add("Thematic Games")
+    if _record_has_any_phrase(record, ("puzzle", "jigsaw")):
+        matches.add("Jigsaws")
+    if is_non_gw_minis:
+        matches.update({"Miniatures Games", "Wargames", "Strategy Games", "Thematic Games"})
+    if _record_has_phrase(record, "starter set") and (is_non_gw_minis or _record_has_phrase(record, "board game")):
+        matches.update({"Gateway Games", "Get Started Board Gaming"})
+    if is_preorder and not is_card and not is_rpg:
+        matches.add("Board Game Pre-Orders")
+    if is_card and _record_has_phrase(record, "digimon"):
+        matches.add("Digimon Card Game")
+    if _record_has_any_phrase(record, ("lorcana",)):
+        matches.add("Disney Lorcana")
+    if is_card and _record_has_phrase(record, "gundam"):
+        matches.add("Gundam Card Game")
+    if _record_has_any_phrase(record, ("magic the gathering", "magic: the gathering", "mtg")) and is_card:
+        matches.add("Magic: The Gathering")
+    if _record_has_phrase(record, "one piece") and is_card:
+        matches.add("One Piece Card Game")
+    if _record_has_any_phrase(record, ("oshi push",)) and is_card:
+        matches.add("Oshi Push TCG")
+    if _record_has_phrase(record, "pokemon") and is_card:
+        matches.add("Pokemon")
+    if _record_has_any_phrase(record, ("riftbound",)) and is_card:
+        matches.add("Riftbound TCG")
+    if _record_has_any_phrase(record, ("star wars unlimited", "star wars: unlimited")):
+        matches.add("Star Wars: Unlimited")
+    if _record_has_any_phrase(record, ("yu gi oh", "yu-gi-oh", "yugioh")) and is_card:
+        matches.add("Yu-Gi-Oh!")
+    if is_preorder and is_card:
+        matches.add("Card Game Pre-Orders")
+    if is_card and _record_has_any_phrase(record, ("starter deck", "starter set", "beginner", "battle academy")):
+        matches.add("Get Started Card Gaming")
+    if _record_has_phrase(record, "cosmere") and is_rpg:
+        matches.add("Cosmere")
+    if _record_has_phrase(record, "call of cthulhu") and is_rpg:
+        matches.add("Call of Cthulhu")
+    if _record_has_any_phrase(record, ("dune adventures in the imperium", "dune: adventures in the imperium")):
+        matches.add("Dune: Adventures in the Imperium")
+    if _record_has_any_phrase(record, ("dungeons dragons", "dungeons & dragons", "d d")) and is_rpg:
+        matches.add("Dungeons & Dragons")
+    if _record_has_any_phrase(record, ("fallout roleplaying", "fallout: the roleplaying game")):
+        matches.add("Fallout: The Roleplaying Game")
+    if _record_has_all_phrases(record, ("pathfinder", "rulebook")) or _record_has_all_phrases(record, ("pathfinder", "beginner")):
+        matches.add("Pathfinder")
+    if _record_has_phrase(record, "starfinder") and is_rpg:
+        matches.add("Starfinder")
+    if _record_has_any_phrase(record, ("the one ring",)) and is_rpg:
+        matches.add("The One Ring")
+    if _record_has_any_phrase(record, ("vampire the masquerade", "vampire: the masquerade")):
+        matches.add("Vampire: The Masquerade")
+    if is_rpg and _record_has_any_phrase(record, ("starter set", "starter box", "beginner box", "essentials kit")):
+        matches.add("Get Started Role-Playing")
+    if matches & BOARD_CARD_CHILDREN:
+        matches.add("Board & Card Games")
+    if matches & GETTING_STARTED_CHILDREN:
+        matches.add("Getting Started")
+    if matches & CCG_CHILDREN:
+        matches.add("Collectable Card Games")
+    if matches & RPG_CHILDREN:
+        matches.add("Role-Playing Games")
+    return matches
+
+
+def collection_marker_tag_from_handle(handle: str) -> str:
+    return f"{AUTO_COLLECTION_TAG_PREFIX}{handle}"
+
+
+def collection_marker_tag(collection_title: str) -> str:
+    for title, handle in WAYLAND_COLLECTION_SPECS:
+        if title == collection_title:
+            return collection_marker_tag_from_handle(handle)
+    raise KeyError(f"Unknown collection title: {collection_title}")
+
+
+def wayland_collection_marker_tags(collection_titles: Iterable[str]) -> list[str]:
+    tags = [collection_marker_tag(title) for title in collection_titles]
+    return sorted(set(tags))
+
+
+def wayland_auto_collection_tag_set() -> set[str]:
+    return {collection_marker_tag_from_handle(handle) for _, handle in WAYLAND_COLLECTION_SPECS}
+
+
+WAYLAND_COLLECTION_HANDLES = {handle for _, handle in WAYLAND_COLLECTION_SPECS}
+
+
+def managed_wayland_collection_tag(collection: dict[str, Any]) -> str:
+    if collection.get("collection_type") != "smart":
+        return ""
+    tag_rules = [
+        rule.get("condition") or ""
+        for rule in collection.get("rules") or []
+        if (rule.get("column") or "").upper() == "TAG"
+        and (rule.get("relation") or "").upper() == "EQUALS"
+    ]
+    if len(tag_rules) != 1:
+        return ""
+    tag = tag_rules[0].strip()
+    return tag if tag.startswith(AUTO_COLLECTION_TAG_PREFIX) else ""
+
+
+def is_managed_wayland_collection(collection: dict[str, Any], expected_tag: str = "") -> bool:
+    if (collection.get("handle") or "") not in WAYLAND_COLLECTION_HANDLES:
+        return False
+    tag = managed_wayland_collection_tag(collection)
+    if not tag:
+        return False
+    return not expected_tag or tag == expected_tag
+
+
+def smart_collection_tags_for_product(product: Product) -> list[str]:
+    record = {
+        "id": product.sku or product.title,
+        "title": product.title,
+        "vendor": product.vendor,
+        "product_type": product.product_type,
+        "tags": product.tags,
+        "created_at": "",
+        "skus": [product.sku] if product.sku else [],
+        "search_text": _normalize_search_text(" ".join([
+            product.title,
+            product.vendor,
+            product.product_type,
+            *product.tags,
+            product.sku,
+        ])),
+    }
+    return wayland_collection_marker_tags(classify_wayland_collection_titles(record))
+
+
+def build_wayland_collection_matches(
+    products: list[dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]], dict[str, set[str]]]:
+    by_collection: dict[str, list[dict[str, Any]]] = {title: [] for title, _ in WAYLAND_COLLECTION_SPECS}
+    matches_by_product: dict[str, set[str]] = {
+        record["id"]: classify_wayland_collection_titles(record)
+        for record in products
+    }
+
+    gw_products = sorted(
+        (record for record in products if _is_games_workshop_product(record)),
+        key=lambda item: item.get("created_at") or "",
+        reverse=True,
+    )
+    for record in gw_products[:LATEST_GW_RELEASE_LIMIT]:
+        matches_by_product[record["id"]].add("Latest Releases")
+
+    unmatched: list[dict[str, Any]] = []
+    for record in products:
+        product_matches = matches_by_product[record["id"]]
+        if not product_matches:
+            unmatched.append(record)
+            continue
+        for title, _ in WAYLAND_COLLECTION_SPECS:
+            if title in product_matches:
+                by_collection[title].append(record)
+
+    return by_collection, unmatched, matches_by_product
+
+
 # ---------------------------------------------------------------------------
 # Shopify GraphQL client
 # ---------------------------------------------------------------------------
@@ -769,6 +1218,280 @@ class Shopify:
             raise RuntimeError(f"productDelete errors: {errs}")
 
     # ------------------------------------------------------------------
+    # Collections: list + delete
+    # ------------------------------------------------------------------
+    def iter_all_collections(self) -> Iterable[dict[str, Any]]:
+        cursor = None
+        page_q = """
+            query($cursor: String) {
+              collections(first: 100, after: $cursor) {
+                edges {
+                  node {
+                    id
+                    title
+                    handle
+                    productsCount {
+                      count
+                    }
+                    ruleSet {
+                      appliedDisjunctively
+                      rules {
+                        column
+                        relation
+                        condition
+                      }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"cursor": cursor})
+            edges = data["collections"]["edges"]
+            for edge in edges:
+                node = edge["node"]
+                yield {
+                    "id": node["id"],
+                    "title": node.get("title") or "",
+                    "handle": node.get("handle") or "",
+                    "products_count": int((node.get("productsCount") or {}).get("count") or 0),
+                    "collection_type": "smart" if node.get("ruleSet") else "custom",
+                    "rules": (node.get("ruleSet") or {}).get("rules") or [],
+                }
+            if not data["collections"]["pageInfo"]["hasNextPage"]:
+                break
+            cursor = data["collections"]["pageInfo"]["endCursor"]
+
+    def delete_collection(self, collection_id: str) -> None:
+        q = """
+            mutation($input: CollectionDeleteInput!) {
+              collectionDelete(input: $input) {
+                deletedCollectionId
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {"input": {"id": collection_id}})
+        errs = data["collectionDelete"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"collectionDelete errors: {errs}")
+
+    def iter_existing_for_collection_generation(self) -> Iterable[dict[str, Any]]:
+        cursor = None
+        page_q = """
+            query($cursor: String) {
+              products(first: 100, after: $cursor) {
+                edges {
+                  cursor
+                  node {
+                    id
+                    title
+                    vendor
+                    productType
+                    tags
+                    createdAt
+                    variants(first: 10) {
+                      edges {
+                        node {
+                          sku
+                        }
+                      }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"cursor": cursor})
+            for edge in data["products"]["edges"]:
+                node = edge["node"]
+                skus = [
+                    (variant_edge["node"].get("sku") or "").strip()
+                    for variant_edge in node["variants"]["edges"]
+                    if (variant_edge["node"].get("sku") or "").strip()
+                ]
+                tags = [str(tag).strip() for tag in node.get("tags") or [] if str(tag).strip()]
+                search_parts = [
+                    node.get("title") or "",
+                    node.get("vendor") or "",
+                    node.get("productType") or "",
+                    *tags,
+                    *skus,
+                ]
+                yield {
+                    "id": node["id"],
+                    "title": node.get("title") or "",
+                    "vendor": node.get("vendor") or "",
+                    "product_type": node.get("productType") or "",
+                    "tags": tags,
+                    "created_at": node.get("createdAt") or "",
+                    "skus": skus,
+                    "search_text": _normalize_search_text(" ".join(search_parts)),
+                }
+            if not data["products"]["pageInfo"]["hasNextPage"]:
+                break
+            cursor = data["products"]["pageInfo"]["endCursor"]
+
+    def create_smart_collection(self, title: str, handle: str, tag: str, description_html: str = "") -> dict[str, Any]:
+        q = """
+            mutation($input: CollectionInput!) {
+              collectionCreate(input: $input) {
+                collection {
+                  id
+                  title
+                  handle
+                }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {
+            "input": {
+                "title": title,
+                "handle": handle,
+                "descriptionHtml": description_html,
+                "ruleSet": {
+                    "appliedDisjunctively": False,
+                    "rules": [
+                        {
+                            "column": "TAG",
+                            "relation": "EQUALS",
+                            "condition": tag,
+                        }
+                    ],
+                },
+            }
+        })
+        errs = data["collectionCreate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"collectionCreate errors for {title!r}: {errs}")
+        collection = data["collectionCreate"].get("collection")
+        if not collection:
+            raise RuntimeError(f"collectionCreate did not return a collection for {title!r}")
+        return collection
+
+    def update_smart_collection(self, collection_id: str, title: str, handle: str, tag: str) -> None:
+        q = """
+            mutation($input: CollectionInput!) {
+              collectionUpdate(input: $input) {
+                collection {
+                  id
+                }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {
+            "input": {
+                "id": collection_id,
+                "title": title,
+                "handle": handle,
+                "ruleSet": {
+                    "appliedDisjunctively": False,
+                    "rules": [
+                        {
+                            "column": "TAG",
+                            "relation": "EQUALS",
+                            "condition": tag,
+                        }
+                    ],
+                },
+            }
+        })
+        errs = data["collectionUpdate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"collectionUpdate errors for {title!r}: {errs}")
+
+    def publish_to_current_channel(self, resource_id: str) -> None:
+        q = """
+            mutation($id: ID!) {
+              publishablePublishToCurrentChannel(id: $id) {
+                publishable {
+                  ... on Collection {
+                    id
+                  }
+                }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {"id": resource_id})
+        errs = data["publishablePublishToCurrentChannel"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"publishablePublishToCurrentChannel errors: {errs}")
+
+    def iter_publications(self) -> Iterable[dict[str, Any]]:
+        cursor = None
+        page_q = """
+            query($cursor: String) {
+              publications(first: 100, after: $cursor) {
+                edges {
+                  node {
+                    id
+                    name
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"cursor": cursor})
+            for edge in data["publications"]["edges"]:
+                node = edge["node"]
+                yield {
+                    "id": node["id"],
+                    "name": node.get("name") or "",
+                }
+            if not data["publications"]["pageInfo"]["hasNextPage"]:
+                break
+            cursor = data["publications"]["pageInfo"]["endCursor"]
+
+    def publish_to_all_channels(self, resource_id: str) -> int:
+        publications = list(self.iter_publications())
+        if not publications:
+            self.publish_to_current_channel(resource_id)
+            return 1
+        q = """
+            mutation($id: ID!, $input: [PublicationInput!]!) {
+              publishablePublish(id: $id, input: $input) {
+                publishable {
+                  ... on Collection {
+                    id
+                  }
+                }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {
+            "id": resource_id,
+            "input": [{"publicationId": publication["id"]} for publication in publications],
+        })
+        errs = data["publishablePublish"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"publishablePublish errors: {errs}")
+        return len(publications)
+
+    def update_product_tags(self, product_id: str, tags: list[str]) -> None:
+        q = """
+            mutation($product: ProductUpdateInput!) {
+              productUpdate(product: $product) {
+                product { id }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {"product": {"id": product_id, "tags": tags}})
+        errs = data["productUpdate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"productUpdate errors for {product_id}: {errs}")
+
+    # ------------------------------------------------------------------
     # Product create (with variant + inventory)
     # ------------------------------------------------------------------
     def create_product(self, p: Product, location_id: str) -> str:
@@ -786,11 +1509,12 @@ class Shopify:
               }
             }
         """
+        product_tags = sorted(set(p.tags) | set(smart_collection_tags_for_product(p)))
         product_input: dict[str, Any] = {
             "title": p.title,
             "vendor": p.vendor or "Foxfable",
             "productType": p.product_type or "",
-            "tags": p.tags,
+            "tags": product_tags,
             "descriptionHtml": p.description_html,
             "status": "ACTIVE",
         }
@@ -1227,6 +1951,147 @@ def phase_delete(client: Shopify, dry: bool) -> None:
     log(f"DELETE summary: deleted={deleted}, dry_run={dry}")
 
 
+def phase_delete_collections(client: Shopify, dry: bool) -> None:
+    log("=== DELETE COLLECTIONS phase: removing managed Wayland collections ===")
+    deleted = 0
+    for collection in client.iter_all_collections():
+        if not is_managed_wayland_collection(collection):
+            log(
+                "  skip unmanaged collection: "
+                f"{collection['title']!r} [{collection['collection_type']}] "
+                f"handle={collection['handle']!r} ({collection['id']})"
+            )
+            continue
+        log(
+            "  delete collection: "
+            f"{collection['title']!r} [{collection['collection_type']}] "
+            f"handle={collection['handle']!r} ({collection['id']})"
+        )
+        if not dry:
+            try:
+                client.delete_collection(collection["id"])
+                deleted += 1
+            except Exception as e:
+                log(f"  ERROR deleting collection {collection['id']}: {e}")
+    log(f"DELETE COLLECTIONS summary: deleted={deleted}, dry_run={dry}")
+
+
+def write_collection_generation_preview(
+    by_collection: dict[str, list[dict[str, Any]]],
+    unmatched: list[dict[str, Any]],
+) -> None:
+    preview_cols = [
+        "collection_title",
+        "collection_handle",
+        "product_id",
+        "title",
+        "vendor",
+        "product_type",
+        "skus",
+        "tags",
+    ]
+    with COLLECTION_GENERATION_PREVIEW_CSV.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=preview_cols)
+        writer.writeheader()
+        for title, handle in WAYLAND_COLLECTION_SPECS:
+            for record in by_collection[title]:
+                writer.writerow({
+                    "collection_title": title,
+                    "collection_handle": handle,
+                    "product_id": record["id"],
+                    "title": record["title"],
+                    "vendor": record["vendor"],
+                    "product_type": record["product_type"],
+                    "skus": "|".join(record["skus"]),
+                    "tags": "|".join(record["tags"]),
+                })
+
+    unmatched_cols = ["product_id", "title", "vendor", "product_type", "skus", "tags"]
+    with COLLECTION_GENERATION_UNMATCHED_CSV.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=unmatched_cols)
+        writer.writeheader()
+        for record in unmatched:
+            writer.writerow({
+                "product_id": record["id"],
+                "title": record["title"],
+                "vendor": record["vendor"],
+                "product_type": record["product_type"],
+                "skus": "|".join(record["skus"]),
+                "tags": "|".join(record["tags"]),
+            })
+
+
+def phase_generate_collections(client: Shopify, dry: bool) -> None:
+    log("=== GENERATE COLLECTIONS phase: building Wayland-style smart collections ===")
+    products = list(client.iter_existing_for_collection_generation())
+    existing_collections = {item["handle"]: item for item in client.iter_all_collections()}
+    by_collection, unmatched, matches_by_product = build_wayland_collection_matches(products)
+    write_collection_generation_preview(by_collection, unmatched)
+    log(
+        f"  wrote collection preview: {COLLECTION_GENERATION_PREVIEW_CSV} "
+        f"and unmatched report: {COLLECTION_GENERATION_UNMATCHED_CSV}"
+    )
+    matched_count = sum(len(items) for items in by_collection.values())
+    non_empty = sum(1 for items in by_collection.values() if items)
+    log(
+        f"  planned memberships={matched_count} across {non_empty}/{len(WAYLAND_COLLECTION_SPECS)} "
+        f"collections; unmatched_products={len(unmatched)}"
+    )
+    for title, _ in WAYLAND_COLLECTION_SPECS:
+        if by_collection[title]:
+            log(f"  match count: {title} -> {len(by_collection[title])}")
+
+    if dry:
+        return
+
+    auto_tags = wayland_auto_collection_tag_set()
+    updated_products = 0
+    created = 0
+    refreshed = 0
+    published = 0
+    for record in products:
+        desired_auto_tags = set(wayland_collection_marker_tags(matches_by_product[record["id"]]))
+        current_tags = set(record["tags"])
+        next_tags = sorted((current_tags - auto_tags) | desired_auto_tags)
+        if next_tags != sorted(current_tags):
+            client.update_product_tags(record["id"], next_tags)
+            updated_products += 1
+
+    for title, handle in WAYLAND_COLLECTION_SPECS:
+        collection = existing_collections.get(handle)
+        marker_tag = collection_marker_tag_from_handle(handle)
+        if collection and collection["collection_type"] != "smart":
+            raise RuntimeError(
+                f"Existing collection handle {handle!r} is a manual collection. "
+                "Delete it first with --delete-collections or rename it before regenerating."
+            )
+        if collection and not is_managed_wayland_collection(collection, expected_tag=marker_tag):
+            raise RuntimeError(
+                f"Existing smart collection handle {handle!r} is not managed by this script. "
+                "Refusing to overwrite a non-marker rule set."
+            )
+
+        if collection:
+            refreshed += 1
+            client.update_smart_collection(collection["id"], title, handle, marker_tag)
+        else:
+            collection = client.create_smart_collection(title, handle, marker_tag)
+            created += 1
+
+        try:
+            published += client.publish_to_all_channels(collection["id"])
+        except Exception as e:
+            log(
+                f"  warn: could not publish collection {title!r} to all sales channels: {e}. "
+                "The collection may remain hidden until the app has publication scopes."
+            )
+
+    log(
+        f"GENERATE COLLECTIONS summary: tagged_products={updated_products} created={created} refreshed={refreshed} "
+        f"publication_links={published} unmatched_products={len(unmatched)}"
+    )
+
+
 def phase_import(client: Shopify, products: list[Product], location_id: str, dry: bool,
                  start_at: int = 0) -> None:
     log(f"=== IMPORT phase: creating {len(products)} products (starting at index {start_at}) ===")
@@ -1534,6 +2399,10 @@ def phase_photo_sync(
         fingerprint = asset_set.fingerprint()
         prior_entry = dict(manifest.get(product.sku, {}))
         prior_state = prior_entry.get("state")
+        reset_resume_state = (
+            prior_entry.get("asset_fingerprint") != fingerprint
+            or prior_entry.get("product_id") != existing["product_id"]
+        )
         if (
             prior_state == "completed"
             and prior_entry.get("asset_fingerprint") == fingerprint
@@ -1543,6 +2412,14 @@ def phase_photo_sync(
             continue
 
         try:
+            if reset_resume_state:
+                old_media_ids = existing["media_ids"]
+                file_ids: list[str] = []
+                effective_prior_state = None
+            else:
+                old_media_ids = prior_entry.get("old_media_ids", existing["media_ids"])
+                file_ids = prior_entry.get("new_file_ids") or []
+                effective_prior_state = prior_state
             entry = update_and_save_photo_manifest_entry(
                 manifest,
                 manifest_path,
@@ -1552,15 +2429,16 @@ def phase_photo_sync(
                 source_mode="staged-local-files",
                 asset_label=asset_set.label,
                 asset_fingerprint=fingerprint,
-                old_media_ids=prior_entry.get("old_media_ids", existing["media_ids"]),
+                old_media_ids=old_media_ids,
+                detached_old_media=False,
+                new_file_ids=file_ids,
+                error="",
                 source_paths=[str(path) for path in asset_set.image_paths],
             )
 
-            file_ids = prior_entry.get("new_file_ids") or []
             if (
                 not file_ids
-                or prior_entry.get("asset_fingerprint") != fingerprint
-                or prior_state == "failed"
+                or effective_prior_state == "failed"
             ):
                 staged_targets = client.staged_uploads_create(asset_set.image_paths)
                 if len(staged_targets) != len(asset_set.image_paths):
@@ -1582,7 +2460,7 @@ def phase_photo_sync(
                     new_file_ids=file_ids,
                 )
 
-            if prior_state not in {"files_ready", "associated", "reordered", "completed"}:
+            if effective_prior_state not in {"files_ready", "associated", "reordered", "completed"}:
                 client.wait_for_files_ready(file_ids)
                 entry = update_and_save_photo_manifest_entry(
                     manifest,
@@ -1590,9 +2468,9 @@ def phase_photo_sync(
                     sku=product.sku,
                     state="files_ready",
                 )
-                prior_state = "files_ready"
+                effective_prior_state = "files_ready"
 
-            if prior_state not in {"associated", "reordered", "completed"}:
+            if effective_prior_state not in {"associated", "reordered", "completed"}:
                 client.attach_files_to_product(file_ids, existing["product_id"])
                 entry = update_and_save_photo_manifest_entry(
                     manifest,
@@ -1600,9 +2478,9 @@ def phase_photo_sync(
                     sku=product.sku,
                     state="associated",
                 )
-                prior_state = "associated"
+                effective_prior_state = "associated"
 
-            if prior_state not in {"reordered", "completed"}:
+            if effective_prior_state not in {"reordered", "completed"}:
                 client.reorder_product_media(existing["product_id"], file_ids)
                 entry = update_and_save_photo_manifest_entry(
                     manifest,
@@ -1610,7 +2488,7 @@ def phase_photo_sync(
                     sku=product.sku,
                     state="reordered",
                 )
-                prior_state = "reordered"
+                effective_prior_state = "reordered"
 
             old_media_ids = entry.get("old_media_ids") or []
             if old_media_ids and not entry.get("detached_old_media"):
@@ -1674,6 +2552,10 @@ def main() -> int:
     parser.add_argument("--preflight", action="store_true",
                         help="Validate auth and location readiness without delete/import side effects.")
     parser.add_argument("--delete", action="store_true", help="Run delete phase.")
+    parser.add_argument("--delete-collections", dest="do_delete_collections", action="store_true",
+                        help="Delete only managed Wayland Shopify collections.")
+    parser.add_argument("--generate-collections", dest="do_generate_collections", action="store_true",
+                        help="Create Wayland-style smart collections and auto-tag existing Shopify products.")
     parser.add_argument("--import", dest="do_import", action="store_true", help="Run import phase.")
     parser.add_argument("--update", dest="do_update", action="store_true",
                         help="Update existing products in place (matched by SKU).")
@@ -1686,20 +2568,25 @@ def main() -> int:
                         help="Resume import from this product index (after a partial run).")
     args = parser.parse_args()
 
-    if not (args.dry_run or args.preflight or args.delete or args.do_gw_refresh_cache
-            or args.do_import or args.do_update or args.do_photo_sync or args.all):
+    if not (args.dry_run or args.preflight or args.delete or args.do_delete_collections
+            or args.do_generate_collections
+            or args.do_gw_refresh_cache or args.do_import or args.do_update
+            or args.do_photo_sync or args.all):
         parser.print_help()
         return 1
 
     if args.do_gw_refresh_cache:
         invalid_refresh_combo = (
-            args.do_photo_sync or args.do_update or args.do_import or args.delete or args.all
-            or args.preflight or args.start_at != 0 or args.photo_root is not None
+            args.do_photo_sync or args.do_update or args.do_import or args.delete
+            or args.do_delete_collections or args.do_generate_collections
+            or args.all or args.preflight
+            or args.start_at != 0 or args.photo_root is not None
         )
         if invalid_refresh_combo:
             raise RuntimeError(
                 "--gw-refresh-cache must run separately and cannot be combined with "
-                "--photo-sync, --update, --import, --delete, --all, --preflight, --start-at, or --photo-root."
+                "--photo-sync, --update, --import, --delete, --delete-collections, "
+                "--generate-collections, --all, --preflight, --start-at, or --photo-root."
             )
         refresh_gw_cache(
             resources_url=GW_RESOURCES_URL,
@@ -1718,11 +2605,35 @@ def main() -> int:
         raise RuntimeError("--photo-sync cannot be combined with --preflight.")
     if args.do_photo_sync and args.start_at != 0:
         raise RuntimeError("--start-at is only valid with --import/--all, not --photo-sync.")
+    if args.do_delete_collections and (
+        args.preflight or args.delete or args.do_import or args.do_update
+        or args.do_photo_sync or args.do_generate_collections
+        or args.all or args.start_at != 0 or args.photo_root is not None
+    ):
+        raise RuntimeError(
+            "--delete-collections must run separately from preflight/delete/import/update/"
+            "photo-sync/all and cannot be combined with --start-at or --photo-root."
+        )
+    if args.do_generate_collections and (
+        args.preflight or args.delete or args.do_delete_collections or args.do_import
+        or args.do_update or args.do_photo_sync or args.all
+        or args.start_at != 0 or args.photo_root is not None
+    ):
+        raise RuntimeError(
+            "--generate-collections must run separately from preflight/delete/delete-collections/"
+            "import/update/photo-sync/all and cannot be combined with --start-at or --photo-root."
+        )
 
     # Plain --dry-run (without --update / --photo-sync) means: read sheets,
     # write preview.csv, don't contact Shopify. --update/--photo-sync dry-runs
     # are handled below since they need Shopify reads.
-    if args.dry_run and not args.do_update and not args.do_photo_sync:
+    if (
+        args.dry_run
+        and not args.do_update
+        and not args.do_photo_sync
+        and not args.do_generate_collections
+        and not args.do_delete_collections
+    ):
         prepare_products_for_import()
         log("Dry run complete. Review preview.csv, then re-run with --delete, --import, or --update.")
         return 0
@@ -1738,6 +2649,19 @@ def main() -> int:
     client = Shopify(store, token)
     if args.preflight:
         run_preflight(client, env)
+        return 0
+
+    if args.do_delete_collections:
+        phase_delete_collections(client, dry=args.dry_run)
+        return 0
+    if args.do_generate_collections:
+        phase_generate_collections(client, dry=args.dry_run)
+        if args.dry_run:
+            log(
+                "Collection generation dry-run complete. Review "
+                "collection_generation_preview.csv and collection_generation_unmatched.csv, "
+                "then re-run with --generate-collections (no --dry-run) to apply."
+            )
         return 0
 
     if args.delete and not args.all and not args.do_import:

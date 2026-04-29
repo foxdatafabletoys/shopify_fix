@@ -28,3 +28,8 @@ dist-ssr
 .env.*
 !.env.example
 .omx/
+
+# GW photo cache
+shopify_sync/gw_photo_cache/
+shopify_sync/gw_photo_cache_status.json
+shopify_sync/photo_sync_manifest.json

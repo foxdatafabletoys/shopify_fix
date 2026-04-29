@@ -37,7 +37,8 @@ You're creating a "custom app" inside your own store. This takes about 3 minutes
    - `read_products`, `write_products`
    - `read_inventory`, `write_inventory`
    - `read_locations`
-   - `write_files` for the planned photo-sync lane
+   - `read_publications`, `write_publications` if you want script-created collections published to the storefront
+   - `write_files` for the GW photo-sync lane. `--gw-refresh-cache` only refreshes the local GW cache; live `--photo-sync` is the step that writes Shopify media.
 7. Click **Save** at the top.
 8. Go to the **API credentials** tab → click **Install app** → confirm.
 9. Under **Admin API access token** click **Reveal token once**. It looks like:
@@ -63,42 +64,44 @@ SHOPIFY_LOCATION=
 
 Leave `SHOPIFY_LOCATION` blank unless you need to override the location. Blank is the supported default and the script auto-detects your store's primary location. If you do set it, the canonical example is a Shopify GID like `gid://shopify/Location/12345678901`; numeric IDs also work and are normalized internally.
 
-## Photo sync lane: `staged-local-files`
+## GW auto-download + photo sync
 
-This repo's first implemented photo-sync mode is `staged-local-files`. It is a separate GW-only lane in `shopify_sync.py` and does not reuse `--update`.
+The GW image lane uses a repo-local cache at `shopify_sync/gw_photo_cache/current/`. The operator workflow is:
 
-Hard prerequisites:
-
-- `write_files` must be granted on the custom app before photo sync can go live.
-- Photo sync is a separate `--photo-sync` lane; it does not extend `--update`.
-- The source mode for the first pass is a reviewed local asset staging root, not public image URLs.
-
-Staged-local-files workflow:
-
-1. Stage the approved Games Workshop image set locally before any Shopify writes. The local staging pass is the operator review boundary for missing folders, wrong-product images, and image ordering.
-2. Run a dry-run first:
+1. Refresh the cache from the GW Product Images area:
    ```bash
-   python3 shopify_sync.py --photo-sync --photo-root /path/to/gw-photos --dry-run
+   python3 shopify_sync.py --gw-refresh-cache
+   ```
+2. Run a dry run first:
+   ```bash
+   python3 shopify_sync.py --photo-sync --dry-run
    ```
 3. Review `photo_sync_preview.csv`, plus any appended `photo_sync_missing.tsv`, `photo_sync_ambiguous.tsv`, and `photo_sync_failures.tsv`.
 4. Apply for real:
    ```bash
-   python3 shopify_sync.py --photo-sync --photo-root /path/to/gw-photos
+   python3 shopify_sync.py --photo-sync
    ```
-5. The GraphQL sequence used by this lane is:
-   - `stagedUploadsCreate`
-   - direct `PUT` upload of each local image to the returned staged target
-   - `fileCreate`
-   - poll `fileStatus` until `READY`
-   - `fileUpdate.referencesToAdd`
-   - `productReorderMedia`
-   - `fileUpdate.referencesToRemove`
-6. Dry-run is read-only: it inspects local assets and Shopify state but performs no Shopify write mutations.
-7. Live photo sync does not remove old product-media associations until the replacement Shopify files are attached and the reorder job has completed.
 
-Current status:
+Hard prerequisites:
 
-- `--photo-sync` is implemented in the current workspace for the `staged-local-files` source mode.
+- `write_files` must be granted on the custom app before live `--photo-sync`.
+- Photo sync stays a separate GW-only lane; it does not extend `--update`.
+- First pass supports direct `.jpg`, `.jpeg`, and `.png` files plus `.zip` packs that contain those image files. Other archive types still remain out of scope.
+- Authenticated GW download is follow-up scope.
+
+Notes:
+
+- Repo-local cache path: `shopify_sync/gw_photo_cache/current/`.
+- Dry run is read-only on the Shopify side: it inspects Shopify state and the local GW cache but performs no Shopify write mutations.
+- Live photo sync only detaches old product-media associations after replacement files are attached and reordered.
+- The GraphQL sequence used by `--photo-sync` remains:
+  - `stagedUploadsCreate`
+  - direct `PUT` upload of each local image to the returned staged target
+  - `fileCreate`
+  - poll `fileStatus` until `READY`
+  - `fileUpdate.referencesToAdd`
+  - `productReorderMedia`
+  - `fileUpdate.referencesToRemove`
 - The API proof artifact for this lane is `.omx/plans/gw-shopify-photo-sync-api-proof.md`.
 - Keep the app on Shopify Admin API `2025-01` unless the proof artifact records a deliberate version bump.
 
@@ -132,6 +135,59 @@ python3 shopify_sync.py --preflight
 ```
 
 This validates Shopify auth and resolves the location without deleting or creating anything. If it fails, fix the token, app scopes, or `SHOPIFY_LOCATION`, then rerun it.
+
+## Delete all current collections
+
+If you need to wipe the existing Shopify collections before rebuilding your storefront structure, use the dedicated collection-delete lane. This deletes collections only; it does not delete products.
+
+Dry run first:
+
+```bash
+python3 shopify_sync.py --delete-collections --dry-run
+```
+
+Apply for real:
+
+```bash
+python3 shopify_sync.py --delete-collections
+```
+
+Notes:
+
+- This removes both manual and automated collections returned by Shopify.
+- Products remain in the store; they are just no longer grouped into those collections.
+- This lane must run on its own and cannot be combined with import/update/photo-sync flags.
+
+## Generate storefront collections and assign existing products
+
+This lane creates a Wayland-style smart collection set, stamps deterministic auto-collection tags onto existing Shopify products, and lets Shopify place those products into smart collections from tag rules.
+
+Dry run first:
+
+```bash
+python3 shopify_sync.py --generate-collections --dry-run
+```
+
+Apply for real:
+
+```bash
+python3 shopify_sync.py --generate-collections
+```
+
+Recommended sequence for a clean rebuild:
+
+```bash
+python3 shopify_sync.py --delete-collections
+python3 shopify_sync.py --generate-collections
+```
+
+Notes:
+
+- The dry run writes `collection_generation_preview.csv` and `collection_generation_unmatched.csv`.
+- The live run creates any missing smart collections in the configured Wayland-style set, retags existing products, and updates matching existing smart collections to the expected tag rule.
+- If a matching collection handle already exists as a manual collection, the script stops and tells you to delete or rename it first.
+- New collections are unpublished by default in Shopify, so the script attempts to publish them to the current channel. If the app is missing publication scopes, collection creation still succeeds but the collections may stay hidden on the storefront until you add `read_publications` and `write_publications`.
+- Some categories such as `Latest Releases`, `Pre-Orders`, and several board/card subtypes are best-effort heuristics based on current Shopify metadata. The lane corrects those tags when you rerun it.
 
 ## Step 7 — Live delete
 
@@ -210,6 +266,12 @@ After it finishes, open `https://<your-store>.myshopify.com/admin/products` and:
 | `requirements.txt` | Python deps. |
 | `preview.csv` | Dry-run output for `--import`: what will be sent to Shopify. |
 | `update_preview.csv` | Diff produced by `--update` (real or dry-run): per-SKU before/after for changed rows. |
+| `gw_photo_cache/current/` | Repo-local GW image cache refreshed by `--gw-refresh-cache`. Keep untracked. |
+| `photo_sync_preview.csv` | Dry-run output for `--photo-sync`: per-SKU match status and source paths. |
+| `photo_sync_manifest.json` | Resume manifest for live `--photo-sync`. Do not commit. |
+| `photo_sync_missing.tsv` | SKUs with no matching cached image set. Appended across runs. |
+| `photo_sync_ambiguous.tsv` | SKUs with ambiguous cached image sets or Shopify SKU matches. Appended across runs. |
+| `photo_sync_failures.tsv` | Live photo-sync failures. Appended across runs. |
 | `sync.log` | Append-only run log. Safe to delete. |
 | `failures.tsv` | Any failed creates with their error. Useful for retry. |
 
@@ -221,6 +283,10 @@ After it finishes, open `https://<your-store>.myshopify.com/admin/products` and:
 - **"Throttled"** in the log → fine, the script waits and retries. Just let it run.
 - **Some products fail with "Title has already been taken"** → Shopify enforces unique titles per product. Look at `failures.tsv`; usually a duplicate row in the sheet.
 - **Inventory shows 0 even though sheet has stock** → the script is probably using the wrong location. Leave `SHOPIFY_LOCATION` blank for the primary location, or set a valid override if your stock lives elsewhere.
+- **`--gw-refresh-cache` only supports direct image files from the GW Product Images area** → first pass is limited to `.jpg`, `.jpeg`, and `.png`. Ignore ZIPs, PDFs, WEBP, GIF, TIFF, and HTML pages.
+- **`photo_sync_missing.tsv`, `photo_sync_ambiguous.tsv`, and `photo_sync_failures.tsv` keep appending** → clear or archive them before a fresh review pass if you do not want stale rows mixed in.
+- **`--photo-sync` is SKU-sensitive** → exact product-code/SKU matches are preferred; fallback title-slug matching can become ambiguous.
+- **`--photo-sync` runs separately** → do not combine it with `--delete`, `--import`, `--update`, or `--all`.
 
 ## Want this scheduled?
 

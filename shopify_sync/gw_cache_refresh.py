@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
 import shutil
 import tempfile
+import time
+import zipfile
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -16,6 +19,8 @@ import requests
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 ARCHIVE_SUFFIXES = {".zip", ".7z", ".rar", ".tar", ".gz"}
+EXTRACTABLE_ARCHIVE_SUFFIXES = {".zip"}
+FETCH_RETRY_DELAYS_SECONDS = (1.0, 2.0, 4.0)
 GENERIC_LABELS = {
     "download",
     "download jpg",
@@ -48,6 +53,7 @@ class ImageTarget:
 class ResourcePack:
     label: str
     images: list[ImageTarget]
+    archives: list[str]
 
 
 class AnchorParser(HTMLParser):
@@ -141,14 +147,40 @@ def is_html_like_url(url: str) -> bool:
     return suffix in {"", ".html", ".htm", ".php", ".asp", ".aspx"}
 
 
+def same_host(url_a: str, url_b: str) -> bool:
+    return urlparse(url_a).netloc.lower() == urlparse(url_b).netloc.lower()
+
+
 def parse_anchors(html: str) -> list[AnchorRecord]:
     parser = AnchorParser()
     parser.feed(html)
     return parser.anchors
 
 
+def _get_with_retries(
+    session: requests.Session,
+    url: str,
+    *,
+    timeout: int,
+    action: str,
+):
+    last_error: Exception | None = None
+    attempts = len(FETCH_RETRY_DELAYS_SECONDS) + 1
+    for attempt in range(attempts):
+        try:
+            return session.get(url, timeout=timeout)
+        except requests.exceptions.RequestException as exc:
+            last_error = exc
+            if attempt >= attempts - 1:
+                break
+            time.sleep(FETCH_RETRY_DELAYS_SECONDS[attempt])
+    if last_error is not None:
+        raise RuntimeError(f"Network error while {action} {url}: {last_error}") from last_error
+    raise RuntimeError(f"Network error while {action} {url}")
+
+
 def fetch_text(session: requests.Session, url: str) -> str:
-    response = session.get(url, timeout=60)
+    response = _get_with_retries(session, url, timeout=60, action="fetching")
     status_code = getattr(response, "status_code", 200)
     if status_code >= 400:
         raise RuntimeError(f"HTTP {status_code} while fetching {url}")
@@ -156,7 +188,7 @@ def fetch_text(session: requests.Session, url: str) -> str:
 
 
 def fetch_binary(session: requests.Session, url: str) -> tuple[bytes, str]:
-    response = session.get(url, timeout=120)
+    response = _get_with_retries(session, url, timeout=120, action="downloading")
     status_code = getattr(response, "status_code", 200)
     if status_code >= 400:
         raise RuntimeError(f"HTTP {status_code} while downloading {url}")
@@ -219,6 +251,35 @@ def build_flattened_filename(url: str, final_url: str, used_names: set[str]) -> 
     return unique_filename(f"{candidate}{suffix}", used_names)
 
 
+def build_flattened_archive_member_name(member_name: str, used_names: set[str]) -> str:
+    path = Path(member_name)
+    suffix = path.suffix.lower()
+    parts = [normalize_slug(part) for part in path.parts[:-1] if normalize_slug(part)]
+    stem = normalize_slug(path.stem) or "image"
+    candidate = stem
+    if parts:
+        candidate = f"{parts[-1]}-{stem}"
+    return unique_filename(f"{candidate}{suffix}", used_names)
+
+
+def derive_archive_asset_group_label(member_name: str, fallback_label: str) -> str:
+    stem = Path(member_name).stem
+    stem = re.sub(r"^(?:__?MACOSX[-_/]*)+", "", stem, flags=re.IGNORECASE)
+    stem = stem.lstrip("-_ ")
+    if not stem:
+        return fallback_label
+    code_match = re.search(r"(?<!\d)(\d{8,14})(?!\d)", stem)
+    if not code_match:
+        return fallback_label
+    product_code = code_match.group(1)
+    remainder = stem[code_match.end():].lstrip("-_ ")
+    remainder = re.sub(r"[-_ ]?\d{1,3}$", "", remainder)
+    remainder_slug = normalize_slug(remainder)
+    if remainder_slug:
+        return f"{product_code}-{remainder_slug}"
+    return product_code
+
+
 def compute_tree_fingerprint(root: Path) -> str:
     digest = hashlib.sha1()
     for path in sorted(root.rglob("*")):
@@ -251,11 +312,24 @@ def discover_resource_packs(
     packs: list[ResourcePack] = []
     seen_urls: set[str] = set()
     found_archive = False
+    found_extractable_archive = False
 
     for anchor in anchors:
         resolved = urljoin(resources_url, anchor.href)
         if is_archive_url(resolved):
             found_archive = True
+            if resolved in seen_urls:
+                continue
+            seen_urls.add(resolved)
+            if Path(urlparse(resolved).path).suffix.lower() in EXTRACTABLE_ARCHIVE_SUFFIXES:
+                found_extractable_archive = True
+            packs.append(
+                ResourcePack(
+                    label=choose_anchor_label(anchor, resolved),
+                    images=[],
+                    archives=[resolved],
+                )
+            )
             continue
         if is_supported_image_url(resolved):
             label = choose_anchor_label(anchor, resolved)
@@ -268,19 +342,32 @@ def discover_resource_packs(
                             filename=Path(urlparse(resolved).path).name,
                         )
                     ],
+                    archives=[],
                 )
             )
             continue
         if not is_html_like_url(resolved):
             continue
+        if not same_host(resources_url, resolved):
+            continue
 
-        inner_html = fetch_text(session, resolved)
+        try:
+            inner_html = fetch_text(session, resolved)
+        except RuntimeError:
+            continue
         inner_anchors = parse_anchors(inner_html)
         image_targets: list[ImageTarget] = []
+        archive_targets: list[str] = []
         for inner_anchor in inner_anchors:
             inner_resolved = urljoin(resolved, inner_anchor.href)
             if is_archive_url(inner_resolved):
                 found_archive = True
+                if inner_resolved in seen_urls:
+                    continue
+                seen_urls.add(inner_resolved)
+                archive_targets.append(inner_resolved)
+                if Path(urlparse(inner_resolved).path).suffix.lower() in EXTRACTABLE_ARCHIVE_SUFFIXES:
+                    found_extractable_archive = True
                 continue
             if not is_supported_image_url(inner_resolved):
                 continue
@@ -293,14 +380,55 @@ def discover_resource_packs(
                     filename=Path(urlparse(inner_resolved).path).name,
                 )
             )
-        if image_targets:
-            packs.append(ResourcePack(label=choose_anchor_label(anchor, resolved), images=image_targets))
+        if image_targets or archive_targets:
+            packs.append(
+                ResourcePack(
+                    label=choose_anchor_label(anchor, resolved),
+                    images=image_targets,
+                    archives=archive_targets,
+                )
+            )
 
+    if not packs and found_extractable_archive:
+        raise RuntimeError("GW Product Images area exposed extractable archives, but no usable archive packs were discovered.")
     if not packs and found_archive:
-        raise RuntimeError("GW Product Images area exposed archive downloads only; direct-image support is required in v1.")
+        raise RuntimeError("GW Product Images area exposed archives only, but none were ZIP files supported by v1.")
     if not packs:
-        raise RuntimeError("No direct JPG/JPEG/PNG resources were discovered from the GW Product Images area.")
+        raise RuntimeError("No usable GW Product Images resources were discovered.")
     return packs, "Product Images"
+
+
+def extract_images_from_zip(
+    archive_bytes: bytes,
+    *,
+    archive_label: str,
+    staging_root: Path,
+    used_pack_names: dict[str, int],
+    pack_dirs_by_label: dict[str, Path],
+    used_filenames_by_dir: dict[Path, set[str]],
+) -> int:
+    extracted = 0
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+        for member in zf.infolist():
+            if member.is_dir():
+                continue
+            suffix = Path(member.filename).suffix.lower()
+            if suffix not in IMAGE_SUFFIXES:
+                continue
+            group_label = derive_archive_asset_group_label(member.filename, archive_label)
+            pack_dir = pack_dirs_by_label.get(group_label)
+            if pack_dir is None:
+                pack_dir = staging_root / unique_pack_dirname(group_label, used_pack_names)
+                pack_dir.mkdir(parents=True, exist_ok=True)
+                pack_dirs_by_label[group_label] = pack_dir
+            used_filenames = used_filenames_by_dir.setdefault(pack_dir, set())
+            filename = build_flattened_archive_member_name(member.filename, used_filenames)
+            with zf.open(member) as source:
+                (pack_dir / filename).write_bytes(source.read())
+            extracted += 1
+    if extracted == 0:
+        raise RuntimeError(f"ZIP pack '{archive_label}' did not contain any JPG/JPEG/PNG files.")
+    return extracted
 
 
 def publish_staging_cache(staging_root: Path, current_root: Path) -> None:
@@ -333,21 +461,28 @@ def refresh_gw_cache(
     session = session or requests.Session()
     current_root = cache_root / "current"
     staging_root = cache_root / "_staging"
-    cache_root.mkdir(parents=True, exist_ok=True)
 
     packs, source_marker = discover_resource_packs(resources_url, session)
     pack_count = len(packs)
-    image_count = sum(len(pack.images) for pack in packs)
+    image_target_count = sum(len(pack.images) for pack in packs)
+    archive_target_count = sum(len(pack.archives) for pack in packs)
 
     if dry:
-        logger(f"GW cache refresh dry-run: discovered {pack_count} packs / {image_count} images from {resources_url}")
+        logger(
+            "GW cache refresh dry-run: discovered "
+            f"{pack_count} packs / {image_target_count} direct images / {archive_target_count} archives "
+            f"from {resources_url}"
+        )
         return {
             "status": "dry_run",
             "pack_count": pack_count,
-            "image_count": image_count,
+            "image_count": image_target_count,
+            "archive_count": archive_target_count,
             "source_url": resources_url,
             "source_marker": source_marker,
         }
+
+    cache_root.mkdir(parents=True, exist_ok=True)
 
     previous = load_status(status_path)
     now = timestamp_now()
@@ -359,7 +494,8 @@ def refresh_gw_cache(
         "source_url": resources_url,
         "source_marker": source_marker,
         "pack_count": pack_count,
-        "image_count": image_count,
+        "image_count": image_target_count,
+        "archive_count": archive_target_count,
         "published_cache_path": str(current_root),
         "staging_cache_path": str(staging_root),
     }
@@ -371,28 +507,57 @@ def refresh_gw_cache(
 
     try:
         used_pack_names: dict[str, int] = {}
+        pack_dirs_by_label: dict[str, Path] = {}
+        used_filenames_by_dir: dict[Path, set[str]] = {}
         for pack in packs:
-            pack_dir = staging_root / unique_pack_dirname(pack.label, used_pack_names)
-            pack_dir.mkdir(parents=True, exist_ok=True)
-            used_filenames: set[str] = set()
+            pack_dir = pack_dirs_by_label.get(pack.label)
+            used_filenames: set[str] | None = None
             for image in pack.images:
+                if pack_dir is None:
+                    pack_dir = staging_root / unique_pack_dirname(pack.label, used_pack_names)
+                    pack_dir.mkdir(parents=True, exist_ok=True)
+                    pack_dirs_by_label[pack.label] = pack_dir
+                if used_filenames is None:
+                    used_filenames = used_filenames_by_dir.setdefault(pack_dir, set())
                 content, final_url = fetch_binary(session, image.url)
                 filename = build_flattened_filename(image.url, final_url, used_filenames)
                 (pack_dir / filename).write_bytes(content)
+            for archive_url in pack.archives:
+                archive_suffix = Path(urlparse(archive_url).path).suffix.lower()
+                if archive_suffix not in EXTRACTABLE_ARCHIVE_SUFFIXES:
+                    raise RuntimeError(f"Archive type '{archive_suffix}' is not supported for {archive_url}")
+                archive_bytes, final_url = fetch_binary(session, archive_url)
+                final_suffix = Path(urlparse(final_url or archive_url).path).suffix.lower()
+                if final_suffix not in EXTRACTABLE_ARCHIVE_SUFFIXES:
+                    raise RuntimeError(f"Archive type '{archive_suffix}' is not supported for {archive_url}")
+                extract_images_from_zip(
+                    archive_bytes,
+                    archive_label=pack.label,
+                    staging_root=staging_root,
+                    used_pack_names=used_pack_names,
+                    pack_dirs_by_label=pack_dirs_by_label,
+                    used_filenames_by_dir=used_filenames_by_dir,
+                )
 
         publish_staging_cache(staging_root, current_root)
         finished_at = timestamp_now()
+        published_image_count = sum(1 for path in current_root.rglob("*") if path.is_file())
         status.update(
             {
                 "status": "published",
                 "finished_at": finished_at,
                 "last_success_at": finished_at,
                 "failure_reason": "",
+                "image_count": published_image_count,
                 "published_fingerprint": compute_tree_fingerprint(current_root),
             }
         )
         save_status(status_path, status)
-        logger(f"GW cache refresh published: {pack_count} packs / {image_count} images")
+        logger(
+            "GW cache refresh published: "
+            f"{pack_count} packs / {published_image_count} extracted images "
+            f"from {image_target_count} direct files and {archive_target_count} archives"
+        )
         return status
     except Exception as exc:
         finished_at = timestamp_now()
