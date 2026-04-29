@@ -156,6 +156,29 @@ class ShopifyGraphQLTests(unittest.TestCase):
         self.assertEqual(variables, {"id": "gid://shopify/MediaImage/1"})
         sleep.assert_called_once_with(2)
 
+    def test_reorder_product_media_encodes_positions_as_strings(self):
+        self.client.gql = mock.Mock(return_value={
+            "productReorderMedia": {
+                "job": {"id": None, "done": True},
+                "mediaUserErrors": [],
+            }
+        })
+
+        self.client.reorder_product_media(
+            "gid://shopify/Product/1",
+            ["gid://shopify/MediaImage/1", "gid://shopify/MediaImage/2"],
+        )
+
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("productReorderMedia", query)
+        self.assertEqual(
+            variables["moves"],
+            [
+                {"id": "gid://shopify/MediaImage/1", "newPosition": "0"},
+                {"id": "gid://shopify/MediaImage/2", "newPosition": "1"},
+            ],
+        )
+
 
 class LocationResolutionTests(unittest.TestCase):
     def test_normalize_location_id_accepts_numeric_value(self):
@@ -1154,6 +1177,22 @@ class PhotoSyncPhaseTests(unittest.TestCase):
             "sku": self.product.sku,
             "media_ids": ["gid://shopify/MediaImage/old1", "gid://shopify/MediaImage/old2"],
         }
+        self.existing_files = [
+            shopify_sync.ShopifyImageFile(
+                id="gid://shopify/MediaImage/new1",
+                filename="99120109017_cover_a.jpg",
+                product_code=self.product.sku,
+                title_slug="armageddon-battalion-deathwatch",
+                file_status="READY",
+            ),
+            shopify_sync.ShopifyImageFile(
+                id="gid://shopify/MediaImage/new2",
+                filename="99120109017_back_b.jpg",
+                product_code=self.product.sku,
+                title_slug="armageddon-battalion-deathwatch",
+                file_status="READY",
+            ),
+        ]
 
     def _make_photo_root(self) -> Path:
         temp_dir = tempfile.TemporaryDirectory()
@@ -1188,6 +1227,27 @@ class PhotoSyncPhaseTests(unittest.TestCase):
 
         self.client.staged_uploads_create.assert_not_called()
         self.client.file_create.assert_not_called()
+        self.client.attach_files_to_product.assert_not_called()
+        self.client.reorder_product_media.assert_not_called()
+        self.client.detach_files_from_product.assert_not_called()
+
+    def test_photo_sync_existing_files_dry_run_writes_preview_and_makes_no_writes(self):
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+        self.client.iter_shopify_image_files_for_photo_sync.return_value = iter(self.existing_files)
+
+        with tempfile.TemporaryDirectory() as tmp, self._patched_photo_sync_outputs(Path(tmp)):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [self.product],
+                None,
+                dry=True,
+                manifest_path=Path(tmp) / "manifest.json",
+                source_mode=shopify_sync.PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING,
+            )
+
+        self.client.staged_uploads_create.assert_not_called()
+        self.client.file_create.assert_not_called()
+        self.client.wait_for_files_ready.assert_not_called()
         self.client.attach_files_to_product.assert_not_called()
         self.client.reorder_product_media.assert_not_called()
         self.client.detach_files_from_product.assert_not_called()
@@ -1233,6 +1293,41 @@ class PhotoSyncPhaseTests(unittest.TestCase):
         )
         manifest = json.loads((photo_root / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest[self.product.sku]["state"], "completed")
+
+    def test_photo_sync_existing_files_live_run_attaches_without_uploading(self):
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+        self.client.iter_shopify_image_files_for_photo_sync.return_value = iter(self.existing_files)
+
+        calls = []
+        self.client.attach_files_to_product.side_effect = lambda ids, pid: calls.append(("attach", tuple(ids), pid))
+        self.client.reorder_product_media.side_effect = lambda pid, ids: calls.append(("reorder", pid, tuple(ids)))
+        self.client.detach_files_from_product.side_effect = lambda ids, pid: calls.append(("detach", tuple(ids), pid))
+
+        with tempfile.TemporaryDirectory() as tmp, self._patched_photo_sync_outputs(Path(tmp)):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [self.product],
+                None,
+                dry=False,
+                manifest_path=Path(tmp) / "manifest.json",
+                source_mode=shopify_sync.PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING,
+            )
+
+            manifest = json.loads((Path(tmp) / "manifest.json").read_text(encoding="utf-8"))
+
+        self.client.staged_uploads_create.assert_not_called()
+        self.client.file_create.assert_not_called()
+        self.client.wait_for_files_ready.assert_not_called()
+        self.assertEqual(
+            calls,
+            [
+                ("attach", ("gid://shopify/MediaImage/new2", "gid://shopify/MediaImage/new1"), "gid://shopify/Product/1"),
+                ("reorder", "gid://shopify/Product/1", ("gid://shopify/MediaImage/new2", "gid://shopify/MediaImage/new1")),
+                ("detach", ("gid://shopify/MediaImage/old1", "gid://shopify/MediaImage/old2"), "gid://shopify/Product/1"),
+            ],
+        )
+        self.assertEqual(manifest[self.product.sku]["state"], "completed")
+        self.assertEqual(manifest[self.product.sku]["source_mode"], shopify_sync.PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING)
 
     def test_photo_sync_skips_duplicate_shopify_skus_as_ambiguous(self):
         photo_root = self._make_photo_root()
@@ -1390,7 +1485,13 @@ class PhotoSyncMainFlowTests(unittest.TestCase):
                 result = shopify_sync.main()
 
         self.assertEqual(result, 0)
-        phase_photo_sync.assert_called_once_with(client, products, cache_root, dry=False)
+        phase_photo_sync.assert_called_once_with(
+            client,
+            products,
+            cache_root,
+            dry=False,
+            source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+        )
 
     def test_photo_sync_without_photo_root_errors_when_default_cache_missing(self):
         client = mock.Mock()
@@ -1429,11 +1530,47 @@ class PhotoSyncMainFlowTests(unittest.TestCase):
                 result = shopify_sync.main()
 
         self.assertEqual(result, 0)
-        phase_photo_sync.assert_called_once_with(client, products, photo_root, dry=False)
+        phase_photo_sync.assert_called_once_with(
+            client,
+            products,
+            photo_root,
+            dry=False,
+            source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+        )
+
+    def test_photo_sync_existing_files_routes_without_photo_root(self):
+        client = mock.Mock()
+        products = [mock.sentinel.product]
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync-existing-files"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.build_gw_product_list", return_value=products), \
+             mock.patch("shopify_sync.run_photo_sync_preflight"), \
+             mock.patch("shopify_sync.phase_photo_sync") as phase_photo_sync:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_photo_sync.assert_called_once_with(
+            client,
+            products,
+            None,
+            dry=False,
+            source_mode=shopify_sync.PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING,
+        )
 
     def test_photo_sync_rejects_preflight_combination(self):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync", "--preflight"]):
             with self.assertRaisesRegex(RuntimeError, "--photo-sync cannot be combined with --preflight"):
+                shopify_sync.main()
+
+    def test_photo_sync_existing_files_rejects_photo_root_combination(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync-existing-files", "--photo-root", tmp]):
+            with self.assertRaisesRegex(RuntimeError, "does not use --photo-root"):
                 shopify_sync.main()
 
 

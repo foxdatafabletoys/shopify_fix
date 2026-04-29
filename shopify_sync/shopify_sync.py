@@ -95,6 +95,8 @@ GW_PHOTO_CACHE_STAGING = GW_PHOTO_CACHE_ROOT / "_staging"
 GW_PHOTO_CACHE_STATUS_JSON = HERE / "gw_photo_cache_status.json"
 LOG_FILE = HERE / "sync.log"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+PHOTO_SYNC_SOURCE_STAGED_LOCAL = "staged-local-files"
+PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING = "shopify-existing-files"
 LATEST_GW_RELEASE_LIMIT = 60
 AUTO_COLLECTION_TAG_PREFIX = "AUTO_COLLECTION::"
 
@@ -338,6 +340,19 @@ class PhotoAssetSet:
         return digest.hexdigest()
 
 
+@dataclass
+class ShopifyImageFile:
+    id: str
+    alt: str = ""
+    filename: str = ""
+    product_code: str = ""
+    title_slug: str = ""
+    file_status: str = ""
+
+    def sort_key(self) -> tuple[str, str]:
+        return (self.filename.lower(), self.id)
+
+
 # ---------------------------------------------------------------------------
 # Spreadsheet parsing
 # ---------------------------------------------------------------------------
@@ -411,6 +426,32 @@ def _extract_title_slug(value: str) -> str:
         _, _, tail = base.partition(code)
         base = tail.lstrip(" -_")
     return _normalize_slug(base)
+
+
+def _filename_from_url(url: str) -> str:
+    path = Path((url or "").split("?", 1)[0])
+    return path.name
+
+
+def _build_shopify_image_file(
+    *,
+    file_id: str,
+    alt: str,
+    file_status: str,
+    original_source_url: str,
+    image_url: str,
+) -> ShopifyImageFile:
+    filename = _filename_from_url(original_source_url) or _filename_from_url(image_url)
+    product_code = _extract_product_code(filename) or _extract_product_code(alt)
+    title_slug = _extract_title_slug(filename) or _normalize_slug(alt)
+    return ShopifyImageFile(
+        id=file_id,
+        alt=alt,
+        filename=filename,
+        product_code=product_code,
+        title_slug=title_slug,
+        file_status=file_status,
+    )
 
 
 def parse_gw(path: Path) -> list[Product]:
@@ -692,6 +733,25 @@ def build_photo_indexes(
     return by_code, by_slug
 
 
+def build_shopify_file_indexes(
+    files: list[ShopifyImageFile],
+) -> tuple[dict[str, list[ShopifyImageFile]], dict[str, list[ShopifyImageFile]]]:
+    by_code: dict[str, list[ShopifyImageFile]] = {}
+    by_slug: dict[str, list[ShopifyImageFile]] = {}
+    for file in files:
+        if file.file_status and file.file_status != "READY":
+            continue
+        if file.product_code:
+            by_code.setdefault(file.product_code, []).append(file)
+        if file.title_slug:
+            by_slug.setdefault(file.title_slug, []).append(file)
+    for bucket in by_code.values():
+        bucket.sort(key=lambda item: item.sort_key())
+    for bucket in by_slug.values():
+        bucket.sort(key=lambda item: item.sort_key())
+    return by_code, by_slug
+
+
 def resolve_photo_asset(
     product: Product,
     by_code: dict[str, list[PhotoAssetSet]],
@@ -710,6 +770,22 @@ def resolve_photo_asset(
     if len(slug_matches) > 1:
         return "skip", "ambiguous", None, "multiple title-slug matches"
     return "skip", "missing", None, "no matching photo asset set"
+
+
+def resolve_existing_shopify_files(
+    product: Product,
+    by_code: dict[str, list[ShopifyImageFile]],
+    by_slug: dict[str, list[ShopifyImageFile]],
+) -> tuple[str, str, list[ShopifyImageFile], str]:
+    exact_matches = by_code.get(product.sku, [])
+    if exact_matches:
+        return "replace", "exact", exact_matches, ""
+
+    slug = _normalize_slug(product.title)
+    slug_matches = by_slug.get(slug, [])
+    if slug_matches:
+        return "replace", "fallback", slug_matches, ""
+    return "skip", "missing", [], "no matching Shopify image files"
 
 
 def load_photo_manifest(path: Path = PHOTO_SYNC_MANIFEST_JSON) -> dict[str, Any]:
@@ -751,21 +827,32 @@ def build_photo_sync_preview_row(
     product: Product,
     status: str,
     match_type: str,
-    photo_root: Path,
+    source_mode: str,
+    photo_root: Path | None = None,
     asset_set: PhotoAssetSet | None = None,
+    existing_files: list[ShopifyImageFile] | None = None,
     reason: str = "",
 ) -> dict[str, Any]:
     image_paths = asset_set.image_paths if asset_set else []
+    existing_files = existing_files or []
+    if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL:
+        source_paths = "|".join(str(path.relative_to(photo_root)) for path in image_paths) if photo_root else ""
+        asset_label = asset_set.label if asset_set else ""
+        image_count = len(image_paths)
+    else:
+        source_paths = "|".join(file.filename or file.id for file in existing_files)
+        asset_label = "|".join(file.filename or file.id for file in existing_files)
+        image_count = len(existing_files)
     return {
         "sku": product.sku,
         "title": product.title,
         "status": status,
         "match_type": match_type,
-        "asset_label": asset_set.label if asset_set else "",
-        "image_count": len(image_paths),
+        "asset_label": asset_label,
+        "image_count": image_count,
         "reason": reason,
-        "source_mode": "staged-local-files",
-        "source_paths": "|".join(str(path.relative_to(photo_root)) for path in image_paths),
+        "source_mode": source_mode,
+        "source_paths": source_paths,
     }
 
 
@@ -1771,6 +1858,48 @@ class Shopify:
                 break
             cursor = data["products"]["pageInfo"]["endCursor"]
 
+    def iter_shopify_image_files_for_photo_sync(self) -> Iterable[ShopifyImageFile]:
+        cursor = None
+        page_q = """
+            query($cursor: String) {
+              files(first: 100, after: $cursor, query: "media_type:IMAGE") {
+                edges {
+                  node {
+                    ... on MediaImage {
+                      id
+                      alt
+                      fileStatus
+                      image {
+                        url
+                      }
+                      originalSource {
+                        url
+                      }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"cursor": cursor})
+            for edge in data["files"]["edges"]:
+                node = edge.get("node") or {}
+                file_id = node.get("id")
+                if not file_id:
+                    continue
+                yield _build_shopify_image_file(
+                    file_id=file_id,
+                    alt=node.get("alt") or "",
+                    file_status=node.get("fileStatus") or "",
+                    original_source_url=((node.get("originalSource") or {}).get("url") or ""),
+                    image_url=((node.get("image") or {}).get("url") or ""),
+                )
+            if not data["files"]["pageInfo"]["hasNextPage"]:
+                break
+            cursor = data["files"]["pageInfo"]["endCursor"]
+
     def staged_uploads_create(self, image_paths: list[Path]) -> list[dict[str, Any]]:
         inputs = []
         for path in image_paths:
@@ -1915,7 +2044,7 @@ class Shopify:
     def reorder_product_media(self, product_id: str, media_ids: list[str]) -> None:
         if not media_ids:
             return
-        moves = [{"id": media_id, "newPosition": index} for index, media_id in enumerate(media_ids)]
+        moves = [{"id": media_id, "newPosition": str(index)} for index, media_id in enumerate(media_ids)]
         q = """
             mutation($id: ID!, $moves: [MoveInput!]!) {
               productReorderMedia(id: $id, moves: $moves) {
@@ -2318,13 +2447,28 @@ def run_photo_sync_preflight(client: Shopify) -> None:
 def phase_photo_sync(
     client: Shopify,
     products: list[Product],
-    photo_root: Path,
+    photo_root: Path | None,
     dry: bool,
     manifest_path: Path = PHOTO_SYNC_MANIFEST_JSON,
+    source_mode: str = PHOTO_SYNC_SOURCE_STAGED_LOCAL,
 ) -> None:
-    log("=== PHOTO SYNC phase: matching GW products to staged local image folders ===")
-    asset_sets = discover_photo_asset_sets(photo_root)
-    by_code, by_slug = build_photo_indexes(asset_sets)
+    if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL:
+        log("=== PHOTO SYNC phase: matching GW products to staged local image folders ===")
+        if photo_root is None:
+            raise RuntimeError("Photo sync requires a local photo root.")
+        asset_sets = discover_photo_asset_sets(photo_root)
+        asset_sets_by_code, asset_sets_by_slug = build_photo_indexes(asset_sets)
+        shopify_files_by_code: dict[str, list[ShopifyImageFile]] = {}
+        shopify_files_by_slug: dict[str, list[ShopifyImageFile]] = {}
+    elif source_mode == PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING:
+        log("=== PHOTO SYNC phase: matching GW products to existing Shopify Files ===")
+        image_files = list(client.iter_shopify_image_files_for_photo_sync())
+        shopify_files_by_code, shopify_files_by_slug = build_shopify_file_indexes(image_files)
+        log(f"  indexed {len(image_files)} Shopify image files for attachment matching")
+        asset_sets_by_code = {}
+        asset_sets_by_slug = {}
+    else:
+        raise RuntimeError(f"Unsupported photo sync source mode: {source_mode}")
     manifest = load_photo_manifest(manifest_path)
 
     by_sku: dict[str, dict[str, Any]] = {}
@@ -2351,6 +2495,7 @@ def phase_photo_sync(
                 product,
                 status="skip_missing_shopify",
                 match_type="",
+                source_mode=source_mode,
                 photo_root=photo_root,
                 reason=reason,
             ))
@@ -2362,6 +2507,7 @@ def phase_photo_sync(
                 product,
                 status="skip_ambiguous_shopify",
                 match_type="ambiguous",
+                source_mode=source_mode,
                 photo_root=photo_root,
                 reason=reason,
             ))
@@ -2373,40 +2519,71 @@ def phase_photo_sync(
                 product,
                 status="skip_non_gw",
                 match_type="",
+                source_mode=source_mode,
                 photo_root=photo_root,
                 reason=reason,
             ))
             continue
 
-        status, match_type, asset_set, reason = resolve_photo_asset(product, by_code, by_slug)
+        asset_set: PhotoAssetSet | None = None
+        matched_files: list[ShopifyImageFile] = []
+        if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL:
+            status, match_type, asset_set, reason = resolve_photo_asset(
+                product,
+                asset_sets_by_code,
+                asset_sets_by_slug,
+            )
+        else:
+            status, match_type, matched_files, reason = resolve_existing_shopify_files(
+                product,
+                shopify_files_by_code,
+                shopify_files_by_slug,
+            )
+
         preview_rows.append(build_photo_sync_preview_row(
             product,
             status=status,
             match_type=match_type,
+            source_mode=source_mode,
             photo_root=photo_root,
             asset_set=asset_set,
+            existing_files=matched_files,
             reason=reason,
         ))
-        if not asset_set:
+        if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL and not asset_set:
             if match_type == "ambiguous":
                 ambiguous_rows.append((product.sku, product.title, reason))
             else:
                 missing_rows.append((product.sku, product.title, reason))
             continue
+        if source_mode == PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING and not matched_files:
+            missing_rows.append((product.sku, product.title, reason))
+            continue
         if dry:
             continue
 
-        fingerprint = asset_set.fingerprint()
+        if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL:
+            assert asset_set is not None
+            fingerprint = asset_set.fingerprint()
+            source_paths = [str(path) for path in asset_set.image_paths]
+        else:
+            fingerprint = hashlib.sha1(
+                "|".join(f"{file.id}:{file.filename}:{file.file_status}" for file in matched_files).encode("utf-8")
+            ).hexdigest()
+            source_paths = [file.filename or file.id for file in matched_files]
         prior_entry = dict(manifest.get(product.sku, {}))
         prior_state = prior_entry.get("state")
+        prior_source_mode = prior_entry.get("source_mode") or PHOTO_SYNC_SOURCE_STAGED_LOCAL
         reset_resume_state = (
             prior_entry.get("asset_fingerprint") != fingerprint
             or prior_entry.get("product_id") != existing["product_id"]
+            or prior_source_mode != source_mode
         )
         if (
             prior_state == "completed"
             and prior_entry.get("asset_fingerprint") == fingerprint
             and prior_entry.get("product_id") == existing["product_id"]
+            and prior_source_mode == source_mode
         ):
             log(f"  resume: skipping already-synced photo set for {product.sku}")
             continue
@@ -2426,49 +2603,58 @@ def phase_photo_sync(
                 sku=product.sku,
                 state="preparing",
                 product_id=existing["product_id"],
-                source_mode="staged-local-files",
-                asset_label=asset_set.label,
+                source_mode=source_mode,
+                asset_label=asset_set.label if asset_set else "|".join(file.filename or file.id for file in matched_files),
                 asset_fingerprint=fingerprint,
                 old_media_ids=old_media_ids,
                 detached_old_media=False,
                 new_file_ids=file_ids,
                 error="",
-                source_paths=[str(path) for path in asset_set.image_paths],
+                source_paths=source_paths,
             )
 
             if (
                 not file_ids
                 or effective_prior_state == "failed"
             ):
-                staged_targets = client.staged_uploads_create(asset_set.image_paths)
-                if len(staged_targets) != len(asset_set.image_paths):
-                    raise RuntimeError(
-                        "stagedUploadsCreate returned an unexpected number of targets: "
-                        f"expected {len(asset_set.image_paths)}, got {len(staged_targets)}"
-                    )
-                resource_urls = [
-                    client.upload_file_to_staged_target(path, target)
-                    for path, target in zip(asset_set.image_paths, staged_targets)
-                ]
-                created_files = client.file_create(resource_urls, product.title)
-                file_ids = [item["id"] for item in created_files]
+                if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL:
+                    assert asset_set is not None
+                    staged_targets = client.staged_uploads_create(asset_set.image_paths)
+                    if len(staged_targets) != len(asset_set.image_paths):
+                        raise RuntimeError(
+                            "stagedUploadsCreate returned an unexpected number of targets: "
+                            f"expected {len(asset_set.image_paths)}, got {len(staged_targets)}"
+                        )
+                    resource_urls = [
+                        client.upload_file_to_staged_target(path, target)
+                        for path, target in zip(asset_set.image_paths, staged_targets)
+                    ]
+                    created_files = client.file_create(resource_urls, product.title)
+                    file_ids = [item["id"] for item in created_files]
+                else:
+                    file_ids = [file.id for file in matched_files]
                 entry = update_and_save_photo_manifest_entry(
                     manifest,
                     manifest_path,
                     sku=product.sku,
-                    state="files_created",
+                    state="files_created" if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL else "files_resolved",
                     new_file_ids=file_ids,
+                    old_media_ids=[media_id for media_id in old_media_ids if media_id not in set(file_ids)],
                 )
+                old_media_ids = entry.get("old_media_ids") or []
 
-            if effective_prior_state not in {"files_ready", "associated", "reordered", "completed"}:
-                client.wait_for_files_ready(file_ids)
-                entry = update_and_save_photo_manifest_entry(
-                    manifest,
-                    manifest_path,
-                    sku=product.sku,
-                    state="files_ready",
-                )
-                effective_prior_state = "files_ready"
+            if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL:
+                if effective_prior_state not in {"files_ready", "associated", "reordered", "completed"}:
+                    client.wait_for_files_ready(file_ids)
+                    entry = update_and_save_photo_manifest_entry(
+                        manifest,
+                        manifest_path,
+                        sku=product.sku,
+                        state="files_ready",
+                    )
+                    effective_prior_state = "files_ready"
+            else:
+                effective_prior_state = effective_prior_state or "files_ready"
 
             if effective_prior_state not in {"associated", "reordered", "completed"}:
                 client.attach_files_to_product(file_ids, existing["product_id"])
@@ -2561,6 +2747,8 @@ def main() -> int:
                         help="Update existing products in place (matched by SKU).")
     parser.add_argument("--photo-sync", dest="do_photo_sync", action="store_true",
                         help="Replace GW product media from the repo-local cache or an explicit local photo root.")
+    parser.add_argument("--photo-sync-existing-files", dest="do_photo_sync_existing_files", action="store_true",
+                        help="Attach matching existing Shopify Files to GW products without uploading new media.")
     parser.add_argument("--photo-root", type=Path,
                         help="Root folder containing staged GW image folders/files for --photo-sync.")
     parser.add_argument("--all", action="store_true", help="Run delete then import.")
@@ -2571,13 +2759,13 @@ def main() -> int:
     if not (args.dry_run or args.preflight or args.delete or args.do_delete_collections
             or args.do_generate_collections
             or args.do_gw_refresh_cache or args.do_import or args.do_update
-            or args.do_photo_sync or args.all):
+            or args.do_photo_sync or args.do_photo_sync_existing_files or args.all):
         parser.print_help()
         return 1
 
     if args.do_gw_refresh_cache:
         invalid_refresh_combo = (
-            args.do_photo_sync or args.do_update or args.do_import or args.delete
+            args.do_photo_sync or args.do_photo_sync_existing_files or args.do_update or args.do_import or args.delete
             or args.do_delete_collections or args.do_generate_collections
             or args.all or args.preflight
             or args.start_at != 0 or args.photo_root is not None
@@ -2585,7 +2773,7 @@ def main() -> int:
         if invalid_refresh_combo:
             raise RuntimeError(
                 "--gw-refresh-cache must run separately and cannot be combined with "
-                "--photo-sync, --update, --import, --delete, --delete-collections, "
+                "--photo-sync, --photo-sync-existing-files, --update, --import, --delete, --delete-collections, "
                 "--generate-collections, --all, --preflight, --start-at, or --photo-root."
             )
         refresh_gw_cache(
@@ -2605,23 +2793,33 @@ def main() -> int:
         raise RuntimeError("--photo-sync cannot be combined with --preflight.")
     if args.do_photo_sync and args.start_at != 0:
         raise RuntimeError("--start-at is only valid with --import/--all, not --photo-sync.")
+    if args.do_photo_sync and args.do_photo_sync_existing_files:
+        raise RuntimeError("--photo-sync and --photo-sync-existing-files must run separately.")
+    if args.do_photo_sync_existing_files and (args.delete or args.do_import or args.do_update or args.all):
+        raise RuntimeError("--photo-sync-existing-files must run separately from delete/import/update/all phases.")
+    if args.do_photo_sync_existing_files and args.preflight:
+        raise RuntimeError("--photo-sync-existing-files cannot be combined with --preflight.")
+    if args.do_photo_sync_existing_files and args.start_at != 0:
+        raise RuntimeError("--start-at is only valid with --import/--all, not --photo-sync-existing-files.")
+    if args.do_photo_sync_existing_files and args.photo_root is not None:
+        raise RuntimeError("--photo-sync-existing-files does not use --photo-root.")
     if args.do_delete_collections and (
         args.preflight or args.delete or args.do_import or args.do_update
-        or args.do_photo_sync or args.do_generate_collections
+        or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_generate_collections
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
             "--delete-collections must run separately from preflight/delete/import/update/"
-            "photo-sync/all and cannot be combined with --start-at or --photo-root."
+            "photo-sync/photo-sync-existing-files/all and cannot be combined with --start-at or --photo-root."
         )
     if args.do_generate_collections and (
         args.preflight or args.delete or args.do_delete_collections or args.do_import
-        or args.do_update or args.do_photo_sync or args.all
+        or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files or args.all
         or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
             "--generate-collections must run separately from preflight/delete/delete-collections/"
-            "import/update/photo-sync/all and cannot be combined with --start-at or --photo-root."
+            "import/update/photo-sync/photo-sync-existing-files/all and cannot be combined with --start-at or --photo-root."
         )
 
     # Plain --dry-run (without --update / --photo-sync) means: read sheets,
@@ -2631,6 +2829,7 @@ def main() -> int:
         args.dry_run
         and not args.do_update
         and not args.do_photo_sync
+        and not args.do_photo_sync_existing_files
         and not args.do_generate_collections
         and not args.do_delete_collections
     ):
@@ -2668,8 +2867,8 @@ def main() -> int:
         phase_delete(client, dry=False)
         return 0
 
-    products = build_gw_product_list(strict=True) if args.do_photo_sync else prepare_products_for_import()
-    if args.do_photo_sync:
+    products = build_gw_product_list(strict=True) if (args.do_photo_sync or args.do_photo_sync_existing_files) else prepare_products_for_import()
+    if args.do_photo_sync or args.do_photo_sync_existing_files:
         run_photo_sync_preflight(client)
         location_id = ""
     else:
@@ -2688,11 +2887,30 @@ def main() -> int:
                 "with --update (no --dry-run) to apply."
             )
     if args.do_photo_sync:
-        phase_photo_sync(client, products, resolve_photo_sync_root(args.photo_root), dry=args.dry_run)
+        phase_photo_sync(
+            client,
+            products,
+            resolve_photo_sync_root(args.photo_root),
+            dry=args.dry_run,
+            source_mode=PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+        )
         if args.dry_run:
             log(
                 "Photo-sync dry-run complete. Review photo_sync_preview.csv, then re-run "
                 "with --photo-sync (no --dry-run) to apply."
+            )
+    if args.do_photo_sync_existing_files:
+        phase_photo_sync(
+            client,
+            products,
+            None,
+            dry=args.dry_run,
+            source_mode=PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING,
+        )
+        if args.dry_run:
+            log(
+                "Photo-sync existing-files dry-run complete. Review photo_sync_preview.csv, then re-run "
+                "with --photo-sync-existing-files (no --dry-run) to apply."
             )
     return 0
 
