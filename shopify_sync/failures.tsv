@@ -4336,3 +4336,11 @@
 2079	9781529110432	The Sweet Roasting Tin - Rukmini Iyer	HTTPSConnectionPool(host='kviv0f-15.myshopify.com', port=443): Max retries exceeded with url: /admin/api/2025-01/graphql.json (Caused by NameResolutionError("HTTPSConnection(host='kviv0f-15.myshopify.com', port=443): Failed to resolve 'kviv0f-15.myshopify.com' ([Errno 8] nodename nor servname provided, or not known)"))
 2080	9781529110272	The Green BBQ - Rukmini Iyer	HTTPSConnectionPool(host='kviv0f-15.myshopify.com', port=443): Max retries exceeded with url: /admin/api/2025-01/graphql.json (Caused by NameResolutionError("HTTPSConnection(host='kviv0f-15.myshopify.com', port=443): Failed to resolve 'kviv0f-15.myshopify.com' ([Errno 8] nodename nor servname provided, or not known)"))
 2081	9781910931899	The Green Roasting Tin - Rukmini Iyer	HTTPSConnectionPool(host='kviv0f-15.myshopify.com', port=443): Max retries exceeded with url: /admin/api/2025-01/graphql.json (Caused by NameResolutionError("HTTPSConnection(host='kviv0f-15.myshopify.com', port=443): Failed to resolve 'kviv0f-15.myshopify.com' ([Errno 8] nodename nor servname provided, or not known)"))
+update_write	A	t	write failed
+0	SKU-1	Title 1	create failed
+0	SKU-1	Title 1	create failed
+update_write	A	t	write failed
+0	SKU-1	Title 1	create failed
+update_write	A	t	write failed
+0	SKU-1	Title 1	create failed
+update_write	A	t	write failed

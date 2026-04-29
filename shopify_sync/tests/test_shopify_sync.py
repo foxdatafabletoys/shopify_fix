@@ -582,6 +582,133 @@ class CollectionManagementTests(unittest.TestCase):
             },
         )
 
+    def test_get_collection_image_returns_url_and_alt(self):
+        self.client.gql = mock.Mock(return_value={
+            "collection": {
+                "image": {
+                    "url": "https://cdn.shopify.com/s/files/1/0001/img.jpg",
+                    "altText": "An image",
+                }
+            }
+        })
+        result = self.client.get_collection_image("gid://shopify/Collection/1")
+        self.assertEqual(
+            result,
+            {"url": "https://cdn.shopify.com/s/files/1/0001/img.jpg", "alt_text": "An image"},
+        )
+
+    def test_get_collection_image_handles_no_image(self):
+        self.client.gql = mock.Mock(return_value={"collection": {"image": None}})
+        result = self.client.get_collection_image("gid://shopify/Collection/1")
+        self.assertEqual(result, {"url": "", "alt_text": ""})
+
+    def test_find_first_alphabetical_product_with_image_skips_imageless(self):
+        # First page: two products without an image and one with.
+        page1 = {
+            "collection": {
+                "products": {
+                    "edges": [
+                        {"node": {"id": "gid://shopify/Product/100", "title": "Aaa", "featuredImage": None}},
+                        {"node": {"id": "gid://shopify/Product/101", "title": "Bbb", "featuredImage": {"url": "", "altText": ""}}},
+                        {"node": {"id": "gid://shopify/Product/102", "title": "Ccc",
+                                  "featuredImage": {"url": "https://cdn.shopify.com/img.jpg", "altText": "alt"}}},
+                    ],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
+        }
+        self.client.gql = mock.Mock(return_value=page1)
+        result = self.client.find_first_alphabetical_product_with_image("gid://shopify/Collection/1")
+        self.assertEqual(result, {
+            "product_id": "gid://shopify/Product/102",
+            "product_title": "Ccc",
+            "image_url": "https://cdn.shopify.com/img.jpg",
+            "image_alt": "alt",
+        })
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("sortKey: TITLE", query)
+        self.assertEqual(variables, {"id": "gid://shopify/Collection/1", "cursor": None})
+
+    def test_find_first_alphabetical_product_with_image_pages_when_needed(self):
+        page1 = {
+            "collection": {
+                "products": {
+                    "edges": [
+                        {"node": {"id": "gid://shopify/Product/100", "title": "Aaa", "featuredImage": None}},
+                    ],
+                    "pageInfo": {"hasNextPage": True, "endCursor": "CURSOR1"},
+                }
+            }
+        }
+        page2 = {
+            "collection": {
+                "products": {
+                    "edges": [
+                        {"node": {"id": "gid://shopify/Product/200", "title": "Zzz",
+                                  "featuredImage": {"url": "https://cdn.shopify.com/late.jpg", "altText": ""}}},
+                    ],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
+        }
+        self.client.gql = mock.Mock(side_effect=[page1, page2])
+        result = self.client.find_first_alphabetical_product_with_image("gid://shopify/Collection/1")
+        self.assertEqual(result["product_id"], "gid://shopify/Product/200")
+        self.assertEqual(result["image_url"], "https://cdn.shopify.com/late.jpg")
+        self.assertEqual(self.client.gql.call_count, 2)
+
+    def test_find_first_alphabetical_product_with_image_returns_empty_when_none(self):
+        self.client.gql = mock.Mock(return_value={
+            "collection": {
+                "products": {
+                    "edges": [
+                        {"node": {"id": "gid://shopify/Product/100", "title": "Aaa", "featuredImage": None}},
+                    ],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
+        })
+        result = self.client.find_first_alphabetical_product_with_image("gid://shopify/Collection/1")
+        self.assertEqual(result, {})
+
+    def test_update_collection_image_uses_collection_update_with_image_src(self):
+        self.client.gql = mock.Mock(return_value={
+            "collectionUpdate": {
+                "collection": {
+                    "id": "gid://shopify/Collection/1",
+                    "image": {"url": "https://cdn.shopify.com/new.jpg"},
+                },
+                "userErrors": [],
+            }
+        })
+        result = self.client.update_collection_image(
+            "gid://shopify/Collection/1",
+            "https://cdn.shopify.com/source.jpg",
+            alt_text="Some alt",
+        )
+        self.assertEqual(result, "https://cdn.shopify.com/new.jpg")
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("collectionUpdate", query)
+        self.assertEqual(variables, {
+            "input": {
+                "id": "gid://shopify/Collection/1",
+                "image": {"src": "https://cdn.shopify.com/source.jpg", "altText": "Some alt"},
+            }
+        })
+
+    def test_update_collection_image_raises_on_user_errors(self):
+        self.client.gql = mock.Mock(return_value={
+            "collectionUpdate": {
+                "collection": None,
+                "userErrors": [{"field": ["image", "src"], "message": "Image is invalid"}],
+            }
+        })
+        with self.assertRaisesRegex(RuntimeError, "Image is invalid"):
+            self.client.update_collection_image(
+                "gid://shopify/Collection/1",
+                "https://bad.example.com/img.jpg",
+            )
+
     def test_publish_to_all_channels_uses_publications_query_and_publishable_publish(self):
         self.client.gql = mock.Mock(side_effect=[
             {
@@ -616,6 +743,83 @@ class CollectionManagementTests(unittest.TestCase):
                 ],
             },
         )
+
+
+class ProductPublicationTests(unittest.TestCase):
+    def setUp(self):
+        self.client = shopify_sync.Shopify("example-store", "shpat_test")
+
+    def test_publish_to_current_channel_uses_publishable_publish_to_current_channel(self):
+        self.client.gql = mock.Mock(return_value={
+            "publishablePublishToCurrentChannel": {
+                "publishable": {
+                    "availablePublicationsCount": {"count": 1},
+                    "resourcePublicationsCount": {"count": 1},
+                },
+                "userErrors": [],
+            }
+        })
+
+        self.client.publish_to_current_channel("gid://shopify/Product/9")
+
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("publishablePublishToCurrentChannel", query)
+        self.assertIn("availablePublicationsCount", query)
+        self.assertEqual(variables, {"id": "gid://shopify/Product/9"})
+
+    def test_iter_products_unpublished_on_current_channel_filters_published_products(self):
+        self.client.gql = mock.Mock(return_value={
+            "products": {
+                "edges": [
+                    {
+                        "cursor": "cur-1",
+                        "node": {
+                            "id": "gid://shopify/Product/1",
+                            "title": "Published",
+                            "publishedOnCurrentPublication": True,
+                            "resourcePublicationOnCurrentPublication": {
+                                "publication": {"id": "gid://shopify/Publication/1"},
+                                "publishDate": "2026-04-01T00:00:00Z",
+                                "isPublished": True,
+                            },
+                            "variants": {"edges": [{"node": {"sku": "PUB-1"}}]},
+                        },
+                    },
+                    {
+                        "cursor": "cur-2",
+                        "node": {
+                            "id": "gid://shopify/Product/2",
+                            "title": "Needs Publish",
+                            "publishedOnCurrentPublication": False,
+                            "resourcePublicationOnCurrentPublication": None,
+                            "variants": {"edges": [{"node": {"sku": "NP-1"}}, {"node": {"sku": ""}}]},
+                        },
+                    },
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        })
+
+        rows = list(self.client.iter_products_unpublished_on_current_channel())
+
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "id": "gid://shopify/Product/2",
+                    "title": "Needs Publish",
+                    "published_on_current_publication": False,
+                    "current_publication_id": "",
+                    "current_publication_publish_date": "",
+                    "current_publication_is_published": False,
+                    "skus": ["NP-1"],
+                }
+            ],
+        )
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("publishedOnCurrentPublication", query)
+        self.assertIn("resourcePublicationOnCurrentPublication", query)
+        self.assertEqual(variables, {"cursor": None})
 
 
 class MainFlowTests(unittest.TestCase):
@@ -723,6 +927,49 @@ class MainFlowTests(unittest.TestCase):
     def test_generate_collections_rejects_delete_combination(self):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--generate-collections", "--delete"]):
             with self.assertRaisesRegex(RuntimeError, "--generate-collections must run separately"):
+                shopify_sync.main()
+
+    def test_publish_online_store_backfill_runs_without_prepare_or_location_lookup(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--publish-online-store-backfill"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_publish_online_store_backfill") as phase_backfill, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_backfill.assert_called_once_with(client, dry=False)
+        run_preflight.assert_not_called()
+        prepare_products.assert_not_called()
+
+    def test_publish_online_store_backfill_dry_run_bypasses_plain_preview_flow(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--publish-online-store-backfill", "--dry-run"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_publish_online_store_backfill") as phase_backfill, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_backfill.assert_called_once_with(client, dry=True)
+        prepare_products.assert_not_called()
+        run_preflight.assert_not_called()
+
+    def test_publish_online_store_backfill_rejects_update_combination(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--publish-online-store-backfill", "--update"]):
+            with self.assertRaisesRegex(RuntimeError, "--publish-online-store-backfill must run separately"):
                 shopify_sync.main()
 
     def test_all_flag_runs_prepare_then_preflight_then_delete_then_import(self):
@@ -845,11 +1092,13 @@ class PhaseUpdateTests(unittest.TestCase):
                                return_value=iter(existing)), \
              mock.patch.object(self.client, "update_variant_fields") as upd, \
              mock.patch.object(self.client, "set_on_hand") as set_qty, \
+             mock.patch.object(self.client, "publish_to_current_channel") as publish, \
              mock.patch("shopify_sync.UPDATE_PREVIEW_CSV",
                         new=Path(tempfile.gettempdir()) / "_tmp_update_preview.csv"):
             shopify_sync.phase_update(self.client, sheet, self.location, dry=True)
             upd.assert_not_called()
             set_qty.assert_not_called()
+            publish.assert_not_called()
 
     def test_live_run_pushes_only_changed_fields(self):
         sheet = [
@@ -874,6 +1123,7 @@ class PhaseUpdateTests(unittest.TestCase):
                                return_value=iter(existing)), \
              mock.patch.object(self.client, "update_variant_fields") as upd, \
              mock.patch.object(self.client, "set_on_hand") as set_qty, \
+             mock.patch.object(self.client, "publish_to_current_channel") as publish, \
              mock.patch("shopify_sync.UPDATE_PREVIEW_CSV",
                         new=Path(tempfile.gettempdir()) / "_tmp_update_preview.csv"):
             shopify_sync.phase_update(self.client, sheet, self.location, dry=False)
@@ -883,8 +1133,102 @@ class PhaseUpdateTests(unittest.TestCase):
         # C: nothing
         self.assertEqual(upd.call_count, 2)
         self.assertEqual(set_qty.call_count, 1)
+        self.assertEqual(publish.call_count, 2)
         # A's inventory was set
         set_qty.assert_called_once_with("i-A", self.location, 7)
+
+    def test_live_run_does_not_publish_when_write_fails(self):
+        sheet = [self._make_product("A", price=9.99, compare=12.00, cost=5.00, qty=7)]
+        existing = [
+            self._existing_record("A", price=8.00, compare=12.00, cost=5.00, on_hand=2,
+                                  variant_id="v-A", inventory_item_id="i-A"),
+        ]
+        with mock.patch.object(self.client, "iter_existing_for_update",
+                               return_value=iter(existing)), \
+             mock.patch.object(self.client, "update_variant_fields", side_effect=RuntimeError("write failed")) as upd, \
+             mock.patch.object(self.client, "set_on_hand") as set_qty, \
+             mock.patch.object(self.client, "publish_to_current_channel") as publish, \
+             mock.patch("shopify_sync.UPDATE_PREVIEW_CSV",
+                        new=Path(tempfile.gettempdir()) / "_tmp_update_preview.csv"):
+            shopify_sync.phase_update(self.client, sheet, self.location, dry=False)
+
+        upd.assert_called_once()
+        set_qty.assert_not_called()
+        publish.assert_not_called()
+
+
+class PhaseImportTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+        self.location = "gid://shopify/Location/9"
+
+    def _make_product(self, sku="SKU-1", title="Title 1"):
+        return shopify_sync.Product(title=title, sku=sku, price=9.99, source="GW")
+
+    def test_live_run_publishes_created_products(self):
+        products = [self._make_product()]
+        self.client.create_product.return_value = "gid://shopify/Product/7"
+
+        shopify_sync.phase_import(self.client, products, self.location, dry=False)
+
+        self.client.create_product.assert_called_once_with(products[0], self.location)
+        self.client.publish_to_current_channel.assert_called_once_with("gid://shopify/Product/7")
+
+    def test_live_run_skips_publish_when_create_raises(self):
+        products = [self._make_product()]
+        self.client.create_product.side_effect = RuntimeError("create failed")
+
+        shopify_sync.phase_import(self.client, products, self.location, dry=False)
+
+        self.client.publish_to_current_channel.assert_not_called()
+
+
+class PhaseOnlineStoreBackfillTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+        self.preview_path = Path(tempfile.gettempdir()) / "_tmp_online_store_backfill_preview.csv"
+
+    def test_dry_run_queries_candidates_without_publishing(self):
+        self.client.iter_products_unpublished_on_current_channel.return_value = iter([
+            {
+                "id": "gid://shopify/Product/1",
+                "title": "Needs Publish",
+                "published_on_current_publication": False,
+                "current_publication_id": "",
+                "current_publication_publish_date": "",
+                "current_publication_is_published": False,
+                "skus": ["SKU-1"],
+            }
+        ])
+
+        with mock.patch("shopify_sync.ONLINE_STORE_BACKFILL_PREVIEW_CSV", new=self.preview_path):
+            shopify_sync.phase_publish_online_store_backfill(self.client, dry=True)
+
+        self.client.publish_to_current_channel.assert_not_called()
+        preview = self.preview_path.read_text(encoding="utf-8")
+        self.assertIn("dry_run_candidate", preview)
+        self.assertIn("Needs Publish", preview)
+
+    def test_live_run_publishes_each_candidate(self):
+        self.client.iter_products_unpublished_on_current_channel.return_value = iter([
+            {
+                "id": "gid://shopify/Product/1",
+                "title": "Needs Publish",
+                "published_on_current_publication": False,
+                "current_publication_id": "",
+                "current_publication_publish_date": "",
+                "current_publication_is_published": False,
+                "skus": ["SKU-1"],
+            }
+        ])
+
+        with mock.patch("shopify_sync.ONLINE_STORE_BACKFILL_PREVIEW_CSV", new=self.preview_path):
+            shopify_sync.phase_publish_online_store_backfill(self.client, dry=False)
+
+        self.client.publish_to_current_channel.assert_called_once_with("gid://shopify/Product/1")
+        preview = self.preview_path.read_text(encoding="utf-8")
+        self.assertIn("published", preview)
+
 
 
 class PhaseDeleteCollectionsTests(unittest.TestCase):

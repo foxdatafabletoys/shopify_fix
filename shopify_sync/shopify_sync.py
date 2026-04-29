@@ -22,6 +22,9 @@ What it does:
   --update     Matches existing Shopify products by SKU and updates price,
                compare_at_price, cost, and on-hand quantity from the sheets.
                Skips products that don't yet exist in Shopify.
+  --publish-online-store-backfill
+               Finds existing Shopify products that are not published to the
+               current publication and publishes them to `Online Store`.
   --all        Runs --delete then --import.
   --preflight  Validates Shopify auth and location readiness with no write side effects.
   --dry-run    Reads sheets, builds the product list, writes preview.csv,
@@ -56,6 +59,8 @@ Usage:
   python shopify_sync.py --import
   python shopify_sync.py --update --dry-run
   python shopify_sync.py --update
+  python shopify_sync.py --publish-online-store-backfill --dry-run
+  python shopify_sync.py --publish-online-store-backfill
   python shopify_sync.py --all
 """
 
@@ -95,6 +100,7 @@ PHOTO_SYNC_FAILURES_TSV = HERE / "photo_sync_failures.tsv"
 COLLECTION_GENERATION_PREVIEW_CSV = HERE / "collection_generation_preview.csv"
 COLLECTION_GENERATION_UNMATCHED_CSV = HERE / "collection_generation_unmatched.csv"
 COLLECTION_IMAGE_PREVIEW_CSV = HERE / "collection_image_preview.csv"
+ONLINE_STORE_BACKFILL_PREVIEW_CSV = HERE / "online_store_backfill_preview.csv"
 GW_RESOURCES_URL = "https://trade.games-workshop.com/resources/"
 GW_PHOTO_CACHE_ROOT = HERE / "gw_photo_cache"
 GW_PHOTO_CACHE_CURRENT = GW_PHOTO_CACHE_ROOT / "current"
@@ -1604,8 +1610,11 @@ class Shopify:
             mutation($id: ID!) {
               publishablePublishToCurrentChannel(id: $id) {
                 publishable {
-                  ... on Collection {
-                    id
+                  availablePublicationsCount {
+                    count
+                  }
+                  resourcePublicationsCount {
+                    count
                   }
                 }
                 userErrors { field message }
@@ -1616,6 +1625,61 @@ class Shopify:
         errs = data["publishablePublishToCurrentChannel"]["userErrors"]
         if errs:
             raise RuntimeError(f"publishablePublishToCurrentChannel errors: {errs}")
+
+    def iter_products_unpublished_on_current_channel(self) -> Iterable[dict[str, Any]]:
+        cursor = None
+        page_q = """
+            query($cursor: String) {
+              products(first: 100, after: $cursor) {
+                edges {
+                  cursor
+                  node {
+                    id
+                    title
+                    publishedOnCurrentPublication
+                    resourcePublicationOnCurrentPublication {
+                      publication {
+                        id
+                      }
+                      publishDate
+                      isPublished
+                    }
+                    variants(first: 10) {
+                      edges {
+                        node {
+                          sku
+                        }
+                      }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"cursor": cursor})
+            for edge in data["products"]["edges"]:
+                node = edge["node"]
+                if node.get("publishedOnCurrentPublication"):
+                    continue
+                current_publication = node.get("resourcePublicationOnCurrentPublication") or {}
+                yield {
+                    "id": node["id"],
+                    "title": node.get("title") or "",
+                    "published_on_current_publication": False,
+                    "current_publication_id": ((current_publication.get("publication") or {}).get("id") or ""),
+                    "current_publication_publish_date": current_publication.get("publishDate") or "",
+                    "current_publication_is_published": bool(current_publication.get("isPublished")),
+                    "skus": [
+                        (variant_edge.get("node") or {}).get("sku") or ""
+                        for variant_edge in (node.get("variants") or {}).get("edges") or []
+                        if ((variant_edge.get("node") or {}).get("sku") or "").strip()
+                    ],
+                }
+            if not data["products"]["pageInfo"]["hasNextPage"]:
+                break
+            cursor = data["products"]["pageInfo"]["endCursor"]
 
     def iter_publications(self) -> Iterable[dict[str, Any]]:
         cursor = None
@@ -2491,21 +2555,34 @@ def phase_import(client: Shopify, products: list[Product], location_id: str, dry
         log("(dry-run: not contacting Shopify)")
         return
     created = 0
-    failed = 0
+    create_failed = 0
+    publish_failed = 0
+    published = 0
     for i, p in enumerate(products):
         if i < start_at:
             continue
         try:
             pid = client.create_product(p, location_id)
             created += 1
+            try:
+                client.publish_to_current_channel(pid)
+                published += 1
+            except Exception as e:
+                publish_failed += 1
+                log(f"  FAILED publish {p.sku} ({p.title!r}): {e}")
+                with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+                    fh.write(f"import_publish\t{p.sku}\t{p.title}\t{e}\n")
             if (created % 25) == 0:
                 log(f"  progress: created {created}/{len(products) - start_at}  (last: {p.sku})")
         except Exception as e:
-            failed += 1
+            create_failed += 1
             log(f"  FAILED {p.sku} ({p.title!r}): {e}")
             with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
                 fh.write(f"{i}\t{p.sku}\t{p.title}\t{e}\n")
-    log(f"IMPORT summary: created={created}, failed={failed}")
+    log(
+        f"IMPORT summary: created={created}, published={published}, "
+        f"create_failed={create_failed}, publish_failed={publish_failed}"
+    )
 
 
 def _money_eq(a: float | None, b: float | None) -> bool:
@@ -2540,7 +2617,9 @@ def phase_update(client: Shopify, products: list[Product], location_id: str, dry
     missing: list[str] = []
     unchanged = 0
     price_updates = qty_updates = cost_updates = 0
-    failed = 0
+    write_failed = 0
+    publish_failed = 0
+    published = 0
 
     for p in products:
         existing = by_sku.get(p.sku)
@@ -2615,10 +2694,20 @@ def phase_update(client: Shopify, products: list[Product], location_id: str, dry
                     int(p.quantity or 0),
                 )
         except Exception as e:
-            failed += 1
+            write_failed += 1
             log(f"  FAILED update {p.sku} ({p.title!r}): {e}")
             with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
-                fh.write(f"update\t{p.sku}\t{p.title}\t{e}\n")
+                fh.write(f"update_write\t{p.sku}\t{p.title}\t{e}\n")
+            continue
+
+        try:
+            client.publish_to_current_channel(existing["product_id"])
+            published += 1
+        except Exception as e:
+            publish_failed += 1
+            log(f"  FAILED publish {p.sku} ({p.title!r}): {e}")
+            with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+                fh.write(f"update_publish\t{p.sku}\t{p.title}\t{e}\n")
 
     # Always write the diff CSV so it's available after a real run too.
     cols = [
@@ -2642,8 +2731,65 @@ def phase_update(client: Shopify, products: list[Product], location_id: str, dry
     log(
         f"UPDATE summary: changes={len(diff_rows)} unchanged={unchanged} "
         f"missing_in_shopify={len(missing)} price_field_updates={price_updates} "
-        f"cost_updates={cost_updates} qty_updates={qty_updates} failed={failed} "
-        f"dry_run={dry}"
+        f"cost_updates={cost_updates} qty_updates={qty_updates} published={published} "
+        f"write_failed={write_failed} publish_failed={publish_failed} dry_run={dry}"
+    )
+
+
+def phase_publish_online_store_backfill(client: Shopify, dry: bool) -> None:
+    log("=== ONLINE STORE BACKFILL phase: publishing currently-unpublished Shopify products ===")
+    candidates = list(client.iter_products_unpublished_on_current_channel())
+    rows: list[dict[str, str]] = []
+    published = 0
+    publish_failed = 0
+
+    for candidate in candidates:
+        status = "dry_run_candidate" if dry else "published"
+        if not dry:
+            try:
+                client.publish_to_current_channel(candidate["id"])
+                published += 1
+            except Exception as e:
+                publish_failed += 1
+                status = f"publish_failed: {e}"
+                log(f"  FAILED publish {candidate['title']!r} ({candidate['id']}): {e}")
+                with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+                    fh.write(
+                        f"backfill_publish\t{'|'.join(candidate['skus'])}\t"
+                        f"{candidate['title']}\t{e}\n"
+                    )
+        rows.append({
+            "product_id": candidate["id"],
+            "title": candidate["title"],
+            "skus": "|".join(candidate["skus"]),
+            "published_on_current_publication": "false",
+            "current_publication_id": candidate["current_publication_id"],
+            "current_publication_publish_date": candidate["current_publication_publish_date"],
+            "current_publication_is_published": (
+                "true" if candidate["current_publication_is_published"] else "false"
+            ),
+            "status": status,
+        })
+
+    cols = [
+        "product_id",
+        "title",
+        "skus",
+        "published_on_current_publication",
+        "current_publication_id",
+        "current_publication_publish_date",
+        "current_publication_is_published",
+        "status",
+    ]
+    with ONLINE_STORE_BACKFILL_PREVIEW_CSV.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=cols)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    log(f"  wrote preview: {ONLINE_STORE_BACKFILL_PREVIEW_CSV}")
+    log(
+        f"ONLINE STORE BACKFILL summary: candidates={len(candidates)} published={published} "
+        f"publish_failed={publish_failed} dry_run={dry}"
     )
 
 
@@ -3025,6 +3171,8 @@ def main() -> int:
     parser.add_argument("--import", dest="do_import", action="store_true", help="Run import phase.")
     parser.add_argument("--update", dest="do_update", action="store_true",
                         help="Update existing products in place (matched by SKU).")
+    parser.add_argument("--publish-online-store-backfill", dest="do_publish_online_store_backfill", action="store_true",
+                        help="Publish existing Shopify products that are not on the current publication.")
     parser.add_argument("--photo-sync", dest="do_photo_sync", action="store_true",
                         help="Replace GW product media from the repo-local cache or an explicit local photo root.")
     parser.add_argument("--photo-sync-existing-files", dest="do_photo_sync_existing_files", action="store_true",
@@ -3040,7 +3188,7 @@ def main() -> int:
 
     if not (args.dry_run or args.preflight or args.delete or args.do_delete_collections
             or args.do_generate_collections or args.do_update_collection_images
-            or args.do_gw_refresh_cache or args.do_import or args.do_update
+            or args.do_gw_refresh_cache or args.do_import or args.do_update or args.do_publish_online_store_backfill
             or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.all):
         parser.print_help()
         return 1
@@ -3049,7 +3197,7 @@ def main() -> int:
         invalid_refresh_combo = (
             args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.do_update or args.do_import or args.delete
             or args.do_delete_collections or args.do_generate_collections or args.do_update_collection_images
-            or args.all or args.preflight
+            or args.do_publish_online_store_backfill or args.all or args.preflight
             or args.start_at != 0 or args.photo_root is not None
         )
         if invalid_refresh_combo:
@@ -3128,6 +3276,17 @@ def main() -> int:
             "generate-collections/import/update/photo-sync/photo-sync-existing-files/photo-sync-existing-files-all/all "
             "and cannot be combined with --start-at or --photo-root."
         )
+    if args.do_publish_online_store_backfill and (
+        args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
+        or args.do_update_collection_images or args.do_import or args.do_update
+        or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+        or args.all or args.start_at != 0 or args.photo_root is not None
+    ):
+        raise RuntimeError(
+            "--publish-online-store-backfill must run separately from preflight/delete/delete-collections/"
+            "generate-collections/update-collection-images/import/update/photo-sync/photo-sync-existing-files/"
+            "photo-sync-existing-files-all/all and cannot be combined with --start-at or --photo-root."
+        )
 
     # Plain --dry-run (without --update / --photo-sync) means: read sheets,
     # write preview.csv, don't contact Shopify. --update/--photo-sync dry-runs
@@ -3141,6 +3300,7 @@ def main() -> int:
         and not args.do_generate_collections
         and not args.do_delete_collections
         and not args.do_update_collection_images
+        and not args.do_publish_online_store_backfill
     ):
         prepare_products_for_import()
         log("Dry run complete. Review preview.csv, then re-run with --delete, --import, or --update.")
@@ -3178,6 +3338,15 @@ def main() -> int:
                 "Collection image update dry-run complete. Review "
                 "collection_image_preview.csv, then re-run with "
                 "--update-collection-images (no --dry-run) to apply."
+            )
+        return 0
+    if args.do_publish_online_store_backfill:
+        phase_publish_online_store_backfill(client, dry=args.dry_run)
+        if args.dry_run:
+            log(
+                "Online Store backfill dry-run complete. Review "
+                "online_store_backfill_preview.csv, then re-run with "
+                "--publish-online-store-backfill (no --dry-run) to apply."
             )
         return 0
 
