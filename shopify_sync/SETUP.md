@@ -37,6 +37,7 @@ You're creating a "custom app" inside your own store. This takes about 3 minutes
    - `read_products`, `write_products`
    - `read_inventory`, `write_inventory`
    - `read_locations`
+   - `write_files` for the planned photo-sync lane
 7. Click **Save** at the top.
 8. Go to the **API credentials** tab → click **Install app** → confirm.
 9. Under **Admin API access token** click **Reveal token once**. It looks like:
@@ -61,6 +62,45 @@ SHOPIFY_LOCATION=
 ```
 
 Leave `SHOPIFY_LOCATION` blank unless you need to override the location. Blank is the supported default and the script auto-detects your store's primary location. If you do set it, the canonical example is a Shopify GID like `gid://shopify/Location/12345678901`; numeric IDs also work and are normalized internally.
+
+## Photo sync lane: `staged-local-files`
+
+This repo's first implemented photo-sync mode is `staged-local-files`. It is a separate GW-only lane in `shopify_sync.py` and does not reuse `--update`.
+
+Hard prerequisites:
+
+- `write_files` must be granted on the custom app before photo sync can go live.
+- Photo sync is a separate `--photo-sync` lane; it does not extend `--update`.
+- The source mode for the first pass is a reviewed local asset staging root, not public image URLs.
+
+Staged-local-files workflow:
+
+1. Stage the approved Games Workshop image set locally before any Shopify writes. The local staging pass is the operator review boundary for missing folders, wrong-product images, and image ordering.
+2. Run a dry-run first:
+   ```bash
+   python3 shopify_sync.py --photo-sync --photo-root /path/to/gw-photos --dry-run
+   ```
+3. Review `photo_sync_preview.csv`, plus any appended `photo_sync_missing.tsv`, `photo_sync_ambiguous.tsv`, and `photo_sync_failures.tsv`.
+4. Apply for real:
+   ```bash
+   python3 shopify_sync.py --photo-sync --photo-root /path/to/gw-photos
+   ```
+5. The GraphQL sequence used by this lane is:
+   - `stagedUploadsCreate`
+   - direct `PUT` upload of each local image to the returned staged target
+   - `fileCreate`
+   - poll `fileStatus` until `READY`
+   - `fileUpdate.referencesToAdd`
+   - `productReorderMedia`
+   - `fileUpdate.referencesToRemove`
+6. Dry-run is read-only: it inspects local assets and Shopify state but performs no Shopify write mutations.
+7. Live photo sync does not remove old product-media associations until the replacement Shopify files are attached and the reorder job has completed.
+
+Current status:
+
+- `--photo-sync` is implemented in the current workspace for the `staged-local-files` source mode.
+- The API proof artifact for this lane is `.omx/plans/gw-shopify-photo-sync-api-proof.md`.
+- Keep the app on Shopify Admin API `2025-01` unless the proof artifact records a deliberate version bump.
 
 ## Step 4 — Install Python dependencies
 
@@ -127,7 +167,7 @@ python3 shopify_sync.py --all
 
 This runs the live delete phase and then the live import phase. Use it only after the dry run and preflight checks.
 
-## Step 9.5 — Refreshing prices and inventory from a new sheet (`--update`)
+## Step 10 — Refreshing prices and inventory from a new sheet (`--update`)
 
 When you receive an updated `Games Workshop Store List.xlsx` (or edit `everything else.xlsx`) and want Shopify to match without recreating products, use `--update`. It matches existing products by SKU and pushes only the fields that changed: `price`, `compare_at_price`, `cost`, and on-hand quantity.
 
@@ -150,7 +190,7 @@ Notes:
 - SKUs on Shopify that aren't in the sheet are left alone.
 - If you want to include the same on-hand quantity for items even when nothing changed, the current logic deliberately doesn't — it only writes when the value differs, to keep the run fast and the inventory adjustment log clean.
 
-## Step 10 — Spot-check on Shopify
+## Step 11 — Spot-check on Shopify
 
 After it finishes, open `https://<your-store>.myshopify.com/admin/products` and:
 

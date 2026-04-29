@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -78,6 +80,72 @@ class ShopifyGraphQLTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "Shopify HTTP 401"):
             self.client.gql("query { shop { name } }")
+
+    def test_staged_uploads_create_uses_put_image_payload(self):
+        self.client.gql = mock.Mock(return_value={
+            "stagedUploadsCreate": {
+                "stagedTargets": [{"url": "https://upload", "resourceUrl": "https://resource", "parameters": []}],
+                "userErrors": [],
+            }
+        })
+        file_size = None
+        with tempfile.TemporaryDirectory() as tmp:
+            image = Path(tmp) / "test.jpg"
+            image.write_bytes(b"image")
+            file_size = image.stat().st_size
+            targets = self.client.staged_uploads_create([image])
+
+        self.assertEqual(len(targets), 1)
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("stagedUploadsCreate", query)
+        self.assertEqual(
+            variables["input"][0],
+            {
+                "filename": "test.jpg",
+                "mimeType": "image/jpeg",
+                "resource": "IMAGE",
+                "httpMethod": "PUT",
+                "fileSize": str(file_size),
+            },
+        )
+
+    def test_upload_file_to_staged_target_uses_put_headers(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("shopify_sync.requests.put") as put:
+            image = Path(tmp) / "test.jpg"
+            image.write_bytes(b"image")
+            put.return_value = mock.Mock(status_code=200)
+
+            resource_url = self.client.upload_file_to_staged_target(
+                image,
+                {
+                    "url": "https://upload",
+                    "resourceUrl": "https://resource",
+                    "parameters": [{"name": "x-amz-acl", "value": "private"}],
+                },
+            )
+
+        self.assertEqual(resource_url, "https://resource")
+        args, kwargs = put.call_args
+        self.assertEqual(args[0], "https://upload")
+        self.assertEqual(kwargs["headers"]["x-amz-acl"], "private")
+        self.assertEqual(kwargs["headers"]["Content-Type"], "image/jpeg")
+
+    def test_wait_for_files_ready_uses_node_file_query(self):
+        self.client.gql = mock.Mock(side_effect=[
+            {"node": {"id": "gid://shopify/MediaImage/1", "fileStatus": "PROCESSING"}},
+            {"node": {"id": "gid://shopify/MediaImage/1", "fileStatus": "READY"}},
+        ])
+
+        with mock.patch("shopify_sync.time.sleep") as sleep:
+            result = self.client.wait_for_files_ready(["gid://shopify/MediaImage/1"], timeout_seconds=1)
+
+        self.assertEqual(result, ["gid://shopify/MediaImage/1"])
+        query, variables = self.client.gql.call_args_list[0].args
+        self.assertIn("node(id: $id)", query)
+        self.assertIn("... on File", query)
+        self.assertEqual(variables, {"id": "gid://shopify/MediaImage/1"})
+        sleep.assert_called_once_with(2)
 
 
 class LocationResolutionTests(unittest.TestCase):
@@ -504,6 +572,252 @@ class PhaseUpdateTests(unittest.TestCase):
         self.assertEqual(set_qty.call_count, 1)
         # A's inventory was set
         set_qty.assert_called_once_with("i-A", self.location, 7)
+
+
+class PhotoAssetMatchingTests(unittest.TestCase):
+    def test_resolve_photo_asset_prefers_exact_code_then_slug_fallback(self):
+        exact = shopify_sync.PhotoAssetSet(
+            key="dir:exact",
+            label="TR-39-13-99120109017-Armageddon-Battalion-Deathwatch",
+            product_code="99120109017",
+            title_slug="armageddon-battalion-deathwatch",
+        )
+        fallback = shopify_sync.PhotoAssetSet(
+            key="dir:fallback",
+            label="Armageddon-Battalion-Deathwatch",
+            title_slug="armageddon-battalion-deathwatch",
+        )
+        product = shopify_sync.Product(
+            title="ARMAGEDDON BATTALION: DEATHWATCH",
+            sku="99120109017",
+            source="GW",
+        )
+
+        status, match_type, asset_set, reason = shopify_sync.resolve_photo_asset(
+            product,
+            {"99120109017": [exact]},
+            {"armageddon-battalion-deathwatch": [fallback]},
+        )
+
+        self.assertEqual((status, match_type, asset_set, reason), ("replace", "exact", exact, ""))
+
+    def test_resolve_photo_asset_marks_ambiguous_slug_fallback(self):
+        product = shopify_sync.Product(
+            title="ARMAGEDDON BATTALION: DEATHWATCH",
+            sku="99120109017",
+            source="GW",
+        )
+        options = [
+            shopify_sync.PhotoAssetSet(key="a", label="A", title_slug="armageddon-battalion-deathwatch"),
+            shopify_sync.PhotoAssetSet(key="b", label="B", title_slug="armageddon-battalion-deathwatch"),
+        ]
+
+        status, match_type, asset_set, reason = shopify_sync.resolve_photo_asset(
+            product,
+            {},
+            {"armageddon-battalion-deathwatch": options},
+        )
+
+        self.assertEqual(status, "skip")
+        self.assertEqual(match_type, "ambiguous")
+        self.assertIsNone(asset_set)
+        self.assertIn("multiple title-slug matches", reason)
+
+
+class PhotoSyncPhaseTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+        self.product = shopify_sync.Product(
+            title="ARMAGEDDON BATTALION: DEATHWATCH",
+            sku="99120109017",
+            source="GW",
+        )
+        self.existing = {
+            "product_id": "gid://shopify/Product/1",
+            "title": self.product.title,
+            "vendor": "Games Workshop",
+            "tags": ["Games Workshop"],
+            "sku": self.product.sku,
+            "media_ids": ["gid://shopify/MediaImage/old1", "gid://shopify/MediaImage/old2"],
+        }
+
+    def _make_photo_root(self) -> Path:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        folder = root / "TR-39-13-99120109017-Armageddon-Battalion-Deathwatch"
+        folder.mkdir()
+        (folder / "01.jpg").write_bytes(b"image-1")
+        (folder / "02.jpg").write_bytes(b"image-2")
+        return root
+
+    @contextmanager
+    def _patched_photo_sync_outputs(self, photo_root: Path):
+        with mock.patch("shopify_sync.PHOTO_SYNC_PREVIEW_CSV", new=photo_root / "preview.csv"), \
+             mock.patch("shopify_sync.PHOTO_SYNC_MISSING_TSV", new=photo_root / "missing.tsv"), \
+             mock.patch("shopify_sync.PHOTO_SYNC_AMBIGUOUS_TSV", new=photo_root / "ambiguous.tsv"), \
+             mock.patch("shopify_sync.PHOTO_SYNC_FAILURES_TSV", new=photo_root / "failures.tsv"):
+            yield
+
+    def test_photo_sync_dry_run_writes_preview_and_makes_no_writes(self):
+        photo_root = self._make_photo_root()
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+
+        with self._patched_photo_sync_outputs(photo_root):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [self.product],
+                photo_root,
+                dry=True,
+                manifest_path=photo_root / "manifest.json",
+            )
+
+        self.client.staged_uploads_create.assert_not_called()
+        self.client.file_create.assert_not_called()
+        self.client.attach_files_to_product.assert_not_called()
+        self.client.reorder_product_media.assert_not_called()
+        self.client.detach_files_from_product.assert_not_called()
+
+    def test_photo_sync_live_run_uses_file_first_sequence(self):
+        photo_root = self._make_photo_root()
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+        self.client.staged_uploads_create.return_value = [
+            {"url": "https://upload/1", "resourceUrl": "https://resource/1", "parameters": []},
+            {"url": "https://upload/2", "resourceUrl": "https://resource/2", "parameters": []},
+        ]
+        self.client.file_create.return_value = [
+            {"id": "gid://shopify/MediaImage/new1", "fileStatus": "UPLOADED"},
+            {"id": "gid://shopify/MediaImage/new2", "fileStatus": "UPLOADED"},
+        ]
+
+        calls = []
+        self.client.upload_file_to_staged_target.side_effect = lambda path, target: calls.append(("upload", path.name)) or target["resourceUrl"]
+        self.client.wait_for_files_ready.side_effect = lambda ids: calls.append(("ready", tuple(ids))) or ids
+        self.client.attach_files_to_product.side_effect = lambda ids, pid: calls.append(("attach", tuple(ids), pid))
+        self.client.reorder_product_media.side_effect = lambda pid, ids: calls.append(("reorder", pid, tuple(ids)))
+        self.client.detach_files_from_product.side_effect = lambda ids, pid: calls.append(("detach", tuple(ids), pid))
+
+        with self._patched_photo_sync_outputs(photo_root):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [self.product],
+                photo_root,
+                dry=False,
+                manifest_path=photo_root / "manifest.json",
+            )
+
+        self.assertEqual(
+            calls,
+            [
+                ("upload", "01.jpg"),
+                ("upload", "02.jpg"),
+                ("ready", ("gid://shopify/MediaImage/new1", "gid://shopify/MediaImage/new2")),
+                ("attach", ("gid://shopify/MediaImage/new1", "gid://shopify/MediaImage/new2"), "gid://shopify/Product/1"),
+                ("reorder", "gid://shopify/Product/1", ("gid://shopify/MediaImage/new1", "gid://shopify/MediaImage/new2")),
+                ("detach", ("gid://shopify/MediaImage/old1", "gid://shopify/MediaImage/old2"), "gid://shopify/Product/1"),
+            ],
+        )
+        manifest = json.loads((photo_root / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest[self.product.sku]["state"], "completed")
+
+    def test_photo_sync_skips_duplicate_shopify_skus_as_ambiguous(self):
+        photo_root = self._make_photo_root()
+        duplicate = dict(self.existing)
+        duplicate["product_id"] = "gid://shopify/Product/2"
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing, duplicate])
+
+        with self._patched_photo_sync_outputs(photo_root):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [self.product],
+                photo_root,
+                dry=False,
+                manifest_path=photo_root / "manifest.json",
+            )
+
+        self.client.staged_uploads_create.assert_not_called()
+        self.client.attach_files_to_product.assert_not_called()
+        ambiguous_log = (photo_root / "ambiguous.tsv").read_text(encoding="utf-8")
+        self.assertIn("multiple Shopify products share this SKU", ambiguous_log)
+
+    def test_photo_sync_reuses_manifest_old_media_snapshot_on_retry(self):
+        photo_root = self._make_photo_root()
+        retry_existing = dict(self.existing)
+        retry_existing["media_ids"] = [
+            "gid://shopify/MediaImage/old1",
+            "gid://shopify/MediaImage/old2",
+            "gid://shopify/MediaImage/new1",
+            "gid://shopify/MediaImage/new2",
+        ]
+        self.client.iter_existing_for_photo_sync.return_value = iter([retry_existing])
+        manifest_path = photo_root / "manifest.json"
+        manifest_path.write_text(json.dumps({
+            self.product.sku: {
+                "state": "reordered",
+                "product_id": "gid://shopify/Product/1",
+                "asset_fingerprint": shopify_sync.discover_photo_asset_sets(photo_root)[0].fingerprint(),
+                "old_media_ids": ["gid://shopify/MediaImage/old1", "gid://shopify/MediaImage/old2"],
+                "new_file_ids": ["gid://shopify/MediaImage/new1", "gid://shopify/MediaImage/new2"],
+            }
+        }), encoding="utf-8")
+
+        calls = []
+        self.client.wait_for_files_ready.side_effect = lambda ids: calls.append(("ready", tuple(ids)))
+        self.client.attach_files_to_product.side_effect = lambda ids, pid: calls.append(("attach", tuple(ids), pid))
+        self.client.reorder_product_media.side_effect = lambda pid, ids: calls.append(("reorder", pid, tuple(ids)))
+        self.client.detach_files_from_product.side_effect = lambda ids, pid: calls.append((tuple(ids), pid))
+
+        with self._patched_photo_sync_outputs(photo_root):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [self.product],
+                photo_root,
+                dry=False,
+                manifest_path=manifest_path,
+            )
+
+        self.assertEqual(
+            calls,
+            [(("gid://shopify/MediaImage/old1", "gid://shopify/MediaImage/old2"), "gid://shopify/Product/1")],
+        )
+        self.client.wait_for_files_ready.assert_not_called()
+        self.client.attach_files_to_product.assert_not_called()
+        self.client.reorder_product_media.assert_not_called()
+
+    def test_photo_sync_fails_when_staged_target_count_is_short(self):
+        photo_root = self._make_photo_root()
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+        self.client.staged_uploads_create.return_value = [
+            {"url": "https://upload/1", "resourceUrl": "https://resource/1", "parameters": []},
+        ]
+
+        with self._patched_photo_sync_outputs(photo_root):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [self.product],
+                photo_root,
+                dry=False,
+                manifest_path=photo_root / "manifest.json",
+            )
+
+        self.client.upload_file_to_staged_target.assert_not_called()
+        self.client.attach_files_to_product.assert_not_called()
+        failures = (photo_root / "failures.tsv").read_text(encoding="utf-8")
+        self.assertIn("unexpected number of targets", failures)
+
+
+class PhotoSyncMainFlowTests(unittest.TestCase):
+    def test_photo_sync_requires_photo_root(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "--photo-root is required"):
+                shopify_sync.main()
 
 
 if __name__ == "__main__":

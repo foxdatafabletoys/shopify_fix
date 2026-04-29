@@ -48,8 +48,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
+import mimetypes
 import os
 import re
 import sys
@@ -68,7 +70,13 @@ GW_FILE = SHEET_DIR / "Games Workshop Store List.xlsx"
 INV_FILE = SHEET_DIR / "everything else.xlsx"
 PREVIEW_CSV = HERE / "preview.csv"
 UPDATE_PREVIEW_CSV = HERE / "update_preview.csv"
+PHOTO_SYNC_PREVIEW_CSV = HERE / "photo_sync_preview.csv"
+PHOTO_SYNC_MANIFEST_JSON = HERE / "photo_sync_manifest.json"
+PHOTO_SYNC_MISSING_TSV = HERE / "photo_sync_missing.tsv"
+PHOTO_SYNC_AMBIGUOUS_TSV = HERE / "photo_sync_ambiguous.tsv"
+PHOTO_SYNC_FAILURES_TSV = HERE / "photo_sync_failures.tsv"
 LOG_FILE = HERE / "sync.log"
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
 # Tolerance for treating two money values as equal (Shopify rounds to 2 dp).
 MONEY_EPSILON = 0.005
@@ -143,6 +151,24 @@ class Product:
         }
 
 
+@dataclass
+class PhotoAssetSet:
+    key: str
+    label: str
+    product_code: str = ""
+    title_slug: str = ""
+    image_paths: list[Path] = field(default_factory=list)
+
+    def fingerprint(self) -> str:
+        digest = hashlib.sha1()
+        for path in self.image_paths:
+            stat = path.stat()
+            digest.update(str(path).encode("utf-8"))
+            digest.update(str(stat.st_size).encode("utf-8"))
+            digest.update(str(int(stat.st_mtime)).encode("utf-8"))
+        return digest.hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # Spreadsheet parsing
 # ---------------------------------------------------------------------------
@@ -190,6 +216,27 @@ def _clean_barcode(v: Any) -> str:
 
 def _round_money(x: float) -> float:
     return round(x + 1e-9, 2)
+
+
+def _normalize_slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower())
+    return slug.strip("-")
+
+
+def _extract_product_code(value: str) -> str:
+    matches = re.findall(r"(?<!\d)(\d{8,14})(?!\d)", value or "")
+    if not matches:
+        return ""
+    return max(matches, key=len)
+
+
+def _extract_title_slug(value: str) -> str:
+    base = Path(value or "").stem
+    code = _extract_product_code(base)
+    if code:
+        _, _, tail = base.partition(code)
+        base = tail.lstrip(" -_")
+    return _normalize_slug(base)
 
 
 def parse_gw(path: Path) -> list[Product]:
@@ -367,6 +414,26 @@ def build_product_list(strict: bool = False) -> list[Product]:
     return merged
 
 
+def build_gw_product_list(strict: bool = False) -> list[Product]:
+    if not GW_FILE.exists():
+        msg = f"GW file not found: {GW_FILE}"
+        if strict:
+            raise RuntimeError(msg)
+        log(f"WARNING: {msg}")
+        return []
+    try:
+        products = parse_gw(GW_FILE)
+    except Exception as e:
+        if strict:
+            raise RuntimeError(f"Failed to parse {GW_FILE.name}: {e}") from e
+        log(f"WARNING: failed to parse {GW_FILE.name}: {e}")
+        return []
+    if strict and not products:
+        raise RuntimeError("No GW products found after parsing; aborting before photo sync.")
+    log(f"Parsed {len(products)} GW products for photo sync")
+    return products
+
+
 def write_preview(products: list[Product]) -> None:
     cols = [
         "source", "title", "sku", "barcode", "vendor", "product_type",
@@ -378,6 +445,150 @@ def write_preview(products: list[Product]) -> None:
         for p in products:
             w.writerow(p.to_preview_row())
     log(f"Wrote preview: {PREVIEW_CSV}")
+
+
+def discover_photo_asset_sets(root: Path) -> list[PhotoAssetSet]:
+    if not root.exists():
+        raise RuntimeError(f"Photo root not found: {root}")
+    if not root.is_dir():
+        raise RuntimeError(f"Photo root must be a directory: {root}")
+
+    grouped: dict[tuple[str, str], list[Path]] = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in IMAGE_SUFFIXES:
+            continue
+        rel_parent = path.parent.relative_to(root)
+        if rel_parent == Path("."):
+            group_key = f"file:{path.stem}"
+            label = path.stem
+        else:
+            group_key = f"dir:{rel_parent.as_posix()}"
+            label = rel_parent.as_posix()
+        grouped.setdefault((group_key, label), []).append(path)
+
+    asset_sets: list[PhotoAssetSet] = []
+    for (group_key, label), paths in sorted(grouped.items(), key=lambda item: item[0][1]):
+        sorted_paths = sorted(paths)
+        name_seed = label if group_key.startswith("dir:") else sorted_paths[0].stem
+        asset_sets.append(PhotoAssetSet(
+            key=group_key,
+            label=label,
+            product_code=_extract_product_code(name_seed),
+            title_slug=_extract_title_slug(name_seed),
+            image_paths=sorted_paths,
+        ))
+    if not asset_sets:
+        raise RuntimeError(f"No image files found under photo root: {root}")
+    return asset_sets
+
+
+def build_photo_indexes(
+    asset_sets: list[PhotoAssetSet],
+) -> tuple[dict[str, list[PhotoAssetSet]], dict[str, list[PhotoAssetSet]]]:
+    by_code: dict[str, list[PhotoAssetSet]] = {}
+    by_slug: dict[str, list[PhotoAssetSet]] = {}
+    for asset_set in asset_sets:
+        if asset_set.product_code:
+            by_code.setdefault(asset_set.product_code, []).append(asset_set)
+        if asset_set.title_slug:
+            by_slug.setdefault(asset_set.title_slug, []).append(asset_set)
+    return by_code, by_slug
+
+
+def resolve_photo_asset(
+    product: Product,
+    by_code: dict[str, list[PhotoAssetSet]],
+    by_slug: dict[str, list[PhotoAssetSet]],
+) -> tuple[str, str, PhotoAssetSet | None, str]:
+    exact_matches = by_code.get(product.sku, [])
+    if len(exact_matches) == 1:
+        return "replace", "exact", exact_matches[0], ""
+    if len(exact_matches) > 1:
+        return "skip", "ambiguous", None, "multiple exact code matches"
+
+    slug = _normalize_slug(product.title)
+    slug_matches = by_slug.get(slug, [])
+    if len(slug_matches) == 1:
+        return "replace", "fallback", slug_matches[0], ""
+    if len(slug_matches) > 1:
+        return "skip", "ambiguous", None, "multiple title-slug matches"
+    return "skip", "missing", None, "no matching photo asset set"
+
+
+def load_photo_manifest(path: Path = PHOTO_SYNC_MANIFEST_JSON) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Failed to parse photo sync manifest {path}: {e}") from e
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Photo sync manifest must be a JSON object: {path}")
+    return data
+
+
+def save_photo_manifest(manifest: dict[str, Any], path: Path = PHOTO_SYNC_MANIFEST_JSON) -> None:
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def update_photo_manifest_entry(
+    manifest: dict[str, Any],
+    sku: str,
+    **fields: Any,
+) -> dict[str, Any]:
+    entry = manifest.setdefault(sku, {})
+    entry.update(fields)
+    entry["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return entry
+
+
+def append_photo_log(path: Path, rows: list[tuple[str, str, str]]) -> None:
+    if not rows:
+        return
+    with path.open("a", encoding="utf-8") as fh:
+        for sku, title, detail in rows:
+            fh.write(f"{sku}\t{title}\t{detail}\n")
+
+
+def build_photo_sync_preview_row(
+    product: Product,
+    status: str,
+    match_type: str,
+    photo_root: Path,
+    asset_set: PhotoAssetSet | None = None,
+    reason: str = "",
+) -> dict[str, Any]:
+    image_paths = asset_set.image_paths if asset_set else []
+    return {
+        "sku": product.sku,
+        "title": product.title,
+        "status": status,
+        "match_type": match_type,
+        "asset_label": asset_set.label if asset_set else "",
+        "image_count": len(image_paths),
+        "reason": reason,
+        "source_mode": "staged-local-files",
+        "source_paths": "|".join(str(path.relative_to(photo_root)) for path in image_paths),
+    }
+
+
+def update_and_save_photo_manifest_entry(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+    sku: str,
+    **fields: Any,
+) -> dict[str, Any]:
+    entry = update_photo_manifest_entry(manifest, sku, **fields)
+    save_photo_manifest(manifest, manifest_path)
+    return entry
+
+
+def _is_games_workshop_record(record: dict[str, Any]) -> bool:
+    vendor = (record.get("vendor") or "").strip().lower()
+    raw_tags = record.get("tags") or []
+    tags = raw_tags if isinstance(raw_tags, list) else [raw_tags]
+    normalized_tags = {str(tag).strip().lower() for tag in tags if str(tag).strip()}
+    return vendor == "games workshop" or "games workshop" in normalized_tags
 
 
 # ---------------------------------------------------------------------------
@@ -749,6 +960,223 @@ class Shopify:
         if errs:
             raise RuntimeError(f"inventorySetOnHandQuantities errors: {errs}")
 
+    # ------------------------------------------------------------------
+    # Photo sync for existing GW products
+    # ------------------------------------------------------------------
+    def iter_existing_for_photo_sync(self) -> Iterable[dict[str, Any]]:
+        cursor = None
+        page_q = """
+            query($cursor: String) {
+              products(first: 100, after: $cursor) {
+                edges {
+                  cursor
+                  node {
+                    id
+                    title
+                    vendor
+                    tags
+                    variants(first: 25) {
+                      edges {
+                        node {
+                          sku
+                        }
+                      }
+                    }
+                    media(first: 50) {
+                      edges {
+                        node {
+                          id
+                        }
+                      }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"cursor": cursor})
+            for edge in data["products"]["edges"]:
+                node = edge["node"]
+                media_ids = [m["node"]["id"] for m in node["media"]["edges"]]
+                for v_edge in node["variants"]["edges"]:
+                    sku = (v_edge["node"].get("sku") or "").strip()
+                    if not sku:
+                        continue
+                    yield {
+                        "product_id": node["id"],
+                        "title": node.get("title") or "",
+                        "vendor": node.get("vendor") or "",
+                        "tags": node.get("tags") or [],
+                        "sku": sku,
+                        "media_ids": media_ids,
+                    }
+            if not data["products"]["pageInfo"]["hasNextPage"]:
+                break
+            cursor = data["products"]["pageInfo"]["endCursor"]
+
+    def staged_uploads_create(self, image_paths: list[Path]) -> list[dict[str, Any]]:
+        inputs = []
+        for path in image_paths:
+            inputs.append({
+                "filename": path.name,
+                "mimeType": mimetypes.guess_type(path.name)[0] or "image/jpeg",
+                "resource": "IMAGE",
+                "httpMethod": "PUT",
+                "fileSize": str(path.stat().st_size),
+            })
+        q = """
+            mutation($input: [StagedUploadInput!]!) {
+              stagedUploadsCreate(input: $input) {
+                stagedTargets {
+                  url
+                  resourceUrl
+                  parameters { name value }
+                }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {"input": inputs})
+        errs = data["stagedUploadsCreate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"stagedUploadsCreate errors: {errs}")
+        return data["stagedUploadsCreate"]["stagedTargets"]
+
+    def upload_file_to_staged_target(self, image_path: Path, target: dict[str, Any]) -> str:
+        headers = {item["name"]: item["value"] for item in target["parameters"]}
+        headers.setdefault("Content-Type", mimetypes.guess_type(image_path.name)[0] or "image/jpeg")
+        with image_path.open("rb") as fh:
+            response = requests.put(
+                target["url"],
+                data=fh.read(),
+                headers=headers,
+                timeout=120,
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(f"Staged upload failed for {image_path.name}: HTTP {response.status_code}")
+        return target["resourceUrl"]
+
+    def file_create(self, source_urls: list[str], alt_text: str) -> list[dict[str, Any]]:
+        files = [{
+            "originalSource": source_url,
+            "contentType": "IMAGE",
+            "alt": alt_text,
+        } for source_url in source_urls]
+        q = """
+            mutation($files: [FileCreateInput!]!) {
+              fileCreate(files: $files) {
+                files {
+                  id
+                  fileStatus
+                  alt
+                }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {"files": files})
+        errs = data["fileCreate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"fileCreate errors: {errs}")
+        return data["fileCreate"]["files"]
+
+    def wait_for_files_ready(self, file_ids: list[str], timeout_seconds: int = 240) -> list[str]:
+        if not file_ids:
+            return []
+        q = """
+            query($id: ID!) {
+              node(id: $id) {
+                ... on File {
+                  id
+                  fileStatus
+                }
+              }
+            }
+        """
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            statuses: dict[str, str] = {}
+            for file_id in file_ids:
+                data = self.gql(q, {"id": file_id})
+                node = data.get("node")
+                if not node:
+                    continue
+                statuses[node["id"]] = node.get("fileStatus") or ""
+            if statuses and all(status == "READY" for status in statuses.values()):
+                return file_ids
+            if any(status == "FAILED" for status in statuses.values()):
+                raise RuntimeError(f"File processing failed: {statuses}")
+            time.sleep(2)
+        raise RuntimeError(f"Timed out waiting for files to become READY: {file_ids}")
+
+    def file_update(self, files: list[dict[str, Any]]) -> None:
+        q = """
+            mutation($files: [FileUpdateInput!]!) {
+              fileUpdate(files: $files) {
+                files { id }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {"files": files})
+        errs = data["fileUpdate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"fileUpdate errors: {errs}")
+
+    def attach_files_to_product(self, file_ids: list[str], product_id: str) -> None:
+        self.file_update([
+            {"id": file_id, "referencesToAdd": [product_id]}
+            for file_id in file_ids
+        ])
+
+    def detach_files_from_product(self, file_ids: list[str], product_id: str) -> None:
+        self.file_update([
+            {"id": file_id, "referencesToRemove": [product_id]}
+            for file_id in file_ids
+        ])
+
+    def wait_for_job(self, job_id: str, timeout_seconds: int = 240) -> None:
+        q = """
+            query($id: ID!) {
+              node(id: $id) {
+                ... on Job {
+                  id
+                  done
+                }
+              }
+            }
+        """
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            data = self.gql(q, {"id": job_id})
+            job = data.get("node")
+            if job and job.get("done"):
+                return
+            time.sleep(2)
+        raise RuntimeError(f"Timed out waiting for job completion: {job_id}")
+
+    def reorder_product_media(self, product_id: str, media_ids: list[str]) -> None:
+        if not media_ids:
+            return
+        moves = [{"id": media_id, "newPosition": index} for index, media_id in enumerate(media_ids)]
+        q = """
+            mutation($id: ID!, $moves: [MoveInput!]!) {
+              productReorderMedia(id: $id, moves: $moves) {
+                job { id done }
+                mediaUserErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {"id": product_id, "moves": moves})
+        errs = data["productReorderMedia"]["mediaUserErrors"]
+        if errs:
+            raise RuntimeError(f"productReorderMedia errors: {errs}")
+        job = data["productReorderMedia"].get("job")
+        if job and job.get("id") and not job.get("done"):
+            self.wait_for_job(job["id"])
+
 
 # ---------------------------------------------------------------------------
 # Phases: delete / import
@@ -986,6 +1414,223 @@ def run_preflight(client: Shopify, env: dict[str, str]) -> str:
     return location_id
 
 
+def run_photo_sync_preflight(client: Shopify) -> None:
+    shop_name = client.get_shop_name()
+    log(f"Photo sync preflight OK: authenticated shop {shop_name!r}")
+
+
+def phase_photo_sync(
+    client: Shopify,
+    products: list[Product],
+    photo_root: Path,
+    dry: bool,
+    manifest_path: Path = PHOTO_SYNC_MANIFEST_JSON,
+) -> None:
+    log("=== PHOTO SYNC phase: matching GW products to staged local image folders ===")
+    asset_sets = discover_photo_asset_sets(photo_root)
+    by_code, by_slug = build_photo_indexes(asset_sets)
+    manifest = load_photo_manifest(manifest_path)
+
+    by_sku: dict[str, dict[str, Any]] = {}
+    duplicate_shopify_skus: set[str] = set()
+    for rec in client.iter_existing_for_photo_sync():
+        if rec["sku"] in by_sku:
+            log(f"  warn: duplicate SKU on Shopify side for photo sync: {rec['sku']}")
+            duplicate_shopify_skus.add(rec["sku"])
+            continue
+        by_sku[rec["sku"]] = rec
+    log(f"  found {len(by_sku)} existing Shopify variants with SKU anchors")
+
+    preview_rows: list[dict[str, Any]] = []
+    missing_rows: list[tuple[str, str, str]] = []
+    ambiguous_rows: list[tuple[str, str, str]] = []
+    failure_rows: list[tuple[str, str, str]] = []
+
+    gw_products = [p for p in products if p.source == "GW"]
+    for product in gw_products:
+        existing = by_sku.get(product.sku)
+        if not existing:
+            reason = "SKU not found in Shopify"
+            preview_rows.append(build_photo_sync_preview_row(
+                product,
+                status="skip_missing_shopify",
+                match_type="",
+                photo_root=photo_root,
+                reason=reason,
+            ))
+            missing_rows.append((product.sku, product.title, reason))
+            continue
+        if product.sku in duplicate_shopify_skus:
+            reason = "multiple Shopify products share this SKU"
+            preview_rows.append(build_photo_sync_preview_row(
+                product,
+                status="skip_ambiguous_shopify",
+                match_type="ambiguous",
+                photo_root=photo_root,
+                reason=reason,
+            ))
+            ambiguous_rows.append((product.sku, product.title, reason))
+            continue
+        if not _is_games_workshop_record(existing):
+            reason = "Shopify product failed Games Workshop identity gate"
+            preview_rows.append(build_photo_sync_preview_row(
+                product,
+                status="skip_non_gw",
+                match_type="",
+                photo_root=photo_root,
+                reason=reason,
+            ))
+            continue
+
+        status, match_type, asset_set, reason = resolve_photo_asset(product, by_code, by_slug)
+        preview_rows.append(build_photo_sync_preview_row(
+            product,
+            status=status,
+            match_type=match_type,
+            photo_root=photo_root,
+            asset_set=asset_set,
+            reason=reason,
+        ))
+        if not asset_set:
+            if match_type == "ambiguous":
+                ambiguous_rows.append((product.sku, product.title, reason))
+            else:
+                missing_rows.append((product.sku, product.title, reason))
+            continue
+        if dry:
+            continue
+
+        fingerprint = asset_set.fingerprint()
+        prior_entry = dict(manifest.get(product.sku, {}))
+        prior_state = prior_entry.get("state")
+        if (
+            prior_state == "completed"
+            and prior_entry.get("asset_fingerprint") == fingerprint
+            and prior_entry.get("product_id") == existing["product_id"]
+        ):
+            log(f"  resume: skipping already-synced photo set for {product.sku}")
+            continue
+
+        try:
+            entry = update_and_save_photo_manifest_entry(
+                manifest,
+                manifest_path,
+                sku=product.sku,
+                state="preparing",
+                product_id=existing["product_id"],
+                source_mode="staged-local-files",
+                asset_label=asset_set.label,
+                asset_fingerprint=fingerprint,
+                old_media_ids=prior_entry.get("old_media_ids", existing["media_ids"]),
+                source_paths=[str(path) for path in asset_set.image_paths],
+            )
+
+            file_ids = prior_entry.get("new_file_ids") or []
+            if (
+                not file_ids
+                or prior_entry.get("asset_fingerprint") != fingerprint
+                or prior_state == "failed"
+            ):
+                staged_targets = client.staged_uploads_create(asset_set.image_paths)
+                if len(staged_targets) != len(asset_set.image_paths):
+                    raise RuntimeError(
+                        "stagedUploadsCreate returned an unexpected number of targets: "
+                        f"expected {len(asset_set.image_paths)}, got {len(staged_targets)}"
+                    )
+                resource_urls = [
+                    client.upload_file_to_staged_target(path, target)
+                    for path, target in zip(asset_set.image_paths, staged_targets)
+                ]
+                created_files = client.file_create(resource_urls, product.title)
+                file_ids = [item["id"] for item in created_files]
+                entry = update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="files_created",
+                    new_file_ids=file_ids,
+                )
+
+            if prior_state not in {"files_ready", "associated", "reordered", "completed"}:
+                client.wait_for_files_ready(file_ids)
+                entry = update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="files_ready",
+                )
+                prior_state = "files_ready"
+
+            if prior_state not in {"associated", "reordered", "completed"}:
+                client.attach_files_to_product(file_ids, existing["product_id"])
+                entry = update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="associated",
+                )
+                prior_state = "associated"
+
+            if prior_state not in {"reordered", "completed"}:
+                client.reorder_product_media(existing["product_id"], file_ids)
+                entry = update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="reordered",
+                )
+                prior_state = "reordered"
+
+            old_media_ids = entry.get("old_media_ids") or []
+            if old_media_ids and not entry.get("detached_old_media"):
+                client.detach_files_from_product(old_media_ids, existing["product_id"])
+                entry = update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    detached_old_media=True,
+                )
+
+            update_and_save_photo_manifest_entry(
+                manifest,
+                manifest_path,
+                sku=product.sku,
+                state="completed",
+            )
+        except Exception as e:
+            update_and_save_photo_manifest_entry(
+                manifest,
+                manifest_path,
+                sku=product.sku,
+                state="failed",
+                error=str(e),
+            )
+            detail = str(e)
+            log(f"  FAILED photo sync {product.sku} ({product.title!r}): {detail}")
+            failure_rows.append((product.sku, product.title, detail))
+
+    cols = [
+        "sku", "title", "status", "match_type", "asset_label",
+        "image_count", "reason", "source_mode", "source_paths",
+    ]
+    with PHOTO_SYNC_PREVIEW_CSV.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=cols)
+        writer.writeheader()
+        for row in preview_rows:
+            writer.writerow(row)
+    log(f"  wrote photo sync preview: {PHOTO_SYNC_PREVIEW_CSV} ({len(preview_rows)} rows)")
+
+    append_photo_log(PHOTO_SYNC_MISSING_TSV, missing_rows)
+    append_photo_log(PHOTO_SYNC_AMBIGUOUS_TSV, ambiguous_rows)
+    append_photo_log(PHOTO_SYNC_FAILURES_TSV, failure_rows)
+
+    log(
+        f"PHOTO SYNC summary: candidates={len(gw_products)} "
+        f"missing={len(missing_rows)} ambiguous={len(ambiguous_rows)} "
+        f"failed={len(failure_rows)} dry_run={dry}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -999,20 +1644,27 @@ def main() -> int:
     parser.add_argument("--import", dest="do_import", action="store_true", help="Run import phase.")
     parser.add_argument("--update", dest="do_update", action="store_true",
                         help="Update existing products in place (matched by SKU).")
+    parser.add_argument("--photo-sync", dest="do_photo_sync", action="store_true",
+                        help="Replace GW product media from staged local image folders.")
+    parser.add_argument("--photo-root", type=Path,
+                        help="Root folder containing staged GW image folders/files for --photo-sync.")
     parser.add_argument("--all", action="store_true", help="Run delete then import.")
     parser.add_argument("--start-at", type=int, default=0,
                         help="Resume import from this product index (after a partial run).")
     args = parser.parse_args()
 
     if not (args.dry_run or args.preflight or args.delete
-            or args.do_import or args.do_update or args.all):
+            or args.do_import or args.do_update or args.do_photo_sync or args.all):
         parser.print_help()
         return 1
 
-    # Plain --dry-run (without --update) means: read sheets, write preview.csv,
-    # don't contact Shopify. --update --dry-run is handled below since it needs
-    # to read from Shopify.
-    if args.dry_run and not args.do_update:
+    if args.do_photo_sync and (args.delete or args.do_import or args.do_update or args.all):
+        raise RuntimeError("--photo-sync must run separately from delete/import/update/all phases.")
+
+    # Plain --dry-run (without --update / --photo-sync) means: read sheets,
+    # write preview.csv, don't contact Shopify. --update/--photo-sync dry-runs
+    # are handled below since they need Shopify reads.
+    if args.dry_run and not args.do_update and not args.do_photo_sync:
         prepare_products_for_import()
         log("Dry run complete. Review preview.csv, then re-run with --delete, --import, or --update.")
         return 0
@@ -1030,13 +1682,20 @@ def main() -> int:
         run_preflight(client, env)
         return 0
 
+    if args.do_photo_sync and not args.photo_root:
+        raise RuntimeError("--photo-root is required with --photo-sync.")
+
     if args.delete and not args.all and not args.do_import:
         phase_delete(client, dry=False)
         return 0
 
-    products = prepare_products_for_import()
-    location_id = run_preflight(client, env)
-    log(f"Using location: {location_id}")
+    products = build_gw_product_list(strict=True) if args.do_photo_sync else prepare_products_for_import()
+    if args.do_photo_sync:
+        run_photo_sync_preflight(client)
+        location_id = ""
+    else:
+        location_id = run_preflight(client, env)
+        log(f"Using location: {location_id}")
 
     if args.delete or args.all:
         phase_delete(client, dry=False)
@@ -1048,6 +1707,13 @@ def main() -> int:
             log(
                 "Update dry-run complete. Review update_preview.csv, then re-run "
                 "with --update (no --dry-run) to apply."
+            )
+    if args.do_photo_sync:
+        phase_photo_sync(client, products, args.photo_root, dry=args.dry_run)
+        if args.dry_run:
+            log(
+                "Photo-sync dry-run complete. Review photo_sync_preview.csv, then re-run "
+                "with --photo-sync (no --dry-run) to apply."
             )
     return 0
 
