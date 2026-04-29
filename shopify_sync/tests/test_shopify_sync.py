@@ -156,6 +156,18 @@ class ShopifyGraphQLTests(unittest.TestCase):
         self.assertEqual(variables, {"id": "gid://shopify/MediaImage/1"})
         sleep.assert_called_once_with(2)
 
+    def test_wait_for_files_ready_includes_source_labels_on_failure(self):
+        self.client.gql = mock.Mock(return_value={
+            "node": {"id": "gid://shopify/MediaImage/1", "fileStatus": "FAILED"},
+        })
+
+        with self.assertRaisesRegex(RuntimeError, "bad-image.jpg"):
+            self.client.wait_for_files_ready(
+                ["gid://shopify/MediaImage/1"],
+                timeout_seconds=1,
+                file_labels={"gid://shopify/MediaImage/1": "bad-image.jpg"},
+            )
+
     def test_reorder_product_media_encodes_positions_as_strings(self):
         self.client.gql = mock.Mock(return_value={
             "productReorderMedia": {
@@ -178,6 +190,20 @@ class ShopifyGraphQLTests(unittest.TestCase):
                 {"id": "gid://shopify/MediaImage/2", "newPosition": "1"},
             ],
         )
+
+    def test_wait_for_job_uses_top_level_job_query(self):
+        self.client.gql = mock.Mock(side_effect=[
+            {"job": {"id": "gid://shopify/Job/1", "done": False}},
+            {"job": {"id": "gid://shopify/Job/1", "done": True}},
+        ])
+
+        with mock.patch("shopify_sync.time.sleep") as sleep:
+            self.client.wait_for_job("gid://shopify/Job/1", timeout_seconds=1)
+
+        query, variables = self.client.gql.call_args_list[0].args
+        self.assertIn("job(id: $id)", query)
+        self.assertEqual(variables, {"id": "gid://shopify/Job/1"})
+        sleep.assert_called_once_with(2)
 
 
 class LocationResolutionTests(unittest.TestCase):
@@ -1160,6 +1186,22 @@ class PhotoAssetMatchingTests(unittest.TestCase):
         self.assertIsNone(asset_set)
         self.assertIn("multiple title-slug matches", reason)
 
+    def test_discover_photo_asset_sets_skips_macosx_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            folder = root / "99120109017-ArmageddonBattalionDeathwatch"
+            folder.mkdir()
+            (folder / "real.jpg").write_bytes(b"image")
+            (folder / "MACOSX-real.jpg").write_bytes(b"artifact")
+            hidden = root / "__MACOSX"
+            hidden.mkdir()
+            (hidden / "ignored.jpg").write_bytes(b"artifact")
+
+            asset_sets = shopify_sync.discover_photo_asset_sets(root)
+
+        self.assertEqual(len(asset_sets), 1)
+        self.assertEqual([path.name for path in asset_sets[0].image_paths], ["real.jpg"])
+
 
 class PhotoSyncPhaseTests(unittest.TestCase):
     def setUp(self):
@@ -1266,7 +1308,7 @@ class PhotoSyncPhaseTests(unittest.TestCase):
 
         calls = []
         self.client.upload_file_to_staged_target.side_effect = lambda path, target: calls.append(("upload", path.name)) or target["resourceUrl"]
-        self.client.wait_for_files_ready.side_effect = lambda ids: calls.append(("ready", tuple(ids))) or ids
+        self.client.wait_for_files_ready.side_effect = lambda ids, **kwargs: calls.append(("ready", tuple(ids))) or ids
         self.client.attach_files_to_product.side_effect = lambda ids, pid: calls.append(("attach", tuple(ids), pid))
         self.client.reorder_product_media.side_effect = lambda pid, ids: calls.append(("reorder", pid, tuple(ids)))
         self.client.detach_files_from_product.side_effect = lambda ids, pid: calls.append(("detach", tuple(ids), pid))
@@ -1329,6 +1371,58 @@ class PhotoSyncPhaseTests(unittest.TestCase):
         self.assertEqual(manifest[self.product.sku]["state"], "completed")
         self.assertEqual(manifest[self.product.sku]["source_mode"], shopify_sync.PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING)
 
+    def test_photo_sync_existing_files_all_allows_non_gw_products(self):
+        non_gw_product = shopify_sync.Product(
+            title="Pokemon Booster Box",
+            sku="PKM-001",
+            vendor="Pokemon",
+            source="INV",
+        )
+        non_gw_existing = {
+            "product_id": "gid://shopify/Product/2",
+            "title": non_gw_product.title,
+            "vendor": "Pokemon",
+            "tags": ["Pokemon"],
+            "sku": non_gw_product.sku,
+            "media_ids": ["gid://shopify/MediaImage/old9"],
+        }
+        non_gw_files = [
+            shopify_sync.ShopifyImageFile(
+                id="gid://shopify/MediaImage/pkm1",
+                filename="PKM-001-front.jpg",
+                product_code=non_gw_product.sku,
+                title_slug="pokemon-booster-box",
+                file_status="READY",
+            ),
+        ]
+        self.client.iter_existing_for_photo_sync.return_value = iter([non_gw_existing])
+        self.client.iter_shopify_image_files_for_photo_sync.return_value = iter(non_gw_files)
+
+        calls = []
+        self.client.attach_files_to_product.side_effect = lambda ids, pid: calls.append(("attach", tuple(ids), pid))
+        self.client.reorder_product_media.side_effect = lambda pid, ids: calls.append(("reorder", pid, tuple(ids)))
+        self.client.detach_files_from_product.side_effect = lambda ids, pid: calls.append(("detach", tuple(ids), pid))
+
+        with tempfile.TemporaryDirectory() as tmp, self._patched_photo_sync_outputs(Path(tmp)):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [non_gw_product],
+                None,
+                dry=False,
+                manifest_path=Path(tmp) / "manifest.json",
+                source_mode=shopify_sync.PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING,
+                product_scope=shopify_sync.PHOTO_SYNC_SCOPE_ALL,
+            )
+
+        self.assertEqual(
+            calls,
+            [
+                ("attach", ("gid://shopify/MediaImage/pkm1",), "gid://shopify/Product/2"),
+                ("reorder", "gid://shopify/Product/2", ("gid://shopify/MediaImage/pkm1",)),
+                ("detach", ("gid://shopify/MediaImage/old9",), "gid://shopify/Product/2"),
+            ],
+        )
+
     def test_photo_sync_skips_duplicate_shopify_skus_as_ambiguous(self):
         photo_root = self._make_photo_root()
         duplicate = dict(self.existing)
@@ -1371,7 +1465,7 @@ class PhotoSyncPhaseTests(unittest.TestCase):
         }), encoding="utf-8")
 
         calls = []
-        self.client.wait_for_files_ready.side_effect = lambda ids: calls.append(("ready", tuple(ids)))
+        self.client.wait_for_files_ready.side_effect = lambda ids, **kwargs: calls.append(("ready", tuple(ids)))
         self.client.attach_files_to_product.side_effect = lambda ids, pid: calls.append(("attach", tuple(ids), pid))
         self.client.reorder_product_media.side_effect = lambda pid, ids: calls.append(("reorder", pid, tuple(ids)))
         self.client.detach_files_from_product.side_effect = lambda ids, pid: calls.append((tuple(ids), pid))
@@ -1442,7 +1536,7 @@ class PhotoSyncPhaseTests(unittest.TestCase):
 
         calls = []
         self.client.upload_file_to_staged_target.side_effect = lambda path, target: target["resourceUrl"]
-        self.client.wait_for_files_ready.side_effect = lambda ids: calls.append(("ready", tuple(ids))) or ids
+        self.client.wait_for_files_ready.side_effect = lambda ids, **kwargs: calls.append(("ready", tuple(ids))) or ids
         self.client.attach_files_to_product.side_effect = lambda ids, pid: calls.append(("attach", tuple(ids), pid))
         self.client.reorder_product_media.side_effect = lambda pid, ids: calls.append(("reorder", pid, tuple(ids)))
         self.client.detach_files_from_product.side_effect = lambda ids, pid: calls.append(("detach", tuple(ids), pid))
@@ -1491,6 +1585,7 @@ class PhotoSyncMainFlowTests(unittest.TestCase):
             cache_root,
             dry=False,
             source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+            product_scope=shopify_sync.PHOTO_SYNC_SCOPE_GW,
         )
 
     def test_photo_sync_without_photo_root_errors_when_default_cache_missing(self):
@@ -1536,6 +1631,7 @@ class PhotoSyncMainFlowTests(unittest.TestCase):
             photo_root,
             dry=False,
             source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+            product_scope=shopify_sync.PHOTO_SYNC_SCOPE_GW,
         )
 
     def test_photo_sync_existing_files_routes_without_photo_root(self):
@@ -1560,6 +1656,32 @@ class PhotoSyncMainFlowTests(unittest.TestCase):
             None,
             dry=False,
             source_mode=shopify_sync.PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING,
+            product_scope=shopify_sync.PHOTO_SYNC_SCOPE_GW,
+        )
+
+    def test_photo_sync_existing_files_all_routes_with_full_product_list(self):
+        client = mock.Mock()
+        products = [mock.sentinel.product]
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync-existing-files-all"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.build_product_list", return_value=products), \
+             mock.patch("shopify_sync.run_photo_sync_preflight"), \
+             mock.patch("shopify_sync.phase_photo_sync") as phase_photo_sync:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_photo_sync.assert_called_once_with(
+            client,
+            products,
+            None,
+            dry=False,
+            source_mode=shopify_sync.PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING,
+            product_scope=shopify_sync.PHOTO_SYNC_SCOPE_ALL,
         )
 
     def test_photo_sync_rejects_preflight_combination(self):
@@ -1570,6 +1692,12 @@ class PhotoSyncMainFlowTests(unittest.TestCase):
     def test_photo_sync_existing_files_rejects_photo_root_combination(self):
         with tempfile.TemporaryDirectory() as tmp, \
              mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync-existing-files", "--photo-root", tmp]):
+            with self.assertRaisesRegex(RuntimeError, "does not use --photo-root"):
+                shopify_sync.main()
+
+    def test_photo_sync_existing_files_all_rejects_photo_root_combination(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync-existing-files-all", "--photo-root", tmp]):
             with self.assertRaisesRegex(RuntimeError, "does not use --photo-root"):
                 shopify_sync.main()
 
@@ -1773,6 +1901,34 @@ class GWCacheRefreshTests(unittest.TestCase):
                 "sub-99120109017-ArmageddonBattalionDeathwatch02.jpg",
             ],
         )
+
+    def test_refresh_ignores_macosx_zip_artifacts(self):
+        archive_bytes = self._zip_bytes({
+            "__MACOSX/nested/99120109017-ArmageddonBattalionDeathwatch01.jpg": b"artifact",
+            "nested/99120109017-ArmageddonBattalionDeathwatch01.jpg": b"real",
+            "nested/._99120109017-ArmageddonBattalionDeathwatch02.jpg": b"artifact",
+        })
+        session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._archive_only_resources_page()),
+            "https://trade.games-workshop.com/downloads/deathwatch-pack.zip": FakeResponse(content=archive_bytes),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "gw_photo_cache_status.json"
+            status = gw_cache_refresh.refresh_gw_cache(
+                resources_url="https://trade.games-workshop.com/resources/",
+                cache_root=cache_root,
+                status_path=status_path,
+                dry=False,
+                logger=lambda msg: None,
+                session=session,
+            )
+            current = cache_root / "current"
+            image_names = sorted(path.name for path in current.rglob("*") if path.is_file())
+
+        self.assertEqual(status["status"], "published")
+        self.assertEqual(image_names, ["nested-99120109017-ArmageddonBattalionDeathwatch01.jpg"])
 
     def test_refresh_rejects_unsupported_archive_only_sources(self):
         session = self.FakeSession({

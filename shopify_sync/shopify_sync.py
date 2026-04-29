@@ -14,6 +14,10 @@ What it does:
   --generate-collections
                Creates a Wayland-style smart collection set and auto-tags existing
                Shopify products so they fall into those smart collections.
+  --update-collection-images
+               For each managed Wayland smart collection, picks the first product
+               (alphabetically by title) that has an image and copies that image
+               onto the collection. Writes collection_image_preview.csv.
   --import     Creates new Shopify products from the spreadsheets.
   --update     Matches existing Shopify products by SKU and updates price,
                compare_at_price, cost, and on-hand quantity from the sheets.
@@ -47,6 +51,8 @@ Usage:
   python shopify_sync.py --delete-collections
   python shopify_sync.py --generate-collections --dry-run
   python shopify_sync.py --generate-collections
+  python shopify_sync.py --update-collection-images --dry-run
+  python shopify_sync.py --update-collection-images
   python shopify_sync.py --import
   python shopify_sync.py --update --dry-run
   python shopify_sync.py --update
@@ -88,6 +94,7 @@ PHOTO_SYNC_AMBIGUOUS_TSV = HERE / "photo_sync_ambiguous.tsv"
 PHOTO_SYNC_FAILURES_TSV = HERE / "photo_sync_failures.tsv"
 COLLECTION_GENERATION_PREVIEW_CSV = HERE / "collection_generation_preview.csv"
 COLLECTION_GENERATION_UNMATCHED_CSV = HERE / "collection_generation_unmatched.csv"
+COLLECTION_IMAGE_PREVIEW_CSV = HERE / "collection_image_preview.csv"
 GW_RESOURCES_URL = "https://trade.games-workshop.com/resources/"
 GW_PHOTO_CACHE_ROOT = HERE / "gw_photo_cache"
 GW_PHOTO_CACHE_CURRENT = GW_PHOTO_CACHE_ROOT / "current"
@@ -97,6 +104,8 @@ LOG_FILE = HERE / "sync.log"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 PHOTO_SYNC_SOURCE_STAGED_LOCAL = "staged-local-files"
 PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING = "shopify-existing-files"
+PHOTO_SYNC_SCOPE_GW = "gw"
+PHOTO_SYNC_SCOPE_ALL = "all"
 LATEST_GW_RELEASE_LIMIT = 60
 AUTO_COLLECTION_TAG_PREFIX = "AUTO_COLLECTION::"
 
@@ -428,6 +437,14 @@ def _extract_title_slug(value: str) -> str:
     return _normalize_slug(base)
 
 
+def _is_ignored_photo_asset_path(path: Path) -> bool:
+    for part in path.parts:
+        normalized = part.strip()
+        if normalized == "__MACOSX" or normalized.startswith("._") or normalized.startswith("MACOSX-"):
+            return True
+    return False
+
+
 def _filename_from_url(url: str) -> str:
     path = Path((url or "").split("?", 1)[0])
     return path.name
@@ -694,6 +711,8 @@ def discover_photo_asset_sets(root: Path) -> list[PhotoAssetSet]:
     grouped: dict[tuple[str, str], list[Path]] = {}
     for path in sorted(root.rglob("*")):
         if not path.is_file() or path.suffix.lower() not in IMAGE_SUFFIXES:
+            continue
+        if _is_ignored_photo_asset_path(path.relative_to(root)):
             continue
         rel_parent = path.parent.relative_to(root)
         if rel_parent == Path("."):
@@ -1423,6 +1442,93 @@ class Shopify:
                 break
             cursor = data["products"]["pageInfo"]["endCursor"]
 
+    def get_collection_image(self, collection_id: str) -> dict[str, str]:
+        """Return current image info for a collection (empty dict if no image)."""
+        q = """
+            query($id: ID!) {
+              collection(id: $id) {
+                image { url altText }
+              }
+            }
+        """
+        data = self.gql(q, {"id": collection_id})
+        node = (data.get("collection") or {})
+        image = node.get("image") or {}
+        return {
+            "url": image.get("url") or "",
+            "alt_text": image.get("altText") or "",
+        }
+
+    def find_first_alphabetical_product_with_image(self, collection_id: str) -> dict[str, str]:
+        """Return {'product_id', 'product_title', 'image_url', 'image_alt'} for the
+        first product (alphabetically by title) in the collection that has a
+        featuredImage. Returns an empty dict if none found.
+
+        Uses sortKey TITLE so the first page already starts at the alphabetical top.
+        Pages forward only as needed to find an imaged product.
+        """
+        cursor = None
+        page_q = """
+            query($id: ID!, $cursor: String) {
+              collection(id: $id) {
+                products(first: 50, after: $cursor, sortKey: TITLE) {
+                  edges {
+                    node {
+                      id
+                      title
+                      featuredImage { url altText }
+                    }
+                  }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"id": collection_id, "cursor": cursor})
+            collection = data.get("collection") or {}
+            products = collection.get("products") or {}
+            for edge in products.get("edges", []) or []:
+                node = edge.get("node") or {}
+                image = node.get("featuredImage") or {}
+                url = image.get("url") or ""
+                if url:
+                    return {
+                        "product_id": node.get("id") or "",
+                        "product_title": node.get("title") or "",
+                        "image_url": url,
+                        "image_alt": image.get("altText") or "",
+                    }
+            page_info = products.get("pageInfo") or {}
+            if not page_info.get("hasNextPage"):
+                return {}
+            cursor = page_info.get("endCursor")
+
+    def update_collection_image(self, collection_id: str, image_src: str, alt_text: str = "") -> str:
+        """Set a collection's image to the given URL. Returns the resulting image URL."""
+        q = """
+            mutation($input: CollectionInput!) {
+              collectionUpdate(input: $input) {
+                collection { id image { url } }
+                userErrors { field message }
+              }
+            }
+        """
+        image_input: dict[str, Any] = {"src": image_src}
+        if alt_text:
+            image_input["altText"] = alt_text
+        data = self.gql(q, {
+            "input": {
+                "id": collection_id,
+                "image": image_input,
+            }
+        })
+        errs = data["collectionUpdate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"collectionUpdate (image) errors for {collection_id}: {errs}")
+        result_image = ((data["collectionUpdate"].get("collection") or {}).get("image") or {})
+        return result_image.get("url") or ""
+
     def create_smart_collection(self, title: str, handle: str, tag: str, description_html: str = "") -> dict[str, Any]:
         q = """
             mutation($input: CollectionInput!) {
@@ -1966,7 +2072,12 @@ class Shopify:
             raise RuntimeError(f"fileCreate errors: {errs}")
         return data["fileCreate"]["files"]
 
-    def wait_for_files_ready(self, file_ids: list[str], timeout_seconds: int = 240) -> list[str]:
+    def wait_for_files_ready(
+        self,
+        file_ids: list[str],
+        timeout_seconds: int = 240,
+        file_labels: dict[str, str] | None = None,
+    ) -> list[str]:
         if not file_ids:
             return []
         q = """
@@ -1991,7 +2102,16 @@ class Shopify:
             if statuses and all(status == "READY" for status in statuses.values()):
                 return file_ids
             if any(status == "FAILED" for status in statuses.values()):
-                raise RuntimeError(f"File processing failed: {statuses}")
+                details = statuses
+                if file_labels:
+                    details = {
+                        file_id: {
+                            "status": status,
+                            "source": file_labels.get(file_id, ""),
+                        }
+                        for file_id, status in statuses.items()
+                    }
+                raise RuntimeError(f"File processing failed: {details}")
             time.sleep(2)
         raise RuntimeError(f"Timed out waiting for files to become READY: {file_ids}")
 
@@ -2024,18 +2144,16 @@ class Shopify:
     def wait_for_job(self, job_id: str, timeout_seconds: int = 240) -> None:
         q = """
             query($id: ID!) {
-              node(id: $id) {
-                ... on Job {
-                  id
-                  done
-                }
+              job(id: $id) {
+                id
+                done
               }
             }
         """
         deadline = time.time() + timeout_seconds
         while time.time() < deadline:
             data = self.gql(q, {"id": job_id})
-            job = data.get("node")
+            job = data.get("job")
             if job and job.get("done"):
                 return
             time.sleep(2)
@@ -2218,6 +2336,151 @@ def phase_generate_collections(client: Shopify, dry: bool) -> None:
     log(
         f"GENERATE COLLECTIONS summary: tagged_products={updated_products} created={created} refreshed={refreshed} "
         f"publication_links={published} unmatched_products={len(unmatched)}"
+    )
+
+
+def phase_update_collection_images(client: Shopify, dry: bool) -> None:
+    """For each managed Wayland smart collection, set the collection image to the
+    image of the first product (alphabetically by title) in that collection that
+    has a featuredImage. Idempotent: skips collections whose image already matches.
+    """
+    log("=== UPDATE COLLECTION IMAGES phase: copying first-alphabetical product image to each collection ===")
+    existing_collections = {item["handle"]: item for item in client.iter_all_collections()}
+    rows: list[dict[str, str]] = []
+    actions = {"updated": 0, "already_set": 0, "no_products_with_image": 0, "missing_collection": 0, "skip_unmanaged": 0, "errors": 0}
+
+    for title, handle in WAYLAND_COLLECTION_SPECS:
+        collection = existing_collections.get(handle)
+        if not collection:
+            log(f"  skip (no collection): {title!r} handle={handle!r}")
+            rows.append({
+                "collection_title": title,
+                "collection_handle": handle,
+                "collection_id": "",
+                "current_image_url": "",
+                "picked_product_id": "",
+                "picked_product_title": "",
+                "picked_image_url": "",
+                "status": "missing_collection",
+            })
+            actions["missing_collection"] += 1
+            continue
+
+        marker_tag = collection_marker_tag_from_handle(handle)
+        if not is_managed_wayland_collection(collection, expected_tag=marker_tag):
+            log(
+                f"  skip (unmanaged collection): {title!r} handle={handle!r} "
+                f"id={collection['id']} -- not a Wayland smart collection"
+            )
+            rows.append({
+                "collection_title": title,
+                "collection_handle": handle,
+                "collection_id": collection["id"],
+                "current_image_url": "",
+                "picked_product_id": "",
+                "picked_product_title": "",
+                "picked_image_url": "",
+                "status": "skip_unmanaged",
+            })
+            actions["skip_unmanaged"] += 1
+            continue
+
+        try:
+            current = client.get_collection_image(collection["id"])
+        except Exception as e:
+            log(f"  ERROR reading current image for {title!r}: {e}")
+            current = {"url": "", "alt_text": ""}
+
+        try:
+            picked = client.find_first_alphabetical_product_with_image(collection["id"])
+        except Exception as e:
+            log(f"  ERROR querying products for {title!r}: {e}")
+            actions["errors"] += 1
+            rows.append({
+                "collection_title": title,
+                "collection_handle": handle,
+                "collection_id": collection["id"],
+                "current_image_url": current.get("url", ""),
+                "picked_product_id": "",
+                "picked_product_title": "",
+                "picked_image_url": "",
+                "status": f"error: {e}",
+            })
+            continue
+
+        if not picked:
+            log(f"  no imaged product found in {title!r} (handle={handle!r})")
+            actions["no_products_with_image"] += 1
+            rows.append({
+                "collection_title": title,
+                "collection_handle": handle,
+                "collection_id": collection["id"],
+                "current_image_url": current.get("url", ""),
+                "picked_product_id": "",
+                "picked_product_title": "",
+                "picked_image_url": "",
+                "status": "no_products_with_image",
+            })
+            continue
+
+        picked_url = picked["image_url"]
+        already = current.get("url", "") == picked_url
+        status = "already_set" if already else ("dry_run_would_update" if dry else "updated")
+        log(
+            f"  {title!r}: pick={picked['product_title']!r} "
+            f"image={picked_url} status={status}"
+        )
+
+        if not already and not dry:
+            try:
+                # Use product title as alt text fallback for screen readers.
+                client.update_collection_image(
+                    collection["id"],
+                    picked_url,
+                    alt_text=picked.get("image_alt") or title,
+                )
+                actions["updated"] += 1
+            except Exception as e:
+                log(f"  ERROR updating image for {title!r}: {e}")
+                status = f"error: {e}"
+                actions["errors"] += 1
+        elif already:
+            actions["already_set"] += 1
+
+        rows.append({
+            "collection_title": title,
+            "collection_handle": handle,
+            "collection_id": collection["id"],
+            "current_image_url": current.get("url", ""),
+            "picked_product_id": picked["product_id"],
+            "picked_product_title": picked["product_title"],
+            "picked_image_url": picked_url,
+            "status": status,
+        })
+
+    cols = [
+        "collection_title",
+        "collection_handle",
+        "collection_id",
+        "current_image_url",
+        "picked_product_id",
+        "picked_product_title",
+        "picked_image_url",
+        "status",
+    ]
+    with COLLECTION_IMAGE_PREVIEW_CSV.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=cols)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    log(f"  wrote preview: {COLLECTION_IMAGE_PREVIEW_CSV}")
+    log(
+        "UPDATE COLLECTION IMAGES summary: "
+        f"updated={actions['updated']} already_set={actions['already_set']} "
+        f"no_products_with_image={actions['no_products_with_image']} "
+        f"missing_collection={actions['missing_collection']} "
+        f"skip_unmanaged={actions['skip_unmanaged']} errors={actions['errors']} "
+        f"dry_run={dry}"
     )
 
 
@@ -2451,6 +2714,7 @@ def phase_photo_sync(
     dry: bool,
     manifest_path: Path = PHOTO_SYNC_MANIFEST_JSON,
     source_mode: str = PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+    product_scope: str = PHOTO_SYNC_SCOPE_GW,
 ) -> None:
     if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL:
         log("=== PHOTO SYNC phase: matching GW products to staged local image folders ===")
@@ -2486,8 +2750,14 @@ def phase_photo_sync(
     ambiguous_rows: list[tuple[str, str, str]] = []
     failure_rows: list[tuple[str, str, str]] = []
 
-    gw_products = [p for p in products if p.source == "GW"]
-    for product in gw_products:
+    if product_scope == PHOTO_SYNC_SCOPE_GW:
+        scoped_products = [p for p in products if p.source == "GW"]
+    elif product_scope == PHOTO_SYNC_SCOPE_ALL:
+        scoped_products = list(products)
+    else:
+        raise RuntimeError(f"Unsupported photo sync product scope: {product_scope}")
+
+    for product in scoped_products:
         existing = by_sku.get(product.sku)
         if not existing:
             reason = "SKU not found in Shopify"
@@ -2513,7 +2783,7 @@ def phase_photo_sync(
             ))
             ambiguous_rows.append((product.sku, product.title, reason))
             continue
-        if not _is_games_workshop_record(existing):
+        if product_scope == PHOTO_SYNC_SCOPE_GW and not _is_games_workshop_record(existing):
             reason = "Shopify product failed Games Workshop identity gate"
             preview_rows.append(build_photo_sync_preview_row(
                 product,
@@ -2631,8 +2901,13 @@ def phase_photo_sync(
                     ]
                     created_files = client.file_create(resource_urls, product.title)
                     file_ids = [item["id"] for item in created_files]
+                    file_labels = {
+                        item["id"]: str(path)
+                        for path, item in zip(asset_set.image_paths, created_files)
+                    }
                 else:
                     file_ids = [file.id for file in matched_files]
+                    file_labels = {file.id: (file.filename or file.id) for file in matched_files}
                 entry = update_and_save_photo_manifest_entry(
                     manifest,
                     manifest_path,
@@ -2640,12 +2915,15 @@ def phase_photo_sync(
                     state="files_created" if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL else "files_resolved",
                     new_file_ids=file_ids,
                     old_media_ids=[media_id for media_id in old_media_ids if media_id not in set(file_ids)],
+                    file_labels=file_labels,
                 )
                 old_media_ids = entry.get("old_media_ids") or []
+            else:
+                file_labels = prior_entry.get("file_labels") or {}
 
             if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL:
                 if effective_prior_state not in {"files_ready", "associated", "reordered", "completed"}:
-                    client.wait_for_files_ready(file_ids)
+                    client.wait_for_files_ready(file_ids, file_labels=file_labels)
                     entry = update_and_save_photo_manifest_entry(
                         manifest,
                         manifest_path,
@@ -2720,7 +2998,7 @@ def phase_photo_sync(
     append_photo_log(PHOTO_SYNC_FAILURES_TSV, failure_rows)
 
     log(
-        f"PHOTO SYNC summary: candidates={len(gw_products)} "
+        f"PHOTO SYNC summary: candidates={len(scoped_products)} "
         f"missing={len(missing_rows)} ambiguous={len(ambiguous_rows)} "
         f"failed={len(failure_rows)} dry_run={dry}"
     )
@@ -2742,6 +3020,8 @@ def main() -> int:
                         help="Delete only managed Wayland Shopify collections.")
     parser.add_argument("--generate-collections", dest="do_generate_collections", action="store_true",
                         help="Create Wayland-style smart collections and auto-tag existing Shopify products.")
+    parser.add_argument("--update-collection-images", dest="do_update_collection_images", action="store_true",
+                        help="Set each managed collection's image to the first alphabetical product's image.")
     parser.add_argument("--import", dest="do_import", action="store_true", help="Run import phase.")
     parser.add_argument("--update", dest="do_update", action="store_true",
                         help="Update existing products in place (matched by SKU).")
@@ -2749,6 +3029,8 @@ def main() -> int:
                         help="Replace GW product media from the repo-local cache or an explicit local photo root.")
     parser.add_argument("--photo-sync-existing-files", dest="do_photo_sync_existing_files", action="store_true",
                         help="Attach matching existing Shopify Files to GW products without uploading new media.")
+    parser.add_argument("--photo-sync-existing-files-all", dest="do_photo_sync_existing_files_all", action="store_true",
+                        help="Attach matching existing Shopify Files to all catalog products without uploading new media.")
     parser.add_argument("--photo-root", type=Path,
                         help="Root folder containing staged GW image folders/files for --photo-sync.")
     parser.add_argument("--all", action="store_true", help="Run delete then import.")
@@ -2757,24 +3039,24 @@ def main() -> int:
     args = parser.parse_args()
 
     if not (args.dry_run or args.preflight or args.delete or args.do_delete_collections
-            or args.do_generate_collections
+            or args.do_generate_collections or args.do_update_collection_images
             or args.do_gw_refresh_cache or args.do_import or args.do_update
-            or args.do_photo_sync or args.do_photo_sync_existing_files or args.all):
+            or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.all):
         parser.print_help()
         return 1
 
     if args.do_gw_refresh_cache:
         invalid_refresh_combo = (
-            args.do_photo_sync or args.do_photo_sync_existing_files or args.do_update or args.do_import or args.delete
-            or args.do_delete_collections or args.do_generate_collections
+            args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.do_update or args.do_import or args.delete
+            or args.do_delete_collections or args.do_generate_collections or args.do_update_collection_images
             or args.all or args.preflight
             or args.start_at != 0 or args.photo_root is not None
         )
         if invalid_refresh_combo:
             raise RuntimeError(
                 "--gw-refresh-cache must run separately and cannot be combined with "
-                "--photo-sync, --photo-sync-existing-files, --update, --import, --delete, --delete-collections, "
-                "--generate-collections, --all, --preflight, --start-at, or --photo-root."
+                "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --update, --import, --delete, --delete-collections, "
+                "--generate-collections, --update-collection-images, --all, --preflight, --start-at, or --photo-root."
             )
         refresh_gw_cache(
             resources_url=GW_RESOURCES_URL,
@@ -2795,6 +3077,8 @@ def main() -> int:
         raise RuntimeError("--start-at is only valid with --import/--all, not --photo-sync.")
     if args.do_photo_sync and args.do_photo_sync_existing_files:
         raise RuntimeError("--photo-sync and --photo-sync-existing-files must run separately.")
+    if args.do_photo_sync and args.do_photo_sync_existing_files_all:
+        raise RuntimeError("--photo-sync and --photo-sync-existing-files-all must run separately.")
     if args.do_photo_sync_existing_files and (args.delete or args.do_import or args.do_update or args.all):
         raise RuntimeError("--photo-sync-existing-files must run separately from delete/import/update/all phases.")
     if args.do_photo_sync_existing_files and args.preflight:
@@ -2803,23 +3087,46 @@ def main() -> int:
         raise RuntimeError("--start-at is only valid with --import/--all, not --photo-sync-existing-files.")
     if args.do_photo_sync_existing_files and args.photo_root is not None:
         raise RuntimeError("--photo-sync-existing-files does not use --photo-root.")
+    if args.do_photo_sync_existing_files and args.do_photo_sync_existing_files_all:
+        raise RuntimeError("--photo-sync-existing-files and --photo-sync-existing-files-all must run separately.")
+    if args.do_photo_sync_existing_files_all and (args.delete or args.do_import or args.do_update or args.all):
+        raise RuntimeError("--photo-sync-existing-files-all must run separately from delete/import/update/all phases.")
+    if args.do_photo_sync_existing_files_all and args.preflight:
+        raise RuntimeError("--photo-sync-existing-files-all cannot be combined with --preflight.")
+    if args.do_photo_sync_existing_files_all and args.start_at != 0:
+        raise RuntimeError("--start-at is only valid with --import/--all, not --photo-sync-existing-files-all.")
+    if args.do_photo_sync_existing_files_all and args.photo_root is not None:
+        raise RuntimeError("--photo-sync-existing-files-all does not use --photo-root.")
     if args.do_delete_collections and (
         args.preflight or args.delete or args.do_import or args.do_update
-        or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_generate_collections
+        or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.do_generate_collections
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
             "--delete-collections must run separately from preflight/delete/import/update/"
-            "photo-sync/photo-sync-existing-files/all and cannot be combined with --start-at or --photo-root."
+            "photo-sync/photo-sync-existing-files/photo-sync-existing-files-all/all and cannot be combined with --start-at or --photo-root."
         )
     if args.do_generate_collections and (
         args.preflight or args.delete or args.do_delete_collections or args.do_import
-        or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files or args.all
+        or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.all
+        or args.do_update_collection_images
         or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
             "--generate-collections must run separately from preflight/delete/delete-collections/"
-            "import/update/photo-sync/photo-sync-existing-files/all and cannot be combined with --start-at or --photo-root."
+            "import/update/photo-sync/photo-sync-existing-files/photo-sync-existing-files-all/update-collection-images/all "
+            "and cannot be combined with --start-at or --photo-root."
+        )
+    if args.do_update_collection_images and (
+        args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
+        or args.do_import or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files
+        or args.do_photo_sync_existing_files_all or args.all
+        or args.start_at != 0 or args.photo_root is not None
+    ):
+        raise RuntimeError(
+            "--update-collection-images must run separately from preflight/delete/delete-collections/"
+            "generate-collections/import/update/photo-sync/photo-sync-existing-files/photo-sync-existing-files-all/all "
+            "and cannot be combined with --start-at or --photo-root."
         )
 
     # Plain --dry-run (without --update / --photo-sync) means: read sheets,
@@ -2830,8 +3137,10 @@ def main() -> int:
         and not args.do_update
         and not args.do_photo_sync
         and not args.do_photo_sync_existing_files
+        and not args.do_photo_sync_existing_files_all
         and not args.do_generate_collections
         and not args.do_delete_collections
+        and not args.do_update_collection_images
     ):
         prepare_products_for_import()
         log("Dry run complete. Review preview.csv, then re-run with --delete, --import, or --update.")
@@ -2862,13 +3171,28 @@ def main() -> int:
                 "then re-run with --generate-collections (no --dry-run) to apply."
             )
         return 0
+    if args.do_update_collection_images:
+        phase_update_collection_images(client, dry=args.dry_run)
+        if args.dry_run:
+            log(
+                "Collection image update dry-run complete. Review "
+                "collection_image_preview.csv, then re-run with "
+                "--update-collection-images (no --dry-run) to apply."
+            )
+        return 0
 
     if args.delete and not args.all and not args.do_import:
         phase_delete(client, dry=False)
         return 0
 
-    products = build_gw_product_list(strict=True) if (args.do_photo_sync or args.do_photo_sync_existing_files) else prepare_products_for_import()
     if args.do_photo_sync or args.do_photo_sync_existing_files:
+        products = build_gw_product_list(strict=True)
+    elif args.do_photo_sync_existing_files_all:
+        products = build_product_list(strict=True)
+    else:
+        products = prepare_products_for_import()
+
+    if args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all:
         run_photo_sync_preflight(client)
         location_id = ""
     else:
@@ -2893,6 +3217,7 @@ def main() -> int:
             resolve_photo_sync_root(args.photo_root),
             dry=args.dry_run,
             source_mode=PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+            product_scope=PHOTO_SYNC_SCOPE_GW,
         )
         if args.dry_run:
             log(
@@ -2906,11 +3231,26 @@ def main() -> int:
             None,
             dry=args.dry_run,
             source_mode=PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING,
+            product_scope=PHOTO_SYNC_SCOPE_GW,
         )
         if args.dry_run:
             log(
                 "Photo-sync existing-files dry-run complete. Review photo_sync_preview.csv, then re-run "
                 "with --photo-sync-existing-files (no --dry-run) to apply."
+            )
+    if args.do_photo_sync_existing_files_all:
+        phase_photo_sync(
+            client,
+            products,
+            None,
+            dry=args.dry_run,
+            source_mode=PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING,
+            product_scope=PHOTO_SYNC_SCOPE_ALL,
+        )
+        if args.dry_run:
+            log(
+                "Photo-sync existing-files-all dry-run complete. Review photo_sync_preview.csv, then re-run "
+                "with --photo-sync-existing-files-all (no --dry-run) to apply."
             )
     return 0
 

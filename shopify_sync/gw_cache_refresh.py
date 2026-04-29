@@ -280,6 +280,15 @@ def derive_archive_asset_group_label(member_name: str, fallback_label: str) -> s
     return product_code
 
 
+def is_ignored_archive_member(member_name: str) -> bool:
+    path = Path(member_name)
+    for part in path.parts:
+        normalized = part.strip()
+        if normalized == "__MACOSX" or normalized.startswith("._"):
+            return True
+    return False
+
+
 def compute_tree_fingerprint(root: Path) -> str:
     digest = hashlib.sha1()
     for path in sorted(root.rglob("*")):
@@ -411,6 +420,8 @@ def extract_images_from_zip(
     with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
         for member in zf.infolist():
             if member.is_dir():
+                continue
+            if is_ignored_archive_member(member.filename):
                 continue
             suffix = Path(member.filename).suffix.lower()
             if suffix not in IMAGE_SUFFIXES:
