@@ -749,25 +749,42 @@ class ProductPublicationTests(unittest.TestCase):
     def setUp(self):
         self.client = shopify_sync.Shopify("example-store", "shpat_test")
 
-    def test_publish_to_current_channel_uses_publishable_publish_to_current_channel(self):
+    def test_get_publication_id_by_name_matches_online_store(self):
         self.client.gql = mock.Mock(return_value={
-            "publishablePublishToCurrentChannel": {
+            "publications": {
+                "edges": [
+                    {"node": {"id": "gid://shopify/Publication/1", "name": "Shop"}},
+                    {"node": {"id": "gid://shopify/Publication/2", "name": "Online Store"}},
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        })
+
+        publication_id = self.client.get_publication_id_by_name("Online Store")
+
+        self.assertEqual(publication_id, "gid://shopify/Publication/2")
+
+    def test_publish_to_publication_uses_publishable_publish(self):
+        self.client.gql = mock.Mock(return_value={
+            "publishablePublish": {
                 "publishable": {
-                    "availablePublicationsCount": {"count": 1},
-                    "resourcePublicationsCount": {"count": 1},
+                    "publishedOnPublication": True,
                 },
                 "userErrors": [],
             }
         })
 
-        self.client.publish_to_current_channel("gid://shopify/Product/9")
+        self.client.publish_to_publication("gid://shopify/Product/9", "gid://shopify/Publication/2")
 
         query, variables = self.client.gql.call_args.args
-        self.assertIn("publishablePublishToCurrentChannel", query)
-        self.assertIn("availablePublicationsCount", query)
-        self.assertEqual(variables, {"id": "gid://shopify/Product/9"})
+        self.assertIn("publishablePublish", query)
+        self.assertIn("publishedOnPublication", query)
+        self.assertEqual(
+            variables,
+            {"id": "gid://shopify/Product/9", "publicationId": "gid://shopify/Publication/2"},
+        )
 
-    def test_iter_products_unpublished_on_current_channel_filters_published_products(self):
+    def test_iter_products_unpublished_on_publication_filters_published_products(self):
         self.client.gql = mock.Mock(return_value={
             "products": {
                 "edges": [
@@ -776,12 +793,7 @@ class ProductPublicationTests(unittest.TestCase):
                         "node": {
                             "id": "gid://shopify/Product/1",
                             "title": "Published",
-                            "publishedOnCurrentPublication": True,
-                            "resourcePublicationOnCurrentPublication": {
-                                "publication": {"id": "gid://shopify/Publication/1"},
-                                "publishDate": "2026-04-01T00:00:00Z",
-                                "isPublished": True,
-                            },
+                            "publishedOnPublication": True,
                             "variants": {"edges": [{"node": {"sku": "PUB-1"}}]},
                         },
                     },
@@ -790,8 +802,7 @@ class ProductPublicationTests(unittest.TestCase):
                         "node": {
                             "id": "gid://shopify/Product/2",
                             "title": "Needs Publish",
-                            "publishedOnCurrentPublication": False,
-                            "resourcePublicationOnCurrentPublication": None,
+                            "publishedOnPublication": False,
                             "variants": {"edges": [{"node": {"sku": "NP-1"}}, {"node": {"sku": ""}}]},
                         },
                     },
@@ -800,7 +811,7 @@ class ProductPublicationTests(unittest.TestCase):
             }
         })
 
-        rows = list(self.client.iter_products_unpublished_on_current_channel())
+        rows = list(self.client.iter_products_unpublished_on_publication("gid://shopify/Publication/2"))
 
         self.assertEqual(
             rows,
@@ -808,18 +819,15 @@ class ProductPublicationTests(unittest.TestCase):
                 {
                     "id": "gid://shopify/Product/2",
                     "title": "Needs Publish",
-                    "published_on_current_publication": False,
-                    "current_publication_id": "",
-                    "current_publication_publish_date": "",
-                    "current_publication_is_published": False,
+                    "published_on_publication": False,
+                    "publication_id": "gid://shopify/Publication/2",
                     "skus": ["NP-1"],
                 }
             ],
         )
         query, variables = self.client.gql.call_args.args
-        self.assertIn("publishedOnCurrentPublication", query)
-        self.assertIn("resourcePublicationOnCurrentPublication", query)
-        self.assertEqual(variables, {"cursor": None})
+        self.assertIn("publishedOnPublication", query)
+        self.assertEqual(variables, {"cursor": None, "publicationId": "gid://shopify/Publication/2"})
 
 
 class MainFlowTests(unittest.TestCase):
@@ -1092,7 +1100,7 @@ class PhaseUpdateTests(unittest.TestCase):
                                return_value=iter(existing)), \
              mock.patch.object(self.client, "update_variant_fields") as upd, \
              mock.patch.object(self.client, "set_on_hand") as set_qty, \
-             mock.patch.object(self.client, "publish_to_current_channel") as publish, \
+             mock.patch.object(self.client, "publish_to_online_store") as publish, \
              mock.patch("shopify_sync.UPDATE_PREVIEW_CSV",
                         new=Path(tempfile.gettempdir()) / "_tmp_update_preview.csv"):
             shopify_sync.phase_update(self.client, sheet, self.location, dry=True)
@@ -1123,7 +1131,7 @@ class PhaseUpdateTests(unittest.TestCase):
                                return_value=iter(existing)), \
              mock.patch.object(self.client, "update_variant_fields") as upd, \
              mock.patch.object(self.client, "set_on_hand") as set_qty, \
-             mock.patch.object(self.client, "publish_to_current_channel") as publish, \
+             mock.patch.object(self.client, "publish_to_online_store") as publish, \
              mock.patch("shopify_sync.UPDATE_PREVIEW_CSV",
                         new=Path(tempfile.gettempdir()) / "_tmp_update_preview.csv"):
             shopify_sync.phase_update(self.client, sheet, self.location, dry=False)
@@ -1147,7 +1155,7 @@ class PhaseUpdateTests(unittest.TestCase):
                                return_value=iter(existing)), \
              mock.patch.object(self.client, "update_variant_fields", side_effect=RuntimeError("write failed")) as upd, \
              mock.patch.object(self.client, "set_on_hand") as set_qty, \
-             mock.patch.object(self.client, "publish_to_current_channel") as publish, \
+             mock.patch.object(self.client, "publish_to_online_store") as publish, \
              mock.patch("shopify_sync.UPDATE_PREVIEW_CSV",
                         new=Path(tempfile.gettempdir()) / "_tmp_update_preview.csv"):
             shopify_sync.phase_update(self.client, sheet, self.location, dry=False)
@@ -1172,7 +1180,7 @@ class PhaseImportTests(unittest.TestCase):
         shopify_sync.phase_import(self.client, products, self.location, dry=False)
 
         self.client.create_product.assert_called_once_with(products[0], self.location)
-        self.client.publish_to_current_channel.assert_called_once_with("gid://shopify/Product/7")
+        self.client.publish_to_online_store.assert_called_once_with("gid://shopify/Product/7")
 
     def test_live_run_skips_publish_when_create_raises(self):
         products = [self._make_product()]
@@ -1180,7 +1188,7 @@ class PhaseImportTests(unittest.TestCase):
 
         shopify_sync.phase_import(self.client, products, self.location, dry=False)
 
-        self.client.publish_to_current_channel.assert_not_called()
+        self.client.publish_to_online_store.assert_not_called()
 
 
 class PhaseOnlineStoreBackfillTests(unittest.TestCase):
@@ -1189,14 +1197,13 @@ class PhaseOnlineStoreBackfillTests(unittest.TestCase):
         self.preview_path = Path(tempfile.gettempdir()) / "_tmp_online_store_backfill_preview.csv"
 
     def test_dry_run_queries_candidates_without_publishing(self):
-        self.client.iter_products_unpublished_on_current_channel.return_value = iter([
+        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"
+        self.client.iter_products_unpublished_on_publication.return_value = iter([
             {
                 "id": "gid://shopify/Product/1",
                 "title": "Needs Publish",
-                "published_on_current_publication": False,
-                "current_publication_id": "",
-                "current_publication_publish_date": "",
-                "current_publication_is_published": False,
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/2",
                 "skus": ["SKU-1"],
             }
         ])
@@ -1204,20 +1211,20 @@ class PhaseOnlineStoreBackfillTests(unittest.TestCase):
         with mock.patch("shopify_sync.ONLINE_STORE_BACKFILL_PREVIEW_CSV", new=self.preview_path):
             shopify_sync.phase_publish_online_store_backfill(self.client, dry=True)
 
-        self.client.publish_to_current_channel.assert_not_called()
+        self.client.publish_to_publication.assert_not_called()
         preview = self.preview_path.read_text(encoding="utf-8")
         self.assertIn("dry_run_candidate", preview)
         self.assertIn("Needs Publish", preview)
+        self.assertIn("Online Store", preview)
 
     def test_live_run_publishes_each_candidate(self):
-        self.client.iter_products_unpublished_on_current_channel.return_value = iter([
+        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"
+        self.client.iter_products_unpublished_on_publication.return_value = iter([
             {
                 "id": "gid://shopify/Product/1",
                 "title": "Needs Publish",
-                "published_on_current_publication": False,
-                "current_publication_id": "",
-                "current_publication_publish_date": "",
-                "current_publication_is_published": False,
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/2",
                 "skus": ["SKU-1"],
             }
         ])
@@ -1225,7 +1232,10 @@ class PhaseOnlineStoreBackfillTests(unittest.TestCase):
         with mock.patch("shopify_sync.ONLINE_STORE_BACKFILL_PREVIEW_CSV", new=self.preview_path):
             shopify_sync.phase_publish_online_store_backfill(self.client, dry=False)
 
-        self.client.publish_to_current_channel.assert_called_once_with("gid://shopify/Product/1")
+        self.client.publish_to_publication.assert_called_once_with(
+            "gid://shopify/Product/1",
+            "gid://shopify/Publication/2",
+        )
         preview = self.preview_path.read_text(encoding="utf-8")
         self.assertIn("published", preview)
 

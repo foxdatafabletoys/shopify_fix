@@ -114,6 +114,7 @@ PHOTO_SYNC_SCOPE_GW = "gw"
 PHOTO_SYNC_SCOPE_ALL = "all"
 LATEST_GW_RELEASE_LIMIT = 60
 AUTO_COLLECTION_TAG_PREFIX = "AUTO_COLLECTION::"
+ONLINE_STORE_PUBLICATION_NAME = "Online Store"
 
 # Tolerance for treating two money values as equal (Shopify rounds to 2 dp).
 MONEY_EPSILON = 0.005
@@ -1626,24 +1627,51 @@ class Shopify:
         if errs:
             raise RuntimeError(f"publishablePublishToCurrentChannel errors: {errs}")
 
-    def iter_products_unpublished_on_current_channel(self) -> Iterable[dict[str, Any]]:
+    def get_publication_id_by_name(self, publication_name: str) -> str:
+        target = (publication_name or "").strip().lower()
+        if not target:
+            raise RuntimeError("Publication name cannot be blank.")
+        for publication in self.iter_publications():
+            if (publication.get("name") or "").strip().lower() == target:
+                return publication["id"]
+        raise RuntimeError(f"Could not find Shopify publication named {publication_name!r}.")
+
+    def publish_to_publication(self, resource_id: str, publication_id: str) -> None:
+        q = """
+            mutation($id: ID!, $publicationId: ID!) {
+              publishablePublish(id: $id, input: {publicationId: $publicationId}) {
+                publishable {
+                  publishedOnPublication(publicationId: $publicationId)
+                }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {"id": resource_id, "publicationId": publication_id})
+        errs = data["publishablePublish"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"publishablePublish errors: {errs}")
+        if not data["publishablePublish"]["publishable"]["publishedOnPublication"]:
+            raise RuntimeError(
+                f"publishablePublish did not confirm publication for resource {resource_id} "
+                f"on publication {publication_id}"
+            )
+
+    def publish_to_online_store(self, resource_id: str) -> None:
+        publication_id = self.get_publication_id_by_name(ONLINE_STORE_PUBLICATION_NAME)
+        self.publish_to_publication(resource_id, publication_id)
+
+    def iter_products_unpublished_on_publication(self, publication_id: str) -> Iterable[dict[str, Any]]:
         cursor = None
         page_q = """
-            query($cursor: String) {
+            query($cursor: String, $publicationId: ID!) {
               products(first: 100, after: $cursor) {
                 edges {
                   cursor
                   node {
                     id
                     title
-                    publishedOnCurrentPublication
-                    resourcePublicationOnCurrentPublication {
-                      publication {
-                        id
-                      }
-                      publishDate
-                      isPublished
-                    }
+                    publishedOnPublication(publicationId: $publicationId)
                     variants(first: 10) {
                       edges {
                         node {
@@ -1658,19 +1686,16 @@ class Shopify:
             }
         """
         while True:
-            data = self.gql(page_q, {"cursor": cursor})
+            data = self.gql(page_q, {"cursor": cursor, "publicationId": publication_id})
             for edge in data["products"]["edges"]:
                 node = edge["node"]
-                if node.get("publishedOnCurrentPublication"):
+                if node.get("publishedOnPublication"):
                     continue
-                current_publication = node.get("resourcePublicationOnCurrentPublication") or {}
                 yield {
                     "id": node["id"],
                     "title": node.get("title") or "",
-                    "published_on_current_publication": False,
-                    "current_publication_id": ((current_publication.get("publication") or {}).get("id") or ""),
-                    "current_publication_publish_date": current_publication.get("publishDate") or "",
-                    "current_publication_is_published": bool(current_publication.get("isPublished")),
+                    "published_on_publication": False,
+                    "publication_id": publication_id,
                     "skus": [
                         (variant_edge.get("node") or {}).get("sku") or ""
                         for variant_edge in (node.get("variants") or {}).get("edges") or []
@@ -2565,7 +2590,7 @@ def phase_import(client: Shopify, products: list[Product], location_id: str, dry
             pid = client.create_product(p, location_id)
             created += 1
             try:
-                client.publish_to_current_channel(pid)
+                client.publish_to_online_store(pid)
                 published += 1
             except Exception as e:
                 publish_failed += 1
@@ -2701,7 +2726,7 @@ def phase_update(client: Shopify, products: list[Product], location_id: str, dry
             continue
 
         try:
-            client.publish_to_current_channel(existing["product_id"])
+            client.publish_to_online_store(existing["product_id"])
             published += 1
         except Exception as e:
             publish_failed += 1
@@ -2738,7 +2763,8 @@ def phase_update(client: Shopify, products: list[Product], location_id: str, dry
 
 def phase_publish_online_store_backfill(client: Shopify, dry: bool) -> None:
     log("=== ONLINE STORE BACKFILL phase: publishing currently-unpublished Shopify products ===")
-    candidates = list(client.iter_products_unpublished_on_current_channel())
+    publication_id = client.get_publication_id_by_name(ONLINE_STORE_PUBLICATION_NAME)
+    candidates = list(client.iter_products_unpublished_on_publication(publication_id))
     rows: list[dict[str, str]] = []
     published = 0
     publish_failed = 0
@@ -2747,7 +2773,7 @@ def phase_publish_online_store_backfill(client: Shopify, dry: bool) -> None:
         status = "dry_run_candidate" if dry else "published"
         if not dry:
             try:
-                client.publish_to_current_channel(candidate["id"])
+                client.publish_to_publication(candidate["id"], publication_id)
                 published += 1
             except Exception as e:
                 publish_failed += 1
@@ -2762,12 +2788,9 @@ def phase_publish_online_store_backfill(client: Shopify, dry: bool) -> None:
             "product_id": candidate["id"],
             "title": candidate["title"],
             "skus": "|".join(candidate["skus"]),
-            "published_on_current_publication": "false",
-            "current_publication_id": candidate["current_publication_id"],
-            "current_publication_publish_date": candidate["current_publication_publish_date"],
-            "current_publication_is_published": (
-                "true" if candidate["current_publication_is_published"] else "false"
-            ),
+            "publication_name": ONLINE_STORE_PUBLICATION_NAME,
+            "publication_id": candidate["publication_id"],
+            "published_on_publication": "false",
             "status": status,
         })
 
@@ -2775,10 +2798,9 @@ def phase_publish_online_store_backfill(client: Shopify, dry: bool) -> None:
         "product_id",
         "title",
         "skus",
-        "published_on_current_publication",
-        "current_publication_id",
-        "current_publication_publish_date",
-        "current_publication_is_published",
+        "publication_name",
+        "publication_id",
+        "published_on_publication",
         "status",
     ]
     with ONLINE_STORE_BACKFILL_PREVIEW_CSV.open("w", encoding="utf-8", newline="") as fh:
