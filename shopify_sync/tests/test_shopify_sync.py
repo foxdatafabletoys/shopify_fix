@@ -5,15 +5,18 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import gw_cache_refresh
 import shopify_sync
 
 
 class FakeResponse:
-    def __init__(self, status_code=200, payload=None, headers=None, text=""):
+    def __init__(self, status_code=200, payload=None, headers=None, text="", content=b"", url=""):
         self.status_code = status_code
         self._payload = payload
         self.headers = headers or {}
         self.text = text
+        self.content = content
+        self.url = url or ""
 
     def json(self):
         if isinstance(self._payload, Exception):
@@ -367,6 +370,21 @@ class ProductCreateTests(unittest.TestCase):
 
 
 class MainFlowTests(unittest.TestCase):
+    def test_gw_refresh_cache_runs_without_shopify_credentials(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--gw-refresh-cache"]), \
+             mock.patch("shopify_sync.refresh_gw_cache") as refresh, \
+             mock.patch("shopify_sync.load_env") as load_env:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        refresh.assert_called_once()
+        load_env.assert_not_called()
+
+    def test_gw_refresh_cache_rejects_invalid_combinations(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--gw-refresh-cache", "--preflight"]):
+            with self.assertRaisesRegex(RuntimeError, "--gw-refresh-cache must run separately"):
+                shopify_sync.main()
+
     def test_preflight_flag_does_not_call_delete_or_import(self):
         client = mock.Mock()
 
@@ -807,17 +825,259 @@ class PhotoSyncPhaseTests(unittest.TestCase):
 
 
 class PhotoSyncMainFlowTests(unittest.TestCase):
-    def test_photo_sync_requires_photo_root(self):
+    def test_photo_sync_without_photo_root_uses_default_cache(self):
+        client = mock.Mock()
+        products = [mock.sentinel.product]
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp)
+            pack = cache_root / "TR-39-13-99120109017-Armageddon-Battalion-Deathwatch"
+            pack.mkdir()
+            (pack / "01.jpg").write_bytes(b"image")
+
+            with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync"]), \
+                 mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=cache_root), \
+                 mock.patch("shopify_sync.load_env", return_value={
+                     "SHOPIFY_STORE": "example-store",
+                     "SHOPIFY_TOKEN": "shpat_test",
+                 }), \
+                 mock.patch("shopify_sync.Shopify", return_value=client), \
+                 mock.patch("shopify_sync.build_gw_product_list", return_value=products), \
+                 mock.patch("shopify_sync.run_photo_sync_preflight"), \
+                 mock.patch("shopify_sync.phase_photo_sync") as phase_photo_sync:
+                result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_photo_sync.assert_called_once_with(client, products, cache_root, dry=False)
+
+    def test_photo_sync_without_photo_root_errors_when_default_cache_missing(self):
         client = mock.Mock()
 
-        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync"]), \
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync"]), \
+             mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=Path(tmp) / "missing"), \
              mock.patch("shopify_sync.load_env", return_value={
                  "SHOPIFY_STORE": "example-store",
                  "SHOPIFY_TOKEN": "shpat_test",
              }), \
-             mock.patch("shopify_sync.Shopify", return_value=client):
-            with self.assertRaisesRegex(RuntimeError, "--photo-root is required"):
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.build_gw_product_list", return_value=[mock.sentinel.product]), \
+             mock.patch("shopify_sync.run_photo_sync_preflight"):
+            with self.assertRaisesRegex(RuntimeError, "Run --gw-refresh-cache first"):
                 shopify_sync.main()
+
+    def test_photo_sync_with_explicit_photo_root_preserves_local_folder_routing(self):
+        client = mock.Mock()
+        products = [mock.sentinel.product]
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_root = Path(tmp)
+            folder = photo_root / "TR-39-13-99120109017-Armageddon-Battalion-Deathwatch"
+            folder.mkdir()
+            (folder / "01.jpg").write_bytes(b"image")
+
+            with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync", "--photo-root", str(photo_root)]), \
+                 mock.patch("shopify_sync.load_env", return_value={
+                     "SHOPIFY_STORE": "example-store",
+                     "SHOPIFY_TOKEN": "shpat_test",
+                 }), \
+                 mock.patch("shopify_sync.Shopify", return_value=client), \
+                 mock.patch("shopify_sync.build_gw_product_list", return_value=products), \
+                 mock.patch("shopify_sync.run_photo_sync_preflight"), \
+                 mock.patch("shopify_sync.phase_photo_sync") as phase_photo_sync:
+                result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_photo_sync.assert_called_once_with(client, products, photo_root, dry=False)
+
+    def test_photo_sync_rejects_preflight_combination(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync", "--preflight"]):
+            with self.assertRaisesRegex(RuntimeError, "--photo-sync cannot be combined with --preflight"):
+                shopify_sync.main()
+
+
+class GWCacheRefreshTests(unittest.TestCase):
+    class FakeSession:
+        def __init__(self, mapping):
+            self.mapping = mapping
+
+        def get(self, url, timeout=60):
+            response = self.mapping[url]
+            response.url = url
+            return response
+
+    def _resources_page(self):
+        return """
+        <html><body>
+          <div>TR-39-13-99120109017-Armageddon-Battalion-Deathwatch</div>
+          <a href="https://trade.games-workshop.com/resource/deathwatch.html">Download jpg</a>
+          <div>TR-39-13-99120109017-Armageddon-Battalion-Deathwatch</div>
+          <a href="https://trade.games-workshop.com/resource/deathwatch-alt.html">Download jpg</a>
+        </body></html>
+        """
+
+    def _detail_page(self):
+        return """
+        <html><body>
+          <a href="https://trade.games-workshop.com/images/folder/01.jpg">One</a>
+          <a href="https://trade.games-workshop.com/images/folder/sub/01.jpg">Two</a>
+        </body></html>
+        """
+
+    def test_refresh_dry_run_does_not_create_status_file(self):
+        session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
+            "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "gw_photo_cache_status.json"
+            result = gw_cache_refresh.refresh_gw_cache(
+                resources_url="https://trade.games-workshop.com/resources/",
+                cache_root=cache_root,
+                status_path=status_path,
+                dry=True,
+                logger=lambda msg: None,
+                session=session,
+            )
+
+        self.assertEqual(result["status"], "dry_run")
+        self.assertFalse(status_path.exists())
+
+    def test_refresh_dry_run_does_not_mutate_existing_status_file(self):
+        session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
+            "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "gw_photo_cache_status.json"
+            original = '{"status":"published","published_fingerprint":"abc"}'
+            status_path.write_text(original, encoding="utf-8")
+            gw_cache_refresh.refresh_gw_cache(
+                resources_url="https://trade.games-workshop.com/resources/",
+                cache_root=cache_root,
+                status_path=status_path,
+                dry=True,
+                logger=lambda msg: None,
+                session=session,
+            )
+            self.assertEqual(status_path.read_text(encoding="utf-8"), original)
+
+    def test_refresh_publishes_cache_with_collision_safe_names(self):
+        session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
+            "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/images/folder/01.jpg": FakeResponse(content=b"one"),
+            "https://trade.games-workshop.com/images/folder/sub/01.jpg": FakeResponse(content=b"two"),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "gw_photo_cache_status.json"
+            status = gw_cache_refresh.refresh_gw_cache(
+                resources_url="https://trade.games-workshop.com/resources/",
+                cache_root=cache_root,
+                status_path=status_path,
+                dry=False,
+                logger=lambda msg: None,
+                session=session,
+            )
+            current = cache_root / "current"
+            pack_dirs = sorted(path.name for path in current.iterdir() if path.is_dir())
+            image_names = sorted(path.name for path in next(current.iterdir()).iterdir())
+
+        self.assertEqual(status["status"], "published")
+        self.assertEqual(len(pack_dirs), 2)
+        self.assertNotEqual(pack_dirs[0], pack_dirs[1])
+        self.assertEqual(len(image_names), 2)
+        self.assertNotEqual(image_names[0], image_names[1])
+
+    def test_refresh_failure_preserves_current_cache_and_marks_failed(self):
+        session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
+            "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/images/folder/01.jpg": FakeResponse(status_code=500),
+            "https://trade.games-workshop.com/images/folder/sub/01.jpg": FakeResponse(content=b"two"),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            current = cache_root / "current" / "existing-pack"
+            current.mkdir(parents=True)
+            existing = current / "keep.jpg"
+            existing.write_bytes(b"keep")
+            before = gw_cache_refresh.compute_tree_fingerprint(cache_root / "current")
+            status_path = Path(tmp) / "gw_photo_cache_status.json"
+
+            with self.assertRaisesRegex(RuntimeError, "HTTP 500"):
+                gw_cache_refresh.refresh_gw_cache(
+                    resources_url="https://trade.games-workshop.com/resources/",
+                    cache_root=cache_root,
+                    status_path=status_path,
+                    dry=False,
+                    logger=lambda msg: None,
+                    session=session,
+                )
+
+            after = gw_cache_refresh.compute_tree_fingerprint(cache_root / "current")
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(before, after)
+        self.assertEqual(existing.read_bytes(), b"keep")
+        self.assertEqual(status["status"], "failed")
+        self.assertTrue(status["failure_reason"])
+
+    def test_refresh_recovery_clears_failure_reason_and_preserves_last_failure_at(self):
+        fail_session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
+            "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/images/folder/01.jpg": FakeResponse(status_code=500),
+            "https://trade.games-workshop.com/images/folder/sub/01.jpg": FakeResponse(content=b"two"),
+        })
+        success_session = self.FakeSession({
+            "https://trade.games-workshop.com/resources/": FakeResponse(text=self._resources_page()),
+            "https://trade.games-workshop.com/resource/deathwatch.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/resource/deathwatch-alt.html": FakeResponse(text=self._detail_page()),
+            "https://trade.games-workshop.com/images/folder/01.jpg": FakeResponse(content=b"one"),
+            "https://trade.games-workshop.com/images/folder/sub/01.jpg": FakeResponse(content=b"two"),
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "gw_photo_cache_status.json"
+
+            with self.assertRaises(RuntimeError):
+                gw_cache_refresh.refresh_gw_cache(
+                    resources_url="https://trade.games-workshop.com/resources/",
+                    cache_root=cache_root,
+                    status_path=status_path,
+                    dry=False,
+                    logger=lambda msg: None,
+                    session=fail_session,
+                )
+            failed_status = json.loads(status_path.read_text(encoding="utf-8"))
+
+            published = gw_cache_refresh.refresh_gw_cache(
+                resources_url="https://trade.games-workshop.com/resources/",
+                cache_root=cache_root,
+                status_path=status_path,
+                dry=False,
+                logger=lambda msg: None,
+                session=success_session,
+            )
+
+        self.assertEqual(published["status"], "published")
+        self.assertEqual(published["failure_reason"], "")
+        self.assertEqual(published["last_failure_at"], failed_status["last_failure_at"])
+        self.assertTrue(published["last_success_at"])
+        self.assertTrue(published["finished_at"])
+        self.assertTrue(published["published_fingerprint"])
 
 
 if __name__ == "__main__":

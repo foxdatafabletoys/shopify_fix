@@ -54,6 +54,7 @@ import math
 import mimetypes
 import os
 import re
+import shutil
 import sys
 import time
 from dataclasses import dataclass, field
@@ -62,6 +63,8 @@ from typing import Any, Iterable
 
 import pandas as pd
 import requests
+
+from gw_cache_refresh import refresh_gw_cache
 
 API_VERSION = "2025-01"
 HERE = Path(__file__).resolve().parent
@@ -75,6 +78,11 @@ PHOTO_SYNC_MANIFEST_JSON = HERE / "photo_sync_manifest.json"
 PHOTO_SYNC_MISSING_TSV = HERE / "photo_sync_missing.tsv"
 PHOTO_SYNC_AMBIGUOUS_TSV = HERE / "photo_sync_ambiguous.tsv"
 PHOTO_SYNC_FAILURES_TSV = HERE / "photo_sync_failures.tsv"
+GW_RESOURCES_URL = "https://trade.games-workshop.com/resources/"
+GW_PHOTO_CACHE_ROOT = HERE / "gw_photo_cache"
+GW_PHOTO_CACHE_CURRENT = GW_PHOTO_CACHE_ROOT / "current"
+GW_PHOTO_CACHE_STAGING = GW_PHOTO_CACHE_ROOT / "_staging"
+GW_PHOTO_CACHE_STATUS_JSON = HERE / "gw_photo_cache_status.json"
 LOG_FILE = HERE / "sync.log"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
@@ -445,6 +453,29 @@ def write_preview(products: list[Product]) -> None:
         for p in products:
             w.writerow(p.to_preview_row())
     log(f"Wrote preview: {PREVIEW_CSV}")
+
+
+def default_photo_root() -> Path:
+    return GW_PHOTO_CACHE_CURRENT
+
+
+def photo_root_has_images(root: Path) -> bool:
+    if not root.exists() or not root.is_dir():
+        return False
+    return any(path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES for path in root.rglob("*"))
+
+
+def resolve_photo_sync_root(photo_root: Path | None) -> Path:
+    if photo_root is not None:
+        log(f"Photo sync using explicit --photo-root override: {photo_root}")
+        return photo_root
+    root = default_photo_root()
+    if not photo_root_has_images(root):
+        raise RuntimeError(
+            f"Default GW photo cache is missing or empty: {root}. "
+            "Run --gw-refresh-cache first or provide --photo-root."
+        )
+    return root
 
 
 def discover_photo_asset_sets(root: Path) -> list[PhotoAssetSet]:
@@ -1638,6 +1669,8 @@ def phase_photo_sync(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Shopify bulk delete + import")
     parser.add_argument("--dry-run", action="store_true", help="Don't call Shopify; just preview.")
+    parser.add_argument("--gw-refresh-cache", dest="do_gw_refresh_cache", action="store_true",
+                        help="Refresh the repo-local Games Workshop photo cache.")
     parser.add_argument("--preflight", action="store_true",
                         help="Validate auth and location readiness without delete/import side effects.")
     parser.add_argument("--delete", action="store_true", help="Run delete phase.")
@@ -1645,7 +1678,7 @@ def main() -> int:
     parser.add_argument("--update", dest="do_update", action="store_true",
                         help="Update existing products in place (matched by SKU).")
     parser.add_argument("--photo-sync", dest="do_photo_sync", action="store_true",
-                        help="Replace GW product media from staged local image folders.")
+                        help="Replace GW product media from the repo-local cache or an explicit local photo root.")
     parser.add_argument("--photo-root", type=Path,
                         help="Root folder containing staged GW image folders/files for --photo-sync.")
     parser.add_argument("--all", action="store_true", help="Run delete then import.")
@@ -1653,13 +1686,38 @@ def main() -> int:
                         help="Resume import from this product index (after a partial run).")
     args = parser.parse_args()
 
-    if not (args.dry_run or args.preflight or args.delete
+    if not (args.dry_run or args.preflight or args.delete or args.do_gw_refresh_cache
             or args.do_import or args.do_update or args.do_photo_sync or args.all):
         parser.print_help()
         return 1
 
+    if args.do_gw_refresh_cache:
+        invalid_refresh_combo = (
+            args.do_photo_sync or args.do_update or args.do_import or args.delete or args.all
+            or args.preflight or args.start_at != 0 or args.photo_root is not None
+        )
+        if invalid_refresh_combo:
+            raise RuntimeError(
+                "--gw-refresh-cache must run separately and cannot be combined with "
+                "--photo-sync, --update, --import, --delete, --all, --preflight, --start-at, or --photo-root."
+            )
+        refresh_gw_cache(
+            resources_url=GW_RESOURCES_URL,
+            cache_root=GW_PHOTO_CACHE_ROOT,
+            status_path=GW_PHOTO_CACHE_STATUS_JSON,
+            dry=args.dry_run,
+            logger=log,
+        )
+        if args.dry_run:
+            log("GW cache refresh dry-run complete. Review the discovery log, then re-run with --gw-refresh-cache to publish.")
+        return 0
+
     if args.do_photo_sync and (args.delete or args.do_import or args.do_update or args.all):
         raise RuntimeError("--photo-sync must run separately from delete/import/update/all phases.")
+    if args.do_photo_sync and args.preflight:
+        raise RuntimeError("--photo-sync cannot be combined with --preflight.")
+    if args.do_photo_sync and args.start_at != 0:
+        raise RuntimeError("--start-at is only valid with --import/--all, not --photo-sync.")
 
     # Plain --dry-run (without --update / --photo-sync) means: read sheets,
     # write preview.csv, don't contact Shopify. --update/--photo-sync dry-runs
@@ -1681,9 +1739,6 @@ def main() -> int:
     if args.preflight:
         run_preflight(client, env)
         return 0
-
-    if args.do_photo_sync and not args.photo_root:
-        raise RuntimeError("--photo-root is required with --photo-sync.")
 
     if args.delete and not args.all and not args.do_import:
         phase_delete(client, dry=False)
@@ -1709,7 +1764,7 @@ def main() -> int:
                 "with --update (no --dry-run) to apply."
             )
     if args.do_photo_sync:
-        phase_photo_sync(client, products, args.photo_root, dry=args.dry_run)
+        phase_photo_sync(client, products, resolve_photo_sync_root(args.photo_root), dry=args.dry_run)
         if args.dry_run:
             log(
                 "Photo-sync dry-run complete. Review photo_sync_preview.csv, then re-run "
