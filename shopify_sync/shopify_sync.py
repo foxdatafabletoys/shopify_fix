@@ -29,6 +29,10 @@ What it does:
                Applies curated staged local fallback images across the full
                catalog and writes the fallback-image audit metafield after
                successful media apply.
+  --photo-source-web-all
+               Discovers zero-media catalog products, searches public web
+               sources for likely product-specific images, and stages only
+               high-confidence winners into the local source cache.
   --all        Runs --delete then --import.
   --preflight  Validates Shopify auth and location readiness with no write side effects.
   --dry-run    Reads sheets, builds the product list, writes preview.csv,
@@ -65,6 +69,8 @@ Usage:
   python shopify_sync.py --update
   python shopify_sync.py --publish-online-store-backfill --dry-run
   python shopify_sync.py --publish-online-store-backfill
+  python shopify_sync.py --photo-source-web-all --dry-run
+  python shopify_sync.py --photo-source-web-all
   python shopify_sync.py --photo-sync-staged-local-all --photo-root ./fallback_photos --dry-run
   python shopify_sync.py --photo-sync-staged-local-all --photo-root ./fallback_photos
   python shopify_sync.py --all
@@ -80,11 +86,15 @@ import math
 import mimetypes
 import os
 import re
+import shutil
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
 
 import pandas as pd
 import requests
@@ -103,6 +113,12 @@ PHOTO_SYNC_MANIFEST_JSON = HERE / "photo_sync_manifest.json"
 PHOTO_SYNC_MISSING_TSV = HERE / "photo_sync_missing.tsv"
 PHOTO_SYNC_AMBIGUOUS_TSV = HERE / "photo_sync_ambiguous.tsv"
 PHOTO_SYNC_FAILURES_TSV = HERE / "photo_sync_failures.tsv"
+PHOTO_SOURCE_PREVIEW_CSV = HERE / "photo_source_preview.csv"
+PHOTO_SOURCE_MANIFEST_JSON = HERE / "photo_source_manifest.json"
+PHOTO_SOURCE_MISSING_TSV = HERE / "photo_source_missing.tsv"
+PHOTO_SOURCE_AMBIGUOUS_TSV = HERE / "photo_source_ambiguous.tsv"
+PHOTO_SOURCE_FAILURES_TSV = HERE / "photo_source_failures.tsv"
+PHOTO_SOURCE_UNMAPPED_SHOPIFY_TSV = HERE / "photo_source_unmapped_shopify.tsv"
 COLLECTION_GENERATION_PREVIEW_CSV = HERE / "collection_generation_preview.csv"
 COLLECTION_GENERATION_UNMATCHED_CSV = HERE / "collection_generation_unmatched.csv"
 COLLECTION_IMAGE_PREVIEW_CSV = HERE / "collection_image_preview.csv"
@@ -112,18 +128,72 @@ GW_PHOTO_CACHE_ROOT = HERE / "gw_photo_cache"
 GW_PHOTO_CACHE_CURRENT = GW_PHOTO_CACHE_ROOT / "current"
 GW_PHOTO_CACHE_STAGING = GW_PHOTO_CACHE_ROOT / "_staging"
 GW_PHOTO_CACHE_STATUS_JSON = HERE / "gw_photo_cache_status.json"
+PHOTO_SOURCE_CACHE_ROOT = HERE / "photo_source_cache"
+PHOTO_SOURCE_CACHE_CURRENT = PHOTO_SOURCE_CACHE_ROOT / "current"
+PHOTO_SOURCE_CACHE_STAGING = PHOTO_SOURCE_CACHE_ROOT / "_staging"
 LOG_FILE = HERE / "sync.log"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 PHOTO_SYNC_SOURCE_STAGED_LOCAL = "staged-local-files"
 PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING = "shopify-existing-files"
 PHOTO_SYNC_SCOPE_GW = "gw"
 PHOTO_SYNC_SCOPE_ALL = "all"
+PHOTO_SOURCE_MANIFEST_VERSION = 1
 PHOTO_SYNC_AUDIT_VERSION = 1
 PHOTO_SYNC_STATE_MEDIA_APPLIED = "media_applied"
 PHOTO_SYNC_STATE_AUDIT_PENDING = "audit_pending"
 LATEST_GW_RELEASE_LIMIT = 60
 AUTO_COLLECTION_TAG_PREFIX = "AUTO_COLLECTION::"
 ONLINE_STORE_PUBLICATION_NAME = "Online Store"
+PHOTO_SOURCE_SEARCH_URL = "https://html.duckduckgo.com/html/"
+PHOTO_SOURCE_MAX_RESULT_URLS = 8
+PHOTO_SOURCE_MAX_CANDIDATE_PAGES = 5
+PHOTO_SOURCE_MAX_IMAGE_DOWNLOADS = 3
+PHOTO_SOURCE_HTML_TIMEOUT_SECONDS = 15
+PHOTO_SOURCE_IMAGE_TIMEOUT_SECONDS = 30
+PHOTO_SOURCE_FETCH_RETRY_DELAYS_SECONDS = (1.0, 2.0)
+PHOTO_SOURCE_WINNER_THRESHOLD = 85
+PHOTO_SOURCE_AMBIGUOUS_THRESHOLD = 70
+PHOTO_SOURCE_MARGIN_THRESHOLD = 15
+PHOTO_SOURCE_USER_AGENT = "Mozilla/5.0 (compatible; FoxfablePhotoSource/1.0; +https://foxfable.co.uk)"
+PHOTO_SOURCE_DUPLICATE_SKU_REASON = "multiple Shopify products share this SKU"
+PHOTO_SOURCE_BANNED_DOMAIN_FRAGMENTS = (
+    "facebook.com",
+    "instagram.com",
+    "pinterest.",
+    "reddit.com",
+    "tiktok.com",
+    "twitter.com",
+    "x.com",
+    "youtube.com",
+)
+PHOTO_SOURCE_DISALLOWED_URL_MARKERS = (
+    "/forum",
+    "/forums",
+    "/search",
+    "/topic",
+    "/threads",
+    "/board",
+)
+PHOTO_SOURCE_PRODUCT_PAGE_MARKERS = (
+    "add to cart",
+    "product details",
+    "specification",
+    "specifications",
+    "manufacturer",
+    "barcode",
+    "ean",
+    "upc",
+    "sku",
+)
+PHOTO_SOURCE_GENERIC_PAGE_MARKERS = (
+    "accessories",
+    "category",
+    "collection",
+    "forum",
+    "guide",
+    "news",
+    "search",
+)
 FALLBACK_IMAGE_METAFIELD_NAMESPACE = "$app"
 FALLBACK_IMAGE_METAFIELD_KEY = "fallback_image_used"
 FALLBACK_IMAGE_METAFIELD_NAME = "Fallback image used"
@@ -362,11 +432,11 @@ class PhotoAssetSet:
 
     def fingerprint(self) -> str:
         digest = hashlib.sha1()
-        for path in self.image_paths:
-            stat = path.stat()
-            digest.update(str(path).encode("utf-8"))
-            digest.update(str(stat.st_size).encode("utf-8"))
-            digest.update(str(int(stat.st_mtime)).encode("utf-8"))
+        base_dir = self.image_paths[0].parent if self.image_paths else Path(".")
+        for path in sorted(self.image_paths):
+            rel = path.relative_to(base_dir).as_posix()
+            digest.update(rel.encode("utf-8"))
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
         return digest.hexdigest()
 
 
@@ -381,6 +451,81 @@ class ShopifyImageFile:
 
     def sort_key(self) -> tuple[str, str]:
         return (self.filename.lower(), self.id)
+
+
+@dataclass
+class PhotoSourceSearchResult:
+    url: str
+    title: str = ""
+
+
+@dataclass
+class PhotoSourceCandidate:
+    page_url: str
+    image_url: str
+    page_title: str
+    image_alt: str
+    score: int
+    reasons: list[str]
+    detail_signals: list[str] = field(default_factory=list)
+
+
+class _PhotoSourceHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.anchors: list[tuple[str, str]] = []
+        self.images: list[tuple[str, str]] = []
+        self.meta_images: list[str] = []
+        self.title = ""
+        self._title_parts: list[str] = []
+        self._anchor_href = ""
+        self._anchor_text_parts: list[str] = []
+        self._in_title = False
+        self.text_chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        normalized = {k.lower(): (v or "") for k, v in attrs}
+        tag_name = tag.lower()
+        if tag_name == "title":
+            self._in_title = True
+            self._title_parts = []
+        elif tag_name == "a":
+            self._anchor_href = normalized.get("href", "").strip()
+            self._anchor_text_parts = []
+        elif tag_name == "img":
+            src = normalized.get("src", "").strip()
+            if src:
+                self.images.append((src, normalize_text(normalized.get("alt", ""))))
+        elif tag_name == "meta":
+            prop = (normalized.get("property") or normalized.get("name") or "").strip().lower()
+            content = normalized.get("content", "").strip()
+            if prop in {"og:image", "twitter:image"} and content:
+                self.meta_images.append(content)
+
+    def handle_data(self, data: str) -> None:
+        text = normalize_text(data)
+        if not text:
+            return
+        if self._in_title:
+            self._title_parts.append(text)
+        if self._anchor_href:
+            self._anchor_text_parts.append(text)
+        self.text_chunks.append(text)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_name = tag.lower()
+        if tag_name == "title":
+            self._in_title = False
+            self.title = normalize_text(" ".join(self._title_parts))
+        elif tag_name == "a":
+            if self._anchor_href:
+                self.anchors.append((self._anchor_href, normalize_text(" ".join(self._anchor_text_parts))))
+            self._anchor_href = ""
+            self._anchor_text_parts = []
+
+
+def normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip())
 
 
 # ---------------------------------------------------------------------------
@@ -797,6 +942,272 @@ def build_shopify_file_indexes(
     for bucket in by_slug.values():
         bucket.sort(key=lambda item: item.sort_key())
     return by_code, by_slug
+
+
+def build_photo_source_query(product: Product) -> str:
+    parts = [product.sku, product.title, product.vendor]
+    if product.barcode:
+        parts.append(product.barcode)
+    return " ".join(part for part in parts if part).strip()
+
+
+def normalize_photo_source_redirect(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.netloc.endswith("duckduckgo.com") and parsed.path.startswith("/l/"):
+        encoded = parse_qs(parsed.query).get("uddg", [""])[0]
+        if encoded:
+            return encoded
+    return url
+
+
+def is_supported_image_url(url: str) -> bool:
+    suffix = Path(urlparse(url).path.split("?", 1)[0]).suffix.lower()
+    return suffix in IMAGE_SUFFIXES
+
+
+def is_allowed_photo_source_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = parsed.netloc.lower()
+    if any(fragment in host for fragment in PHOTO_SOURCE_BANNED_DOMAIN_FRAGMENTS):
+        return False
+    path = parsed.path.lower()
+    return not any(marker in path for marker in PHOTO_SOURCE_DISALLOWED_URL_MARKERS)
+
+
+def fetch_url_with_retries(
+    session: requests.Session,
+    url: str,
+    *,
+    timeout: int,
+    binary: bool = False,
+) -> requests.Response:
+    attempts = len(PHOTO_SOURCE_FETCH_RETRY_DELAYS_SECONDS) + 1
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            response = session.get(url, timeout=timeout)
+            if response.status_code in {429, 500, 502, 503, 504} and attempt < attempts - 1:
+                time.sleep(PHOTO_SOURCE_FETCH_RETRY_DELAYS_SECONDS[attempt])
+                continue
+            if response.status_code >= 400:
+                raise RuntimeError(f"HTTP {response.status_code} while fetching {url}")
+            if binary:
+                _ = response.content
+            else:
+                _ = response.text
+            return response
+        except requests.exceptions.RequestException as exc:
+            last_error = exc
+            if attempt >= attempts - 1:
+                break
+            time.sleep(PHOTO_SOURCE_FETCH_RETRY_DELAYS_SECONDS[attempt])
+    if last_error is not None:
+        raise RuntimeError(f"Network error while fetching {url}: {last_error}") from last_error
+    raise RuntimeError(f"Failed to fetch {url}")
+
+
+def parse_photo_source_html(html: str) -> _PhotoSourceHTMLParser:
+    parser = _PhotoSourceHTMLParser()
+    parser.feed(html)
+    return parser
+
+
+def extract_photo_source_search_results(html: str) -> list[PhotoSourceSearchResult]:
+    parser = parse_photo_source_html(html)
+    results: list[PhotoSourceSearchResult] = []
+    seen: set[str] = set()
+    for href, text in parser.anchors:
+        resolved = normalize_photo_source_redirect(href)
+        if not is_allowed_photo_source_url(resolved):
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        results.append(PhotoSourceSearchResult(url=resolved, title=text))
+        if len(results) >= PHOTO_SOURCE_MAX_RESULT_URLS:
+            break
+    return results
+
+
+def photo_source_title_tokens(product: Product) -> list[str]:
+    tokens = re.findall(r"[a-z0-9]+", (product.title or "").lower())
+    filtered = [token for token in tokens if len(token) >= 3]
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for token in filtered:
+        if token not in seen:
+            seen.add(token)
+            ordered.append(token)
+    return ordered[:8]
+
+
+def photo_source_vendor_tokens(product: Product) -> list[str]:
+    return [token for token in re.findall(r"[a-z0-9]+", (product.vendor or "").lower()) if len(token) >= 3]
+
+
+def photo_source_detail_signals(search_text: str, product: Product) -> list[str]:
+    signals: list[str] = []
+    if product.sku and product.sku.lower() in search_text:
+        signals.append("sku")
+    title_tokens = photo_source_title_tokens(product)
+    if title_tokens and sum(1 for token in title_tokens if f" {token} " in search_text) >= min(2, len(title_tokens)):
+        signals.append("title")
+    vendor_tokens = photo_source_vendor_tokens(product)
+    if vendor_tokens and any(f" {token} " in search_text for token in vendor_tokens):
+        signals.append("vendor")
+    if any(marker in search_text for marker in PHOTO_SOURCE_PRODUCT_PAGE_MARKERS):
+        signals.append("product_markers")
+    return signals
+
+
+def score_photo_source_candidate(
+    product: Product,
+    *,
+    page_url: str,
+    page_title: str,
+    page_text: str,
+    image_url: str,
+    image_alt: str,
+) -> PhotoSourceCandidate | None:
+    search_text = _normalize_search_text(" ".join([page_url, page_title, page_text, image_url, image_alt]))
+    detail_signals = photo_source_detail_signals(search_text, product)
+    if not detail_signals:
+        return None
+    score = 0
+    reasons: list[str] = []
+    if product.sku and product.sku.lower() in search_text:
+        score += 55
+        reasons.append("sku")
+    title_tokens = photo_source_title_tokens(product)
+    title_hits = sum(1 for token in title_tokens if f" {token} " in search_text)
+    if title_hits >= max(2, min(4, len(title_tokens))):
+        score += 25
+        reasons.append("title")
+    elif title_hits:
+        score += 10
+        reasons.append("partial_title")
+    vendor_tokens = photo_source_vendor_tokens(product)
+    if vendor_tokens and any(f" {token} " in search_text for token in vendor_tokens):
+        score += 10
+        reasons.append("vendor")
+    if "product_markers" in detail_signals:
+        score += 10
+        reasons.append("detail_page")
+    slug = _normalize_slug(product.title)
+    if slug and slug in _normalize_slug(image_url):
+        score += 10
+        reasons.append("image_slug")
+    if any(marker in search_text for marker in PHOTO_SOURCE_GENERIC_PAGE_MARKERS):
+        score -= 25
+        reasons.append("generic_penalty")
+    score = max(0, min(100, score))
+    return PhotoSourceCandidate(
+        page_url=page_url,
+        image_url=image_url,
+        page_title=page_title,
+        image_alt=image_alt,
+        score=score,
+        reasons=reasons,
+        detail_signals=detail_signals,
+    )
+
+
+def extract_photo_source_candidates(product: Product, page_url: str, html: str) -> list[PhotoSourceCandidate]:
+    parser = parse_photo_source_html(html)
+    page_title = parser.title
+    page_text = " ".join(parser.text_chunks[:200])
+    candidates: list[PhotoSourceCandidate] = []
+    seen: set[str] = set()
+    image_pairs = [(urljoin(page_url, url), alt) for url, alt in parser.images]
+    image_pairs = [(urljoin(page_url, url), "") for url in parser.meta_images] + image_pairs
+    for image_url, image_alt in image_pairs:
+        if not is_supported_image_url(image_url):
+            continue
+        if image_url in seen:
+            continue
+        seen.add(image_url)
+        candidate = score_photo_source_candidate(
+            product,
+            page_url=page_url,
+            page_title=page_title,
+            page_text=page_text,
+            image_url=image_url,
+            image_alt=image_alt,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+        if len(candidates) >= PHOTO_SOURCE_MAX_IMAGE_DOWNLOADS * 2:
+            break
+    candidates.sort(key=lambda item: (-item.score, item.image_url))
+    return candidates
+
+
+def choose_photo_source_winner(candidates: list[PhotoSourceCandidate]) -> tuple[str, PhotoSourceCandidate | None, str]:
+    if not candidates:
+        return "missing", None, f"no candidate reached {PHOTO_SOURCE_AMBIGUOUS_THRESHOLD}"
+    top = candidates[0]
+    runner_up = candidates[1] if len(candidates) > 1 else None
+    if top.score < PHOTO_SOURCE_AMBIGUOUS_THRESHOLD:
+        return "missing", None, f"no candidate reached {PHOTO_SOURCE_AMBIGUOUS_THRESHOLD}"
+    if top.score >= PHOTO_SOURCE_WINNER_THRESHOLD and runner_up and runner_up.score >= PHOTO_SOURCE_WINNER_THRESHOLD:
+        return "ambiguous", None, "multiple candidates cleared the winner threshold"
+    margin = top.score - (runner_up.score if runner_up else 0)
+    if top.score >= PHOTO_SOURCE_WINNER_THRESHOLD and margin >= PHOTO_SOURCE_MARGIN_THRESHOLD:
+        return "winner", top, ""
+    if top.score >= PHOTO_SOURCE_AMBIGUOUS_THRESHOLD:
+        return "ambiguous", None, f"top-vs-runner-up margin {margin} is below {PHOTO_SOURCE_MARGIN_THRESHOLD}"
+    return "missing", None, f"no candidate reached {PHOTO_SOURCE_AMBIGUOUS_THRESHOLD}"
+
+
+def stable_photo_source_dirname(product: Product) -> str:
+    slug = _normalize_slug(product.title)
+    return f"{product.sku}-{slug}" if slug else product.sku
+
+
+def publish_photo_source_pack(staging_dir: Path, current_root: Path, pack_name: str) -> Path:
+    current_root.mkdir(parents=True, exist_ok=True)
+    final_dir = current_root / pack_name
+    backup_dir = current_root / f"_{pack_name}.previous"
+    if backup_dir.exists():
+        shutil.rmtree(backup_dir)
+    if final_dir.exists():
+        final_dir.rename(backup_dir)
+    try:
+        staging_dir.rename(final_dir)
+    except Exception:
+        if backup_dir.exists() and not final_dir.exists():
+            backup_dir.rename(final_dir)
+        raise
+    else:
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir)
+    return final_dir
+
+
+def build_photo_source_preview_row(
+    product: Product,
+    *,
+    status: str,
+    query: str,
+    top_score: int = 0,
+    winner: PhotoSourceCandidate | None = None,
+    reason: str = "",
+    staged_dir: str = "",
+) -> dict[str, Any]:
+    return {
+        "sku": product.sku,
+        "title": product.title,
+        "status": status,
+        "query": query,
+        "top_score": top_score,
+        "winner_page_url": winner.page_url if winner else "",
+        "winner_image_url": winner.image_url if winner else "",
+        "winner_reasons": "|".join(winner.reasons) if winner else "",
+        "staged_dir": staged_dir,
+        "reason": reason,
+    }
 
 
 def resolve_photo_asset(
