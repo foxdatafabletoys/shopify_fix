@@ -205,6 +205,108 @@ class ShopifyGraphQLTests(unittest.TestCase):
         self.assertEqual(variables, {"id": "gid://shopify/Job/1"})
         sleep.assert_called_once_with(2)
 
+    def test_get_product_metafield_definition_queries_reserved_namespace_and_key(self):
+        self.client.gql = mock.Mock(return_value={
+            "metafieldDefinitions": {
+                "nodes": [
+                    {
+                        "id": "gid://shopify/MetafieldDefinition/1",
+                        "namespace": "app--123456",
+                        "key": shopify_sync.FALLBACK_IMAGE_METAFIELD_KEY,
+                        "ownerType": "PRODUCT",
+                        "type": {"name": shopify_sync.FALLBACK_IMAGE_METAFIELD_TYPE},
+                        "capabilities": {
+                            "adminFilterable": {
+                                "eligible": True,
+                                "enabled": True,
+                                "status": "ENABLED",
+                            }
+                        },
+                    }
+                ]
+            }
+        })
+
+        definition = self.client.get_product_metafield_definition(
+            shopify_sync.FALLBACK_IMAGE_METAFIELD_NAMESPACE,
+            shopify_sync.FALLBACK_IMAGE_METAFIELD_KEY,
+        )
+
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("metafieldDefinitions(first: 2, ownerType: PRODUCT, namespace: $namespace, key: $key)", query)
+        self.assertEqual(
+            variables,
+            {
+                "namespace": shopify_sync.FALLBACK_IMAGE_METAFIELD_NAMESPACE,
+                "key": shopify_sync.FALLBACK_IMAGE_METAFIELD_KEY,
+            },
+        )
+        self.assertEqual(definition["namespace"], "app--123456")
+
+    def test_create_product_metafield_definition_uses_documented_app_owned_admin_access(self):
+        self.client.gql = mock.Mock(return_value={
+            "metafieldDefinitionCreate": {
+                "createdDefinition": {
+                    "id": "gid://shopify/MetafieldDefinition/1",
+                    "namespace": "app--123456",
+                    "key": shopify_sync.FALLBACK_IMAGE_METAFIELD_KEY,
+                    "ownerType": "PRODUCT",
+                    "type": {"name": shopify_sync.FALLBACK_IMAGE_METAFIELD_TYPE},
+                    "capabilities": {
+                        "adminFilterable": {
+                            "eligible": True,
+                            "enabled": True,
+                            "status": "ENABLED",
+                        }
+                    },
+                },
+                "userErrors": [],
+            }
+        })
+
+        self.client.create_product_metafield_definition(
+            shopify_sync.FALLBACK_IMAGE_METAFIELD_NAMESPACE,
+            shopify_sync.FALLBACK_IMAGE_METAFIELD_KEY,
+            shopify_sync.FALLBACK_IMAGE_METAFIELD_NAME,
+            shopify_sync.FALLBACK_IMAGE_METAFIELD_TYPE,
+        )
+
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("metafieldDefinitionCreate", query)
+        self.assertEqual(
+            variables["definition"]["access"]["admin"],
+            shopify_sync.FALLBACK_IMAGE_METAFIELD_ADMIN_ACCESS,
+        )
+
+    def test_set_product_fallback_image_used_uses_reserved_namespace_key_and_boolean_type(self):
+        self.client.gql = mock.Mock(return_value={
+            "metafieldsSet": {
+                "metafields": [
+                    {
+                        "namespace": shopify_sync.FALLBACK_IMAGE_METAFIELD_NAMESPACE,
+                        "key": shopify_sync.FALLBACK_IMAGE_METAFIELD_KEY,
+                        "value": "true",
+                    }
+                ],
+                "userErrors": [],
+            }
+        })
+
+        self.client.set_product_fallback_image_used("gid://shopify/Product/2")
+
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("metafieldsSet", query)
+        self.assertEqual(
+            variables["metafields"][0],
+            {
+                "ownerId": "gid://shopify/Product/2",
+                "namespace": shopify_sync.FALLBACK_IMAGE_METAFIELD_NAMESPACE,
+                "key": shopify_sync.FALLBACK_IMAGE_METAFIELD_KEY,
+                "type": shopify_sync.FALLBACK_IMAGE_METAFIELD_TYPE,
+                "value": "true",
+            },
+        )
+
 
 class LocationResolutionTests(unittest.TestCase):
     def test_normalize_location_id_accepts_numeric_value(self):
@@ -1590,15 +1692,32 @@ class PhotoSyncPhaseTests(unittest.TestCase):
             ),
         ]
 
-    def _make_photo_root(self) -> Path:
+    def _make_photo_root(self, folder_name: str = "TR-39-13-99120109017-Armageddon-Battalion-Deathwatch") -> Path:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         root = Path(temp_dir.name)
-        folder = root / "TR-39-13-99120109017-Armageddon-Battalion-Deathwatch"
+        folder = root / folder_name
         folder.mkdir()
         (folder / "01.jpg").write_bytes(b"image-1")
         (folder / "02.jpg").write_bytes(b"image-2")
         return root
+
+    def _make_non_gw_photo_sync_fixture(self) -> tuple[shopify_sync.Product, dict[str, object], Path]:
+        product = shopify_sync.Product(
+            title="Pokemon Booster Box",
+            sku="PKM-001",
+            vendor="Pokemon",
+            source="INV",
+        )
+        existing = {
+            "product_id": "gid://shopify/Product/2",
+            "title": product.title,
+            "vendor": "Pokemon",
+            "tags": ["Pokemon"],
+            "sku": product.sku,
+            "media_ids": ["gid://shopify/MediaImage/old9"],
+        }
+        return product, existing, self._make_photo_root("Pokemon-Booster-Box")
 
     @contextmanager
     def _patched_photo_sync_outputs(self, photo_root: Path):
@@ -1776,6 +1895,203 @@ class PhotoSyncPhaseTests(unittest.TestCase):
                 ("detach", ("gid://shopify/MediaImage/old9",), "gid://shopify/Product/2"),
             ],
         )
+
+    def test_photo_sync_staged_local_all_live_run_writes_fallback_metafield_after_detach(self):
+        non_gw_product, non_gw_existing, photo_root = self._make_non_gw_photo_sync_fixture()
+        self.client.iter_existing_for_photo_sync.return_value = iter([non_gw_existing])
+        self.client.staged_uploads_create.return_value = [
+            {"url": "https://upload/1", "resourceUrl": "https://resource/1", "parameters": []},
+            {"url": "https://upload/2", "resourceUrl": "https://resource/2", "parameters": []},
+        ]
+        self.client.file_create.return_value = [
+            {"id": "gid://shopify/MediaImage/new1", "fileStatus": "UPLOADED"},
+            {"id": "gid://shopify/MediaImage/new2", "fileStatus": "UPLOADED"},
+        ]
+
+        calls = []
+        self.client.ensure_fallback_image_metafield_definition.side_effect = lambda: calls.append(("ensure",))
+        self.client.upload_file_to_staged_target.side_effect = lambda path, target: calls.append(("upload", path.name)) or target["resourceUrl"]
+        self.client.wait_for_files_ready.side_effect = lambda ids, **kwargs: calls.append(("ready", tuple(ids))) or ids
+        self.client.attach_files_to_product.side_effect = lambda ids, pid: calls.append(("attach", tuple(ids), pid))
+        self.client.reorder_product_media.side_effect = lambda pid, ids: calls.append(("reorder", pid, tuple(ids)))
+        self.client.detach_files_from_product.side_effect = lambda ids, pid: calls.append(("detach", tuple(ids), pid))
+        self.client.set_product_fallback_image_used.side_effect = lambda pid: calls.append(("audit", pid))
+
+        with self._patched_photo_sync_outputs(photo_root):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [non_gw_product],
+                photo_root,
+                dry=False,
+                manifest_path=photo_root / "manifest.json",
+                source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+                product_scope=shopify_sync.PHOTO_SYNC_SCOPE_ALL,
+                fallback_audit=True,
+            )
+
+        self.assertEqual(
+            calls,
+            [
+                ("ensure",),
+                ("upload", "01.jpg"),
+                ("upload", "02.jpg"),
+                ("ready", ("gid://shopify/MediaImage/new1", "gid://shopify/MediaImage/new2")),
+                ("attach", ("gid://shopify/MediaImage/new1", "gid://shopify/MediaImage/new2"), "gid://shopify/Product/2"),
+                ("reorder", "gid://shopify/Product/2", ("gid://shopify/MediaImage/new1", "gid://shopify/MediaImage/new2")),
+                ("detach", ("gid://shopify/MediaImage/old9",), "gid://shopify/Product/2"),
+                ("audit", "gid://shopify/Product/2"),
+            ],
+        )
+        manifest = json.loads((photo_root / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest[non_gw_product.sku]["state"], "completed")
+        self.assertEqual(manifest[non_gw_product.sku]["fallback_audit_version"], shopify_sync.PHOTO_SYNC_AUDIT_VERSION)
+
+    def test_photo_sync_staged_local_all_metafield_failure_stays_audit_pending(self):
+        non_gw_product, non_gw_existing, photo_root = self._make_non_gw_photo_sync_fixture()
+        self.client.iter_existing_for_photo_sync.return_value = iter([non_gw_existing])
+        self.client.staged_uploads_create.return_value = [
+            {"url": "https://upload/1", "resourceUrl": "https://resource/1", "parameters": []},
+            {"url": "https://upload/2", "resourceUrl": "https://resource/2", "parameters": []},
+        ]
+        self.client.file_create.return_value = [
+            {"id": "gid://shopify/MediaImage/new1", "fileStatus": "UPLOADED"},
+            {"id": "gid://shopify/MediaImage/new2", "fileStatus": "UPLOADED"},
+        ]
+        self.client.upload_file_to_staged_target.side_effect = lambda path, target: target["resourceUrl"]
+        self.client.wait_for_files_ready.side_effect = lambda ids, **kwargs: ids
+        self.client.set_product_fallback_image_used.side_effect = RuntimeError("audit write failed")
+
+        with self._patched_photo_sync_outputs(photo_root):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [non_gw_product],
+                photo_root,
+                dry=False,
+                manifest_path=photo_root / "manifest.json",
+                source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+                product_scope=shopify_sync.PHOTO_SYNC_SCOPE_ALL,
+                fallback_audit=True,
+            )
+
+        manifest = json.loads((photo_root / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest[non_gw_product.sku]["state"], shopify_sync.PHOTO_SYNC_STATE_AUDIT_PENDING)
+        self.assertEqual(manifest[non_gw_product.sku]["error"], "audit write failed")
+        failures = (photo_root / "failures.tsv").read_text(encoding="utf-8")
+        self.assertIn("audit write failed", failures)
+
+    def test_photo_sync_staged_local_all_fails_when_metafield_definition_shape_is_wrong(self):
+        non_gw_product, non_gw_existing, photo_root = self._make_non_gw_photo_sync_fixture()
+        self.client.iter_existing_for_photo_sync.return_value = iter([non_gw_existing])
+        self.client.ensure_fallback_image_metafield_definition.side_effect = RuntimeError("wrong metafield definition shape")
+
+        with self._patched_photo_sync_outputs(photo_root), self.assertRaisesRegex(RuntimeError, "wrong metafield definition shape"):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [non_gw_product],
+                photo_root,
+                dry=False,
+                manifest_path=photo_root / "manifest.json",
+                source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+                product_scope=shopify_sync.PHOTO_SYNC_SCOPE_ALL,
+                fallback_audit=True,
+            )
+
+        self.client.staged_uploads_create.assert_not_called()
+        self.client.attach_files_to_product.assert_not_called()
+
+    def test_photo_sync_staged_local_all_resume_from_audit_pending_skips_media_reapply(self):
+        non_gw_product, non_gw_existing, photo_root = self._make_non_gw_photo_sync_fixture()
+        non_gw_existing["media_ids"] = [
+            "gid://shopify/MediaImage/old9",
+            "gid://shopify/MediaImage/new1",
+            "gid://shopify/MediaImage/new2",
+        ]
+        self.client.iter_existing_for_photo_sync.return_value = iter([non_gw_existing])
+        manifest_path = photo_root / "manifest.json"
+        manifest_path.write_text(json.dumps({
+            non_gw_product.sku: {
+                "state": shopify_sync.PHOTO_SYNC_STATE_AUDIT_PENDING,
+                "product_id": "gid://shopify/Product/2",
+                "asset_fingerprint": shopify_sync.discover_photo_asset_sets(photo_root)[0].fingerprint(),
+                "old_media_ids": ["gid://shopify/MediaImage/old9"],
+                "new_file_ids": ["gid://shopify/MediaImage/new1", "gid://shopify/MediaImage/new2"],
+                "detached_old_media": True,
+                "file_labels": {
+                    "gid://shopify/MediaImage/new1": "01.jpg",
+                    "gid://shopify/MediaImage/new2": "02.jpg",
+                },
+                "error": "audit write failed",
+                "fallback_audit_version": shopify_sync.PHOTO_SYNC_AUDIT_VERSION,
+            }
+        }), encoding="utf-8")
+
+        with self._patched_photo_sync_outputs(photo_root):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [non_gw_product],
+                photo_root,
+                dry=False,
+                manifest_path=manifest_path,
+                source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+                product_scope=shopify_sync.PHOTO_SYNC_SCOPE_ALL,
+                fallback_audit=True,
+            )
+
+        self.client.staged_uploads_create.assert_not_called()
+        self.client.file_create.assert_not_called()
+        self.client.wait_for_files_ready.assert_not_called()
+        self.client.attach_files_to_product.assert_not_called()
+        self.client.reorder_product_media.assert_not_called()
+        self.client.detach_files_from_product.assert_not_called()
+        self.client.set_product_fallback_image_used.assert_called_once_with("gid://shopify/Product/2")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest[non_gw_product.sku]["state"], "completed")
+
+    def test_photo_sync_staged_local_all_legacy_completed_entry_resumes_audit_only(self):
+        non_gw_product, non_gw_existing, photo_root = self._make_non_gw_photo_sync_fixture()
+        non_gw_existing["media_ids"] = [
+            "gid://shopify/MediaImage/old9",
+            "gid://shopify/MediaImage/new1",
+            "gid://shopify/MediaImage/new2",
+        ]
+        self.client.iter_existing_for_photo_sync.return_value = iter([non_gw_existing])
+        manifest_path = photo_root / "manifest.json"
+        manifest_path.write_text(json.dumps({
+            non_gw_product.sku: {
+                "state": "completed",
+                "product_id": "gid://shopify/Product/2",
+                "source_mode": shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+                "asset_fingerprint": shopify_sync.discover_photo_asset_sets(photo_root)[0].fingerprint(),
+                "old_media_ids": ["gid://shopify/MediaImage/old9"],
+                "new_file_ids": ["gid://shopify/MediaImage/new1", "gid://shopify/MediaImage/new2"],
+                "detached_old_media": True,
+                "file_labels": {
+                    "gid://shopify/MediaImage/new1": "01.jpg",
+                    "gid://shopify/MediaImage/new2": "02.jpg",
+                }
+            }
+        }), encoding="utf-8")
+
+        with self._patched_photo_sync_outputs(photo_root):
+            shopify_sync.phase_photo_sync(
+                self.client,
+                [non_gw_product],
+                photo_root,
+                dry=False,
+                manifest_path=manifest_path,
+                source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+                product_scope=shopify_sync.PHOTO_SYNC_SCOPE_ALL,
+                fallback_audit=True,
+            )
+
+        self.client.staged_uploads_create.assert_not_called()
+        self.client.attach_files_to_product.assert_not_called()
+        self.client.reorder_product_media.assert_not_called()
+        self.client.detach_files_from_product.assert_not_called()
+        self.client.set_product_fallback_image_used.assert_called_once_with("gid://shopify/Product/2")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest[non_gw_product.sku]["state"], "completed")
+        self.assertEqual(manifest[non_gw_product.sku]["fallback_audit_version"], shopify_sync.PHOTO_SYNC_AUDIT_VERSION)
 
     def test_photo_sync_skips_duplicate_shopify_skus_as_ambiguous(self):
         photo_root = self._make_photo_root()
@@ -2038,6 +2354,37 @@ class PhotoSyncMainFlowTests(unittest.TestCase):
             product_scope=shopify_sync.PHOTO_SYNC_SCOPE_ALL,
         )
 
+    def test_photo_sync_staged_local_all_routes_with_full_product_list(self):
+        client = mock.Mock()
+        products = [mock.sentinel.product]
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_root = Path(tmp)
+            folder = photo_root / "PKM-001-Pokemon-Booster-Box"
+            folder.mkdir()
+            (folder / "01.jpg").write_bytes(b"image")
+
+            with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync-staged-local-all", "--photo-root", str(photo_root)]), \
+                 mock.patch("shopify_sync.load_env", return_value={
+                     "SHOPIFY_STORE": "example-store",
+                     "SHOPIFY_TOKEN": "shpat_test",
+                 }), \
+                 mock.patch("shopify_sync.Shopify", return_value=client), \
+                 mock.patch("shopify_sync.build_product_list", return_value=products), \
+                 mock.patch("shopify_sync.run_photo_sync_preflight"), \
+                 mock.patch("shopify_sync.phase_photo_sync") as phase_photo_sync:
+                result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_photo_sync.assert_called_once_with(
+            client,
+            products,
+            photo_root,
+            dry=False,
+            source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+            product_scope=shopify_sync.PHOTO_SYNC_SCOPE_ALL,
+            fallback_audit=True,
+        )
+
     def test_photo_sync_rejects_preflight_combination(self):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync", "--preflight"]):
             with self.assertRaisesRegex(RuntimeError, "--photo-sync cannot be combined with --preflight"):
@@ -2053,6 +2400,17 @@ class PhotoSyncMainFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync-existing-files-all", "--photo-root", tmp]):
             with self.assertRaisesRegex(RuntimeError, "does not use --photo-root"):
+                shopify_sync.main()
+
+    def test_photo_sync_staged_local_all_requires_photo_root(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync-staged-local-all"]):
+            with self.assertRaisesRegex(RuntimeError, "requires --photo-root"):
+                shopify_sync.main()
+
+    def test_photo_sync_staged_local_all_rejects_preflight_combination(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync-staged-local-all", "--photo-root", tmp, "--preflight"]):
+            with self.assertRaisesRegex(RuntimeError, "--photo-sync-staged-local-all cannot be combined with --preflight"):
                 shopify_sync.main()
 
 

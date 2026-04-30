@@ -25,6 +25,10 @@ What it does:
   --publish-online-store-backfill
                Finds existing Shopify products that are not published to the
                current publication and publishes them to `Online Store`.
+  --photo-sync-staged-local-all
+               Applies curated staged local fallback images across the full
+               catalog and writes the fallback-image audit metafield after
+               successful media apply.
   --all        Runs --delete then --import.
   --preflight  Validates Shopify auth and location readiness with no write side effects.
   --dry-run    Reads sheets, builds the product list, writes preview.csv,
@@ -61,6 +65,8 @@ Usage:
   python shopify_sync.py --update
   python shopify_sync.py --publish-online-store-backfill --dry-run
   python shopify_sync.py --publish-online-store-backfill
+  python shopify_sync.py --photo-sync-staged-local-all --photo-root ./fallback_photos --dry-run
+  python shopify_sync.py --photo-sync-staged-local-all --photo-root ./fallback_photos
   python shopify_sync.py --all
 """
 
@@ -112,9 +118,17 @@ PHOTO_SYNC_SOURCE_STAGED_LOCAL = "staged-local-files"
 PHOTO_SYNC_SOURCE_SHOPIFY_EXISTING = "shopify-existing-files"
 PHOTO_SYNC_SCOPE_GW = "gw"
 PHOTO_SYNC_SCOPE_ALL = "all"
+PHOTO_SYNC_AUDIT_VERSION = 1
+PHOTO_SYNC_STATE_MEDIA_APPLIED = "media_applied"
+PHOTO_SYNC_STATE_AUDIT_PENDING = "audit_pending"
 LATEST_GW_RELEASE_LIMIT = 60
 AUTO_COLLECTION_TAG_PREFIX = "AUTO_COLLECTION::"
 ONLINE_STORE_PUBLICATION_NAME = "Online Store"
+FALLBACK_IMAGE_METAFIELD_NAMESPACE = "$app"
+FALLBACK_IMAGE_METAFIELD_KEY = "fallback_image_used"
+FALLBACK_IMAGE_METAFIELD_NAME = "Fallback image used"
+FALLBACK_IMAGE_METAFIELD_TYPE = "boolean"
+FALLBACK_IMAGE_METAFIELD_ADMIN_ACCESS = "MERCHANT_READ"
 
 # Tolerance for treating two money values as equal (Shopify rounds to 2 dp).
 MONEY_EPSILON = 0.005
@@ -707,6 +721,13 @@ def resolve_photo_sync_root(photo_root: Path | None) -> Path:
             "Run --gw-refresh-cache first or provide --photo-root."
         )
     return root
+
+
+def require_explicit_photo_root(photo_root: Path | None, flag_name: str) -> Path:
+    if photo_root is None:
+        raise RuntimeError(f"{flag_name} requires --photo-root.")
+    log(f"{flag_name} using explicit --photo-root override: {photo_root}")
+    return photo_root
 
 
 def discover_photo_asset_sets(root: Path) -> list[PhotoAssetSet]:
@@ -1772,6 +1793,191 @@ class Shopify:
         errs = data["productUpdate"]["userErrors"]
         if errs:
             raise RuntimeError(f"productUpdate errors for {product_id}: {errs}")
+
+    def get_product_metafield_definition(self, namespace: str, key: str) -> dict[str, Any] | None:
+        q = """
+            query($namespace: String!, $key: String!) {
+              metafieldDefinitions(first: 2, ownerType: PRODUCT, namespace: $namespace, key: $key) {
+                nodes {
+                  id
+                  namespace
+                  key
+                  ownerType
+                  type { name }
+                  capabilities {
+                    adminFilterable {
+                      eligible
+                      enabled
+                      status
+                    }
+                  }
+                }
+              }
+            }
+        """
+        data = self.gql(q, {"namespace": namespace, "key": key})
+        matches = data["metafieldDefinitions"].get("nodes") or []
+        if not matches:
+            return None
+        if len(matches) > 1:
+            raise RuntimeError(
+                f"Multiple product metafield definitions matched {namespace}.{key}; resolve duplicates before continuing."
+            )
+        return matches[0]
+
+    def create_product_metafield_definition(
+        self,
+        namespace: str,
+        key: str,
+        name: str,
+        metafield_type: str,
+    ) -> dict[str, Any]:
+        q = """
+            mutation($definition: MetafieldDefinitionInput!) {
+              metafieldDefinitionCreate(definition: $definition) {
+                createdDefinition {
+                  id
+                  namespace
+                  key
+                  ownerType
+                  type { name }
+                  capabilities {
+                    adminFilterable {
+                      eligible
+                      enabled
+                      status
+                    }
+                  }
+                }
+                userErrors { field message code }
+              }
+            }
+        """
+        data = self.gql(q, {
+            "definition": {
+                "name": name,
+                "namespace": namespace,
+                "key": key,
+                "ownerType": "PRODUCT",
+                "type": metafield_type,
+                "access": {"admin": FALLBACK_IMAGE_METAFIELD_ADMIN_ACCESS},
+                "capabilities": {
+                    "adminFilterable": {"enabled": True},
+                },
+            }
+        })
+        errs = data["metafieldDefinitionCreate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"metafieldDefinitionCreate errors for {namespace}.{key}: {errs}")
+        return data["metafieldDefinitionCreate"]["createdDefinition"]
+
+    def update_product_metafield_definition_admin_filterable(self, namespace: str, key: str) -> dict[str, Any]:
+        q = """
+            mutation($definition: MetafieldDefinitionUpdateInput!) {
+              metafieldDefinitionUpdate(definition: $definition) {
+                updatedDefinition {
+                  id
+                  namespace
+                  key
+                  ownerType
+                  type { name }
+                  capabilities {
+                    adminFilterable {
+                      eligible
+                      enabled
+                      status
+                    }
+                  }
+                }
+                userErrors { field message code }
+              }
+            }
+        """
+        data = self.gql(q, {
+            "definition": {
+                "namespace": namespace,
+                "key": key,
+                "ownerType": "PRODUCT",
+                "capabilities": {
+                    "adminFilterable": {"enabled": True},
+                },
+            }
+        })
+        errs = data["metafieldDefinitionUpdate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"metafieldDefinitionUpdate errors for {namespace}.{key}: {errs}")
+        return data["metafieldDefinitionUpdate"]["updatedDefinition"]
+
+    def ensure_fallback_image_metafield_definition(self) -> None:
+        definition = self.get_product_metafield_definition(
+            FALLBACK_IMAGE_METAFIELD_NAMESPACE,
+            FALLBACK_IMAGE_METAFIELD_KEY,
+        )
+        if definition is None:
+            definition = self.create_product_metafield_definition(
+                FALLBACK_IMAGE_METAFIELD_NAMESPACE,
+                FALLBACK_IMAGE_METAFIELD_KEY,
+                FALLBACK_IMAGE_METAFIELD_NAME,
+                FALLBACK_IMAGE_METAFIELD_TYPE,
+            )
+        else:
+            definition_type = (((definition.get("type") or {}).get("name")) or "").strip().lower()
+            if definition_type != FALLBACK_IMAGE_METAFIELD_TYPE:
+                raise RuntimeError(
+                    f"Fallback image metafield definition {FALLBACK_IMAGE_METAFIELD_NAMESPACE}.{FALLBACK_IMAGE_METAFIELD_KEY} "
+                    f"already exists with incompatible type {definition_type!r}."
+                )
+            admin_filterable = ((definition.get("capabilities") or {}).get("adminFilterable") or {})
+            if not admin_filterable.get("eligible", False):
+                raise RuntimeError(
+                    f"Fallback image metafield definition {FALLBACK_IMAGE_METAFIELD_NAMESPACE}.{FALLBACK_IMAGE_METAFIELD_KEY} "
+                    "is not eligible for admin filtering."
+                )
+            if not admin_filterable.get("enabled", False):
+                definition = self.update_product_metafield_definition_admin_filterable(
+                    FALLBACK_IMAGE_METAFIELD_NAMESPACE,
+                    FALLBACK_IMAGE_METAFIELD_KEY,
+                )
+        admin_filterable = ((definition.get("capabilities") or {}).get("adminFilterable") or {})
+        status = (admin_filterable.get("status") or "").strip().upper()
+        if not admin_filterable.get("enabled", False):
+            raise RuntimeError(
+                f"Fallback image metafield definition {FALLBACK_IMAGE_METAFIELD_NAMESPACE}.{FALLBACK_IMAGE_METAFIELD_KEY} "
+                "did not end in an enabled admin-filterable state."
+            )
+        if status in {"FAILED", "NOT_FILTERABLE"}:
+            raise RuntimeError(
+                f"Fallback image metafield definition {FALLBACK_IMAGE_METAFIELD_NAMESPACE}.{FALLBACK_IMAGE_METAFIELD_KEY} "
+                f"reported non-queryable admin filter status {status!r}."
+            )
+
+    def set_product_fallback_image_used(self, product_id: str) -> None:
+        q = """
+            mutation($metafields: [MetafieldsSetInput!]!) {
+              metafieldsSet(metafields: $metafields) {
+                metafields {
+                  namespace
+                  key
+                  value
+                }
+                userErrors { field message code }
+              }
+            }
+        """
+        data = self.gql(q, {
+            "metafields": [
+                {
+                    "ownerId": product_id,
+                    "namespace": FALLBACK_IMAGE_METAFIELD_NAMESPACE,
+                    "key": FALLBACK_IMAGE_METAFIELD_KEY,
+                    "type": FALLBACK_IMAGE_METAFIELD_TYPE,
+                    "value": "true",
+                }
+            ]
+        })
+        errs = data["metafieldsSet"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"metafieldsSet errors for {product_id}: {errs}")
 
     # ------------------------------------------------------------------
     # Product create (with variant + inventory)
@@ -2883,9 +3089,13 @@ def phase_photo_sync(
     manifest_path: Path = PHOTO_SYNC_MANIFEST_JSON,
     source_mode: str = PHOTO_SYNC_SOURCE_STAGED_LOCAL,
     product_scope: str = PHOTO_SYNC_SCOPE_GW,
+    fallback_audit: bool = False,
 ) -> None:
     if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL:
-        log("=== PHOTO SYNC phase: matching GW products to staged local image folders ===")
+        if product_scope == PHOTO_SYNC_SCOPE_ALL:
+            log("=== PHOTO SYNC phase: matching all catalog products to staged local image folders ===")
+        else:
+            log("=== PHOTO SYNC phase: matching GW products to staged local image folders ===")
         if photo_root is None:
             raise RuntimeError("Photo sync requires a local photo root.")
         asset_sets = discover_photo_asset_sets(photo_root)
@@ -2924,6 +3134,12 @@ def phase_photo_sync(
         scoped_products = list(products)
     else:
         raise RuntimeError(f"Unsupported photo sync product scope: {product_scope}")
+
+    if fallback_audit:
+        if source_mode != PHOTO_SYNC_SOURCE_STAGED_LOCAL or product_scope != PHOTO_SYNC_SCOPE_ALL:
+            raise RuntimeError("Fallback audit is only supported for all-catalog staged-local photo sync.")
+        if not dry:
+            client.ensure_fallback_image_metafield_definition()
 
     for product in scoped_products:
         existing = by_sku.get(product.sku)
@@ -3009,47 +3225,118 @@ def phase_photo_sync(
                 "|".join(f"{file.id}:{file.filename}:{file.file_status}" for file in matched_files).encode("utf-8")
             ).hexdigest()
             source_paths = [file.filename or file.id for file in matched_files]
+        asset_label = asset_set.label if asset_set else "|".join(file.filename or file.id for file in matched_files)
         prior_entry = dict(manifest.get(product.sku, {}))
         prior_state = prior_entry.get("state")
         prior_source_mode = prior_entry.get("source_mode") or PHOTO_SYNC_SOURCE_STAGED_LOCAL
+        prior_audit_version = prior_entry.get("fallback_audit_version")
         reset_resume_state = (
             prior_entry.get("asset_fingerprint") != fingerprint
             or prior_entry.get("product_id") != existing["product_id"]
             or prior_source_mode != source_mode
+        )
+        legacy_audit_upgrade = (
+            fallback_audit
+            and prior_state == "completed"
+            and prior_entry.get("asset_fingerprint") == fingerprint
+            and prior_entry.get("product_id") == existing["product_id"]
+            and prior_source_mode == source_mode
+            and prior_audit_version != PHOTO_SYNC_AUDIT_VERSION
         )
         if (
             prior_state == "completed"
             and prior_entry.get("asset_fingerprint") == fingerprint
             and prior_entry.get("product_id") == existing["product_id"]
             and prior_source_mode == source_mode
+            and not legacy_audit_upgrade
         ):
             log(f"  resume: skipping already-synced photo set for {product.sku}")
             continue
 
+        effective_prior_state: str | None = None
         try:
             if reset_resume_state:
                 old_media_ids = existing["media_ids"]
                 file_ids: list[str] = []
+                file_labels: dict[str, str] = {}
                 effective_prior_state = None
+                entry = update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="preparing",
+                    product_id=existing["product_id"],
+                    source_mode=source_mode,
+                    asset_label=asset_label,
+                    asset_fingerprint=fingerprint,
+                    old_media_ids=old_media_ids,
+                    detached_old_media=False,
+                    new_file_ids=file_ids,
+                    error="",
+                    source_paths=source_paths,
+                )
+            elif legacy_audit_upgrade:
+                old_media_ids = prior_entry.get("old_media_ids", existing["media_ids"])
+                file_ids = prior_entry.get("new_file_ids") or []
+                file_labels = prior_entry.get("file_labels") or {}
+                effective_prior_state = PHOTO_SYNC_STATE_MEDIA_APPLIED
+                entry = update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state=PHOTO_SYNC_STATE_MEDIA_APPLIED,
+                    product_id=existing["product_id"],
+                    source_mode=source_mode,
+                    asset_label=asset_label,
+                    asset_fingerprint=fingerprint,
+                    old_media_ids=old_media_ids,
+                    detached_old_media=prior_entry.get("detached_old_media", True),
+                    new_file_ids=file_ids,
+                    error="",
+                    source_paths=source_paths,
+                )
+            elif fallback_audit and prior_state in {PHOTO_SYNC_STATE_MEDIA_APPLIED, PHOTO_SYNC_STATE_AUDIT_PENDING}:
+                old_media_ids = prior_entry.get("old_media_ids", existing["media_ids"])
+                file_ids = prior_entry.get("new_file_ids") or []
+                file_labels = prior_entry.get("file_labels") or {}
+                effective_prior_state = prior_state
+                entry = update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state=prior_state,
+                    product_id=existing["product_id"],
+                    source_mode=source_mode,
+                    asset_label=asset_label,
+                    asset_fingerprint=fingerprint,
+                    old_media_ids=old_media_ids,
+                    detached_old_media=prior_entry.get("detached_old_media", True),
+                    new_file_ids=file_ids,
+                    error=prior_entry.get("error", ""),
+                    source_paths=source_paths,
+                    fallback_audit_version=PHOTO_SYNC_AUDIT_VERSION,
+                )
             else:
                 old_media_ids = prior_entry.get("old_media_ids", existing["media_ids"])
                 file_ids = prior_entry.get("new_file_ids") or []
+                file_labels = prior_entry.get("file_labels") or {}
                 effective_prior_state = prior_state
-            entry = update_and_save_photo_manifest_entry(
-                manifest,
-                manifest_path,
-                sku=product.sku,
-                state="preparing",
-                product_id=existing["product_id"],
-                source_mode=source_mode,
-                asset_label=asset_set.label if asset_set else "|".join(file.filename or file.id for file in matched_files),
-                asset_fingerprint=fingerprint,
-                old_media_ids=old_media_ids,
-                detached_old_media=False,
-                new_file_ids=file_ids,
-                error="",
-                source_paths=source_paths,
-            )
+                entry = update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="preparing",
+                    product_id=existing["product_id"],
+                    source_mode=source_mode,
+                    asset_label=asset_label,
+                    asset_fingerprint=fingerprint,
+                    old_media_ids=old_media_ids,
+                    detached_old_media=prior_entry.get("detached_old_media", False),
+                    new_file_ids=file_ids,
+                    error="",
+                    source_paths=source_paths,
+                    fallback_audit_version=prior_audit_version,
+                )
 
             if (
                 not file_ids
@@ -3086,11 +3373,15 @@ def phase_photo_sync(
                     file_labels=file_labels,
                 )
                 old_media_ids = entry.get("old_media_ids") or []
-            else:
-                file_labels = prior_entry.get("file_labels") or {}
-
             if source_mode == PHOTO_SYNC_SOURCE_STAGED_LOCAL:
-                if effective_prior_state not in {"files_ready", "associated", "reordered", "completed"}:
+                if effective_prior_state not in {
+                    "files_ready",
+                    "associated",
+                    "reordered",
+                    PHOTO_SYNC_STATE_MEDIA_APPLIED,
+                    PHOTO_SYNC_STATE_AUDIT_PENDING,
+                    "completed",
+                }:
                     client.wait_for_files_ready(file_ids, file_labels=file_labels)
                     entry = update_and_save_photo_manifest_entry(
                         manifest,
@@ -3102,7 +3393,13 @@ def phase_photo_sync(
             else:
                 effective_prior_state = effective_prior_state or "files_ready"
 
-            if effective_prior_state not in {"associated", "reordered", "completed"}:
+            if effective_prior_state not in {
+                "associated",
+                "reordered",
+                PHOTO_SYNC_STATE_MEDIA_APPLIED,
+                PHOTO_SYNC_STATE_AUDIT_PENDING,
+                "completed",
+            }:
                 client.attach_files_to_product(file_ids, existing["product_id"])
                 entry = update_and_save_photo_manifest_entry(
                     manifest,
@@ -3112,7 +3409,12 @@ def phase_photo_sync(
                 )
                 effective_prior_state = "associated"
 
-            if effective_prior_state not in {"reordered", "completed"}:
+            if effective_prior_state not in {
+                "reordered",
+                PHOTO_SYNC_STATE_MEDIA_APPLIED,
+                PHOTO_SYNC_STATE_AUDIT_PENDING,
+                "completed",
+            }:
                 client.reorder_product_media(existing["product_id"], file_ids)
                 entry = update_and_save_photo_manifest_entry(
                     manifest,
@@ -3132,21 +3434,63 @@ def phase_photo_sync(
                     detached_old_media=True,
                 )
 
-            update_and_save_photo_manifest_entry(
-                manifest,
-                manifest_path,
-                sku=product.sku,
-                state="completed",
-            )
+            if fallback_audit:
+                if effective_prior_state not in {PHOTO_SYNC_STATE_MEDIA_APPLIED, PHOTO_SYNC_STATE_AUDIT_PENDING}:
+                    entry = update_and_save_photo_manifest_entry(
+                        manifest,
+                        manifest_path,
+                        sku=product.sku,
+                        state=PHOTO_SYNC_STATE_MEDIA_APPLIED,
+                        fallback_audit_version=PHOTO_SYNC_AUDIT_VERSION,
+                        error="",
+                    )
+                    effective_prior_state = PHOTO_SYNC_STATE_MEDIA_APPLIED
+                if effective_prior_state == PHOTO_SYNC_STATE_MEDIA_APPLIED:
+                    entry = update_and_save_photo_manifest_entry(
+                        manifest,
+                        manifest_path,
+                        sku=product.sku,
+                        state=PHOTO_SYNC_STATE_AUDIT_PENDING,
+                        fallback_audit_version=PHOTO_SYNC_AUDIT_VERSION,
+                        error="",
+                    )
+                    effective_prior_state = PHOTO_SYNC_STATE_AUDIT_PENDING
+                if effective_prior_state == PHOTO_SYNC_STATE_AUDIT_PENDING:
+                    client.set_product_fallback_image_used(existing["product_id"])
+                update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="completed",
+                    fallback_audit_version=PHOTO_SYNC_AUDIT_VERSION,
+                    error="",
+                )
+            else:
+                update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="completed",
+                )
         except Exception as e:
-            update_and_save_photo_manifest_entry(
-                manifest,
-                manifest_path,
-                sku=product.sku,
-                state="failed",
-                error=str(e),
-            )
             detail = str(e)
+            if fallback_audit and effective_prior_state == PHOTO_SYNC_STATE_AUDIT_PENDING:
+                update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state=PHOTO_SYNC_STATE_AUDIT_PENDING,
+                    fallback_audit_version=PHOTO_SYNC_AUDIT_VERSION,
+                    error=detail,
+                )
+            else:
+                update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="failed",
+                    error=detail,
+                )
             log(f"  FAILED photo sync {product.sku} ({product.title!r}): {detail}")
             failure_rows.append((product.sku, product.title, detail))
 
@@ -3201,6 +3545,8 @@ def main() -> int:
                         help="Attach matching existing Shopify Files to GW products without uploading new media.")
     parser.add_argument("--photo-sync-existing-files-all", dest="do_photo_sync_existing_files_all", action="store_true",
                         help="Attach matching existing Shopify Files to all catalog products without uploading new media.")
+    parser.add_argument("--photo-sync-staged-local-all", dest="do_photo_sync_staged_local_all", action="store_true",
+                        help="Apply staged local fallback images to all catalog products and write the fallback audit metafield.")
     parser.add_argument("--photo-root", type=Path,
                         help="Root folder containing staged GW image folders/files for --photo-sync.")
     parser.add_argument("--all", action="store_true", help="Run delete then import.")
@@ -3211,13 +3557,15 @@ def main() -> int:
     if not (args.dry_run or args.preflight or args.delete or args.do_delete_collections
             or args.do_generate_collections or args.do_update_collection_images
             or args.do_gw_refresh_cache or args.do_import or args.do_update or args.do_publish_online_store_backfill
-            or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.all):
+            or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+            or args.do_photo_sync_staged_local_all or args.all):
         parser.print_help()
         return 1
 
     if args.do_gw_refresh_cache:
         invalid_refresh_combo = (
-            args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.do_update or args.do_import or args.delete
+            args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+            or args.do_photo_sync_staged_local_all or args.do_update or args.do_import or args.delete
             or args.do_delete_collections or args.do_generate_collections or args.do_update_collection_images
             or args.do_publish_online_store_backfill or args.all or args.preflight
             or args.start_at != 0 or args.photo_root is not None
@@ -3225,7 +3573,7 @@ def main() -> int:
         if invalid_refresh_combo:
             raise RuntimeError(
                 "--gw-refresh-cache must run separately and cannot be combined with "
-                "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --update, --import, --delete, --delete-collections, "
+                "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --photo-sync-staged-local-all, --update, --import, --delete, --delete-collections, "
                 "--generate-collections, --update-collection-images, --all, --preflight, --start-at, or --photo-root."
             )
         refresh_gw_cache(
@@ -3267,9 +3615,24 @@ def main() -> int:
         raise RuntimeError("--start-at is only valid with --import/--all, not --photo-sync-existing-files-all.")
     if args.do_photo_sync_existing_files_all and args.photo_root is not None:
         raise RuntimeError("--photo-sync-existing-files-all does not use --photo-root.")
+    if args.do_photo_sync_staged_local_all and (args.delete or args.do_import or args.do_update or args.all):
+        raise RuntimeError("--photo-sync-staged-local-all must run separately from delete/import/update/all phases.")
+    if args.do_photo_sync_staged_local_all and args.preflight:
+        raise RuntimeError("--photo-sync-staged-local-all cannot be combined with --preflight.")
+    if args.do_photo_sync_staged_local_all and args.start_at != 0:
+        raise RuntimeError("--start-at is only valid with --import/--all, not --photo-sync-staged-local-all.")
+    if args.do_photo_sync_staged_local_all and args.photo_root is None:
+        raise RuntimeError("--photo-sync-staged-local-all requires --photo-root.")
+    if args.do_photo_sync_staged_local_all and args.do_photo_sync:
+        raise RuntimeError("--photo-sync and --photo-sync-staged-local-all must run separately.")
+    if args.do_photo_sync_staged_local_all and args.do_photo_sync_existing_files:
+        raise RuntimeError("--photo-sync-existing-files and --photo-sync-staged-local-all must run separately.")
+    if args.do_photo_sync_staged_local_all and args.do_photo_sync_existing_files_all:
+        raise RuntimeError("--photo-sync-existing-files-all and --photo-sync-staged-local-all must run separately.")
     if args.do_delete_collections and (
         args.preflight or args.delete or args.do_import or args.do_update
-        or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.do_generate_collections
+        or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+        or args.do_photo_sync_staged_local_all or args.do_generate_collections
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
@@ -3278,7 +3641,8 @@ def main() -> int:
         )
     if args.do_generate_collections and (
         args.preflight or args.delete or args.do_delete_collections or args.do_import
-        or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.all
+        or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+        or args.do_photo_sync_staged_local_all or args.all
         or args.do_update_collection_images
         or args.start_at != 0 or args.photo_root is not None
     ):
@@ -3290,7 +3654,7 @@ def main() -> int:
     if args.do_update_collection_images and (
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_import or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files
-        or args.do_photo_sync_existing_files_all or args.all
+        or args.do_photo_sync_existing_files_all or args.do_photo_sync_staged_local_all or args.all
         or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
@@ -3302,6 +3666,7 @@ def main() -> int:
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_update_collection_images or args.do_import or args.do_update
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+        or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
@@ -3319,6 +3684,7 @@ def main() -> int:
         and not args.do_photo_sync
         and not args.do_photo_sync_existing_files
         and not args.do_photo_sync_existing_files_all
+        and not args.do_photo_sync_staged_local_all
         and not args.do_generate_collections
         and not args.do_delete_collections
         and not args.do_update_collection_images
@@ -3378,12 +3744,12 @@ def main() -> int:
 
     if args.do_photo_sync or args.do_photo_sync_existing_files:
         products = build_gw_product_list(strict=True)
-    elif args.do_photo_sync_existing_files_all:
+    elif args.do_photo_sync_existing_files_all or args.do_photo_sync_staged_local_all:
         products = build_product_list(strict=True)
     else:
         products = prepare_products_for_import()
 
-    if args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all:
+    if args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.do_photo_sync_staged_local_all:
         run_photo_sync_preflight(client)
         location_id = ""
     else:
@@ -3442,6 +3808,21 @@ def main() -> int:
             log(
                 "Photo-sync existing-files-all dry-run complete. Review photo_sync_preview.csv, then re-run "
                 "with --photo-sync-existing-files-all (no --dry-run) to apply."
+            )
+    if args.do_photo_sync_staged_local_all:
+        phase_photo_sync(
+            client,
+            products,
+            require_explicit_photo_root(args.photo_root, "--photo-sync-staged-local-all"),
+            dry=args.dry_run,
+            source_mode=PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+            product_scope=PHOTO_SYNC_SCOPE_ALL,
+            fallback_audit=True,
+        )
+        if args.dry_run:
+            log(
+                "Photo-sync staged-local-all dry-run complete. Review photo_sync_preview.csv, then re-run "
+                "with --photo-sync-staged-local-all (no --dry-run) to apply."
             )
     return 0
 

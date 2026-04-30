@@ -105,6 +105,30 @@ Notes:
 - The API proof artifact for this lane is `.omx/plans/gw-shopify-photo-sync-api-proof.md`.
 - Keep the app on Shopify Admin API `2025-01` unless the proof artifact records a deliberate version bump.
 
+## Catalog-wide staged local fallback apply
+
+This MVP lane applies curated staged local fallback images across the full catalog. It does **not** do automated web search, scraping, or AI image generation yet. Those are follow-up scope. The workflow only consumes a local folder you prepare ahead of time.
+
+1. Stage curated fallback assets under an explicit local root:
+   - one folder or file grouping per product
+   - filename/folder naming should still support the existing photo-sync match rules (exact SKU when available, otherwise title slug fallback)
+2. Run a dry run first:
+   ```bash
+   python3 shopify_sync.py --photo-sync-staged-local-all --photo-root ./fallback_photos --dry-run
+   ```
+3. Review `photo_sync_preview.csv`, plus any appended `photo_sync_missing.tsv`, `photo_sync_ambiguous.tsv`, and `photo_sync_failures.tsv`.
+4. Apply for real:
+   ```bash
+   python3 shopify_sync.py --photo-sync-staged-local-all --photo-root ./fallback_photos
+   ```
+
+MVP behavior:
+
+- `--photo-sync-staged-local-all` must be run separately from import/update/delete lanes.
+- `--photo-root` is required. This lane does not fall back to the GW cache.
+- Successful runs write the app-owned fallback-image metafield after the full media apply path completes.
+- Existing staged-local entries from the pre-audit manifest contract can resume through the audit-only step without re-uploading media.
+
 ## Step 4 — Install Python dependencies
 
 In a Terminal:
