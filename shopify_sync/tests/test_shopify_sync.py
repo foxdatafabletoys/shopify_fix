@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 import io
 import json
+import os
 import requests
 import sys
 import tempfile
@@ -1658,6 +1659,45 @@ class PhotoAssetMatchingTests(unittest.TestCase):
         self.assertEqual(len(asset_sets), 1)
         self.assertEqual([path.name for path in asset_sets[0].image_paths], ["real.jpg"])
 
+    def test_discover_photo_asset_sets_indexes_sku_prefixed_staged_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            folder = root / "PKM-001-pokemon-booster-box"
+            folder.mkdir()
+            (folder / "01.jpg").write_bytes(b"image")
+
+            asset_set = shopify_sync.discover_photo_asset_sets(root)[0]
+
+        self.assertEqual(asset_set.product_code, "PKM-001")
+        self.assertEqual(asset_set.title_slug, "pokemon-booster-box")
+
+    def test_photo_asset_fingerprint_ignores_mtime_for_same_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            folder = root / "99120109017-ArmageddonBattalionDeathwatch"
+            folder.mkdir()
+            image = folder / "01.jpg"
+            image.write_bytes(b"same-bytes")
+            asset_set = shopify_sync.discover_photo_asset_sets(root)[0]
+            first = asset_set.fingerprint()
+            os.utime(image, (image.stat().st_atime, image.stat().st_mtime + 60))
+            second = shopify_sync.discover_photo_asset_sets(root)[0].fingerprint()
+
+        self.assertEqual(first, second)
+
+    def test_photo_asset_fingerprint_changes_when_bytes_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            folder = root / "99120109017-ArmageddonBattalionDeathwatch"
+            folder.mkdir()
+            image = folder / "01.jpg"
+            image.write_bytes(b"same-bytes")
+            first = shopify_sync.discover_photo_asset_sets(root)[0].fingerprint()
+            image.write_bytes(b"changed-bytes")
+            second = shopify_sync.discover_photo_asset_sets(root)[0].fingerprint()
+
+        self.assertNotEqual(first, second)
+
 
 class PhotoSyncPhaseTests(unittest.TestCase):
     def setUp(self):
@@ -2226,6 +2266,178 @@ class PhotoSyncPhaseTests(unittest.TestCase):
         self.assertEqual(manifest[self.product.sku]["error"], "")
 
 
+class PhotoSourcePhaseTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+        self.client.session = mock.Mock(headers={})
+        self.product = shopify_sync.Product(
+            title="Pokemon Booster Box",
+            sku="PKM-001",
+            vendor="Pokemon",
+            source="INV",
+        )
+        self.existing = {
+            "product_id": "gid://shopify/Product/2",
+            "title": self.product.title,
+            "vendor": "Pokemon",
+            "tags": ["Pokemon"],
+            "sku": self.product.sku,
+            "media_ids": [],
+        }
+
+    @contextmanager
+    def _patched_photo_source_outputs(self, root: Path):
+        with mock.patch("shopify_sync.PHOTO_SOURCE_PREVIEW_CSV", new=root / "preview.csv"), \
+             mock.patch("shopify_sync.PHOTO_SOURCE_MISSING_TSV", new=root / "missing.tsv"), \
+             mock.patch("shopify_sync.PHOTO_SOURCE_AMBIGUOUS_TSV", new=root / "ambiguous.tsv"), \
+             mock.patch("shopify_sync.PHOTO_SOURCE_FAILURES_TSV", new=root / "failures.tsv"), \
+             mock.patch("shopify_sync.PHOTO_SOURCE_UNMAPPED_SHOPIFY_TSV", new=root / "unmapped.tsv"):
+            yield
+
+    def test_photo_source_web_all_live_run_stages_high_confidence_winner(self):
+        self.client.iter_existing_for_photo_sync.return_value = iter([
+            self.existing,
+            {
+                "product_id": "gid://shopify/Product/999",
+                "title": "Shopify Only",
+                "vendor": "Other",
+                "tags": [],
+                "sku": "SHOP-ONLY",
+                "media_ids": [],
+            },
+        ])
+        search_html = '<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'
+        candidate_html = """
+        <html><head>
+          <title>PKM-001 Pokemon Booster Box</title>
+          <meta property="og:image" content="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg">
+        </head><body>
+          <div>Pokemon Booster Box</div><div>SKU PKM-001</div><div>Add to cart</div>
+        </body></html>
+        """
+        image_bytes = b"winner-image"
+        responses = [
+            FakeResponse(text=search_html, url=f"{shopify_sync.PHOTO_SOURCE_SEARCH_URL}?q=PKM"),
+            FakeResponse(text=candidate_html, url="https://example.com/pkm-001-product"),
+            FakeResponse(content=image_bytes, url="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg"),
+        ]
+        self.client.session.get.side_effect = responses
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache_root = root / "photo_source_cache" / "current"
+            manifest_path = root / "photo_source_manifest.json"
+            with self._patched_photo_source_outputs(root):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [self.product],
+                    dry=False,
+                    manifest_path=manifest_path,
+                    cache_root=cache_root,
+                )
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            staged_dir = cache_root / "PKM-001-pokemon-booster-box"
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+            unmapped = (root / "unmapped.tsv").read_text(encoding="utf-8")
+            self.assertEqual(manifest[self.product.sku]["state"], "completed")
+            self.assertTrue(staged_dir.exists())
+            self.assertTrue((staged_dir / "_source.json").exists())
+            self.assertIn("winner", preview)
+            self.assertIn("SHOP-ONLY", unmapped)
+
+    def test_photo_source_web_all_marks_equal_high_score_candidates_ambiguous(self):
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+        search_html = """
+        <html><body>
+          <a href="https://example.com/pkm-001-a">A</a>
+          <a href="https://example.com/pkm-001-b">B</a>
+        </body></html>
+        """
+        candidate_html = """
+        <html><head>
+          <title>PKM-001 Pokemon Booster Box</title>
+          <meta property="og:image" content="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg">
+        </head><body><div>Pokemon Booster Box</div><div>SKU PKM-001</div><div>Add to cart</div></body></html>
+        """
+        self.client.session.get.side_effect = [
+            FakeResponse(text=search_html, url="https://search"),
+            FakeResponse(text=candidate_html, url="https://example.com/pkm-001-a"),
+            FakeResponse(text=candidate_html, url="https://example.com/pkm-001-b"),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self._patched_photo_source_outputs(root):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [self.product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+            ambiguous = (root / "ambiguous.tsv").read_text(encoding="utf-8")
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+
+        self.assertIn("multiple candidates cleared the winner threshold", ambiguous)
+        self.assertIn("ambiguous", preview)
+
+    def test_photo_source_web_all_skips_products_with_existing_media(self):
+        existing = dict(self.existing)
+        existing["media_ids"] = ["gid://shopify/MediaImage/1"]
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self._patched_photo_source_outputs(root):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [self.product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+            preview_rows = (root / "preview.csv").read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(len(preview_rows), 1)
+        self.client.session.get.assert_not_called()
+
+    def test_photo_source_web_all_preserves_existing_session_auth_headers(self):
+        session = requests.Session()
+        session.headers.update({"X-Shopify-Access-Token": "secret-token"})
+        session.get = mock.Mock()
+        self.client.session = session
+        self.client.iter_existing_for_photo_sync.return_value = iter([])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self._patched_photo_source_outputs(root):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+
+        self.assertEqual(self.client.session.headers["X-Shopify-Access-Token"], "secret-token")
+        self.assertTrue(self.client.session.headers.get("User-Agent"))
+
+    def test_photo_source_candidate_rejects_adjacent_sku_false_positive(self):
+        candidate = shopify_sync.score_photo_source_candidate(
+            self.product,
+            page_url="https://example.com/products/pkm-0012",
+            page_title="PKM-0012 Pokemon Booster Box",
+            page_text="Pokemon Booster Box SKU PKM-0012 Add to cart",
+            image_url="https://cdn.example.com/pokemon-booster-box-pkm-0012-front.jpg",
+            image_alt="Pokemon Booster Box PKM-0012",
+        )
+
+        self.assertIsNotNone(candidate)
+        self.assertNotIn("sku", candidate.reasons)
+        self.assertLess(candidate.score, shopify_sync.PHOTO_SOURCE_WINNER_THRESHOLD)
+
+
 class PhotoSyncMainFlowTests(unittest.TestCase):
     def test_photo_sync_without_photo_root_uses_default_cache(self):
         client = mock.Mock()
@@ -2411,6 +2623,39 @@ class PhotoSyncMainFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-sync-staged-local-all", "--photo-root", tmp, "--preflight"]):
             with self.assertRaisesRegex(RuntimeError, "--photo-sync-staged-local-all cannot be combined with --preflight"):
+                shopify_sync.main()
+
+    def test_photo_source_web_all_routes_with_full_product_list(self):
+        client = mock.Mock()
+        products = [mock.sentinel.product]
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-source-web-all"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.build_product_list", return_value=products), \
+             mock.patch("shopify_sync.run_photo_sync_preflight"), \
+             mock.patch("shopify_sync.phase_photo_source_web_all") as phase_photo_source_web_all:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_photo_source_web_all.assert_called_once_with(
+            client,
+            products,
+            dry=False,
+        )
+
+    def test_photo_source_web_all_rejects_photo_root_combination(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-source-web-all", "--photo-root", tmp]):
+            with self.assertRaisesRegex(RuntimeError, "does not use --photo-root"):
+                shopify_sync.main()
+
+    def test_photo_source_web_all_rejects_preflight_combination(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-source-web-all", "--preflight"]):
+            with self.assertRaisesRegex(RuntimeError, "--photo-source-web-all cannot be combined with --preflight"):
                 shopify_sync.main()
 
 

@@ -594,12 +594,33 @@ def _extract_product_code(value: str) -> str:
     return max(matches, key=len)
 
 
+def _extract_asset_match_code(value: str) -> str:
+    base = Path(value or "").stem.strip()
+    numeric_code = _extract_product_code(base)
+    if numeric_code:
+        return numeric_code
+    parts = [part for part in re.split(r"[-_\s]+", base) if part]
+    prefix: list[str] = []
+    for index, part in enumerate(parts[:-1], start=1):
+        prefix.append(part)
+        if re.search(r"\d", part):
+            candidate = "-".join(prefix)
+            tail = "-".join(parts[index:])
+            if tail:
+                return candidate
+    return ""
+
+
 def _extract_title_slug(value: str) -> str:
     base = Path(value or "").stem
     code = _extract_product_code(base)
     if code:
         _, _, tail = base.partition(code)
         base = tail.lstrip(" -_")
+    else:
+        asset_code = _extract_asset_match_code(base)
+        if asset_code and base.lower().startswith(asset_code.lower()):
+            base = base[len(asset_code):].lstrip(" -_")
     return _normalize_slug(base)
 
 
@@ -903,7 +924,7 @@ def discover_photo_asset_sets(root: Path) -> list[PhotoAssetSet]:
         asset_sets.append(PhotoAssetSet(
             key=group_key,
             label=label,
-            product_code=_extract_product_code(name_seed),
+            product_code=_extract_asset_match_code(name_seed),
             title_slug=_extract_title_slug(name_seed),
             image_paths=sorted_paths,
         ))
@@ -1047,9 +1068,20 @@ def photo_source_vendor_tokens(product: Product) -> list[str]:
     return [token for token in re.findall(r"[a-z0-9]+", (product.vendor or "").lower()) if len(token) >= 3]
 
 
-def photo_source_detail_signals(search_text: str, product: Product) -> list[str]:
+def photo_source_has_sku_evidence(sku: str, raw_text: str, normalized_text: str) -> bool:
+    raw_sku = (sku or "").strip().lower()
+    if not raw_sku:
+        return False
+    escaped = re.escape(raw_sku)
+    if re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", (raw_text or "").lower()):
+        return True
+    normalized_sku = " ".join(re.findall(r"[a-z0-9]+", raw_sku))
+    return bool(normalized_sku) and f" {normalized_sku} " in normalized_text
+
+
+def photo_source_detail_signals(raw_text: str, search_text: str, product: Product) -> list[str]:
     signals: list[str] = []
-    if product.sku and product.sku.lower() in search_text:
+    if photo_source_has_sku_evidence(product.sku, raw_text, search_text):
         signals.append("sku")
     title_tokens = photo_source_title_tokens(product)
     if title_tokens and sum(1 for token in title_tokens if f" {token} " in search_text) >= min(2, len(title_tokens)):
@@ -1071,13 +1103,14 @@ def score_photo_source_candidate(
     image_url: str,
     image_alt: str,
 ) -> PhotoSourceCandidate | None:
-    search_text = _normalize_search_text(" ".join([page_url, page_title, page_text, image_url, image_alt]))
-    detail_signals = photo_source_detail_signals(search_text, product)
+    raw_text = " ".join([page_url, page_title, page_text, image_url, image_alt])
+    search_text = _normalize_search_text(raw_text)
+    detail_signals = photo_source_detail_signals(raw_text, search_text, product)
     if not detail_signals:
         return None
     score = 0
     reasons: list[str] = []
-    if product.sku and product.sku.lower() in search_text:
+    if photo_source_has_sku_evidence(product.sku, raw_text, search_text):
         score += 55
         reasons.append("sku")
     title_tokens = photo_source_title_tokens(product)
@@ -1208,6 +1241,48 @@ def build_photo_source_preview_row(
         "staged_dir": staged_dir,
         "reason": reason,
     }
+
+
+def record_photo_source_non_winner(
+    product: Product,
+    *,
+    status: str,
+    query: str,
+    top_score: int,
+    reason: str,
+    preview_rows: list[dict[str, Any]],
+    log_rows: list[tuple[str, str, str]],
+    dry: bool,
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> None:
+    preview_rows.append(build_photo_source_preview_row(
+        product,
+        status=status,
+        query=query,
+        top_score=top_score,
+        reason=reason,
+    ))
+    log_rows.append((product.sku, product.title, reason))
+    if dry:
+        return
+    update_and_save_photo_manifest_entry(
+        manifest,
+        manifest_path,
+        sku=product.sku,
+        state=status,
+        query=query,
+        top_score=top_score,
+        reason=reason,
+        manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+    )
+
+
+def display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(HERE))
+    except ValueError:
+        return str(path)
 
 
 def resolve_photo_asset(
@@ -3492,6 +3567,238 @@ def run_photo_sync_preflight(client: Shopify) -> None:
     log(f"Photo sync preflight OK: authenticated shop {shop_name!r}")
 
 
+def phase_photo_source_web_all(
+    client: Shopify,
+    products: list[Product],
+    *,
+    dry: bool,
+    manifest_path: Path = PHOTO_SOURCE_MANIFEST_JSON,
+    cache_root: Path = PHOTO_SOURCE_CACHE_CURRENT,
+) -> None:
+    log("=== PHOTO SOURCE phase: discovering zero-media catalog products and staging web winners ===")
+    manifest = load_photo_manifest(manifest_path)
+    session = getattr(client, "session", None)
+    if session is None:
+        session = requests.Session()
+    headers = getattr(session, "headers", None)
+    if headers is None:
+        session.headers = {}
+    session.headers.setdefault("User-Agent", PHOTO_SOURCE_USER_AGENT)
+
+    local_by_sku = {product.sku: product for product in products}
+    by_sku: dict[str, dict[str, Any]] = {}
+    duplicate_shopify_skus: set[str] = set()
+    unmapped_rows: list[tuple[str, str, str]] = []
+    for rec in client.iter_existing_for_photo_sync():
+        if rec["sku"] in by_sku:
+            duplicate_shopify_skus.add(rec["sku"])
+            continue
+        by_sku[rec["sku"]] = rec
+        if not rec["media_ids"] and rec["sku"] not in local_by_sku:
+            unmapped_rows.append((rec["sku"], rec["title"], "zero-media Shopify SKU not present in local catalog"))
+
+    preview_rows: list[dict[str, Any]] = []
+    missing_rows: list[tuple[str, str, str]] = []
+    ambiguous_rows: list[tuple[str, str, str]] = []
+    failure_rows: list[tuple[str, str, str]] = []
+    current_root = cache_root
+
+    for product in products:
+        existing = by_sku.get(product.sku)
+        if not existing:
+            continue
+        if existing["media_ids"]:
+            continue
+        if product.sku in duplicate_shopify_skus:
+            preview_rows.append(build_photo_source_preview_row(
+                product,
+                status="skip_ambiguous_shopify",
+                query=build_photo_source_query(product),
+                reason=PHOTO_SOURCE_DUPLICATE_SKU_REASON,
+            ))
+            ambiguous_rows.append((product.sku, product.title, PHOTO_SOURCE_DUPLICATE_SKU_REASON))
+            continue
+
+        query = build_photo_source_query(product)
+        pack_name = stable_photo_source_dirname(product)
+        prior_entry = dict(manifest.get(product.sku, {}))
+        if (
+            not dry
+            and prior_entry.get("state") == "completed"
+            and prior_entry.get("query") == query
+            and (current_root / pack_name).exists()
+        ):
+            preview_rows.append(build_photo_source_preview_row(
+                product,
+                status="resume_completed",
+                query=query,
+                top_score=int(prior_entry.get("top_score") or 0),
+                reason="existing staged winner reused",
+                staged_dir=display_path(current_root / pack_name),
+            ))
+            continue
+
+        try:
+            search_url = f"{PHOTO_SOURCE_SEARCH_URL}?q={quote_plus(query)}"
+            search_response = fetch_url_with_retries(
+                session,
+                search_url,
+                timeout=PHOTO_SOURCE_HTML_TIMEOUT_SECONDS,
+            )
+            result_urls = extract_photo_source_search_results(search_response.text)
+            candidates: list[PhotoSourceCandidate] = []
+            for result in result_urls[:PHOTO_SOURCE_MAX_CANDIDATE_PAGES]:
+                if not is_allowed_photo_source_url(result.url):
+                    continue
+                page_response = fetch_url_with_retries(
+                    session,
+                    result.url,
+                    timeout=PHOTO_SOURCE_HTML_TIMEOUT_SECONDS,
+                )
+                candidates.extend(extract_photo_source_candidates(product, result.url, page_response.text))
+            candidates.sort(key=lambda item: (-item.score, item.image_url))
+            outcome, winner, reason = choose_photo_source_winner(candidates)
+            top_score = candidates[0].score if candidates else 0
+            if outcome == "missing":
+                record_photo_source_non_winner(
+                    product,
+                    status="missing",
+                    query=query,
+                    top_score=top_score,
+                    reason=reason,
+                    preview_rows=preview_rows,
+                    log_rows=missing_rows,
+                    dry=dry,
+                    manifest=manifest,
+                    manifest_path=manifest_path,
+                )
+                continue
+            if outcome == "ambiguous":
+                record_photo_source_non_winner(
+                    product,
+                    status="ambiguous",
+                    query=query,
+                    top_score=top_score,
+                    reason=reason,
+                    preview_rows=preview_rows,
+                    log_rows=ambiguous_rows,
+                    dry=dry,
+                    manifest=manifest,
+                    manifest_path=manifest_path,
+                )
+                continue
+
+            assert winner is not None
+            staged_dir_display = display_path(current_root / pack_name)
+            if not dry:
+                update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="downloading",
+                    query=query,
+                    top_score=winner.score,
+                    winner_page_url=winner.page_url,
+                    winner_image_url=winner.image_url,
+                    winner_reasons=winner.reasons,
+                    staged_dir=staged_dir_display,
+                    manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                )
+                PHOTO_SOURCE_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+                with tempfile.TemporaryDirectory(dir=PHOTO_SOURCE_CACHE_ROOT) as tmp:
+                    temp_root = Path(tmp)
+                    pack_dir = temp_root / pack_name
+                    pack_dir.mkdir(parents=True, exist_ok=True)
+                    image_response = fetch_url_with_retries(
+                        session,
+                        winner.image_url,
+                        timeout=PHOTO_SOURCE_IMAGE_TIMEOUT_SECONDS,
+                        binary=True,
+                    )
+                    image_bytes = bytes(image_response.content)
+                    filename = Path(urlparse(winner.image_url).path).name or "01.jpg"
+                    if Path(filename).suffix.lower() not in IMAGE_SUFFIXES:
+                        filename = f"{pack_name}.jpg"
+                    (pack_dir / filename).write_bytes(image_bytes)
+                    metadata = {
+                        "sku": product.sku,
+                        "title": product.title,
+                        "query": query,
+                        "score": winner.score,
+                        "page_url": winner.page_url,
+                        "image_url": winner.image_url,
+                        "reasons": winner.reasons,
+                        "detail_signals": winner.detail_signals,
+                        "image_sha256": hashlib.sha256(image_bytes).hexdigest(),
+                    }
+                    (pack_dir / "_source.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
+                    publish_photo_source_pack(pack_dir, current_root, pack_name)
+                update_and_save_photo_manifest_entry(
+                    manifest,
+                    manifest_path,
+                    sku=product.sku,
+                    state="completed",
+                    query=query,
+                    top_score=winner.score,
+                    winner_page_url=winner.page_url,
+                    winner_image_url=winner.image_url,
+                    winner_reasons=winner.reasons,
+                    staged_dir=staged_dir_display,
+                    manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                    reason="",
+                )
+            preview_rows.append(build_photo_source_preview_row(
+                product,
+                status="winner",
+                query=query,
+                top_score=winner.score,
+                winner=winner,
+                staged_dir=staged_dir_display if not dry else "",
+            ))
+        except Exception as exc:
+            detail = str(exc)
+            record_photo_source_non_winner(
+                product,
+                status="failed",
+                query=query,
+                top_score=0,
+                reason=detail,
+                preview_rows=preview_rows,
+                log_rows=failure_rows,
+                dry=dry,
+                manifest=manifest,
+                manifest_path=manifest_path,
+            )
+
+    cols = [
+        "sku",
+        "title",
+        "status",
+        "query",
+        "top_score",
+        "winner_page_url",
+        "winner_image_url",
+        "winner_reasons",
+        "staged_dir",
+        "reason",
+    ]
+    with PHOTO_SOURCE_PREVIEW_CSV.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=cols)
+        writer.writeheader()
+        for row in preview_rows:
+            writer.writerow(row)
+    if not dry:
+        append_photo_log(PHOTO_SOURCE_UNMAPPED_SHOPIFY_TSV, unmapped_rows)
+    append_photo_log(PHOTO_SOURCE_MISSING_TSV, missing_rows)
+    append_photo_log(PHOTO_SOURCE_AMBIGUOUS_TSV, ambiguous_rows)
+    append_photo_log(PHOTO_SOURCE_FAILURES_TSV, failure_rows)
+    log(
+        f"PHOTO SOURCE summary: candidates={len(preview_rows)} "
+        f"missing={len(missing_rows)} ambiguous={len(ambiguous_rows)} failed={len(failure_rows)} "
+        f"unmapped={len(unmapped_rows)} dry_run={dry}"
+    )
+
+
 def phase_photo_sync(
     client: Shopify,
     products: list[Product],
@@ -3956,6 +4263,8 @@ def main() -> int:
                         help="Attach matching existing Shopify Files to GW products without uploading new media.")
     parser.add_argument("--photo-sync-existing-files-all", dest="do_photo_sync_existing_files_all", action="store_true",
                         help="Attach matching existing Shopify Files to all catalog products without uploading new media.")
+    parser.add_argument("--photo-source-web-all", dest="do_photo_source_web_all", action="store_true",
+                        help="Search public web sources for zero-media catalog products and stage high-confidence winners locally.")
     parser.add_argument("--photo-sync-staged-local-all", dest="do_photo_sync_staged_local_all", action="store_true",
                         help="Apply staged local fallback images to all catalog products and write the fallback audit metafield.")
     parser.add_argument("--photo-root", type=Path,
@@ -3969,14 +4278,14 @@ def main() -> int:
             or args.do_generate_collections or args.do_update_collection_images
             or args.do_gw_refresh_cache or args.do_import or args.do_update or args.do_publish_online_store_backfill
             or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-            or args.do_photo_sync_staged_local_all or args.all):
+            or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.all):
         parser.print_help()
         return 1
 
     if args.do_gw_refresh_cache:
         invalid_refresh_combo = (
             args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-            or args.do_photo_sync_staged_local_all or args.do_update or args.do_import or args.delete
+            or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.do_update or args.do_import or args.delete
             or args.do_delete_collections or args.do_generate_collections or args.do_update_collection_images
             or args.do_publish_online_store_backfill or args.all or args.preflight
             or args.start_at != 0 or args.photo_root is not None
@@ -3984,7 +4293,7 @@ def main() -> int:
         if invalid_refresh_combo:
             raise RuntimeError(
                 "--gw-refresh-cache must run separately and cannot be combined with "
-                "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --photo-sync-staged-local-all, --update, --import, --delete, --delete-collections, "
+                "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --photo-source-web-all, --photo-sync-staged-local-all, --update, --import, --delete, --delete-collections, "
                 "--generate-collections, --update-collection-images, --all, --preflight, --start-at, or --photo-root."
             )
         refresh_gw_cache(
@@ -4040,10 +4349,26 @@ def main() -> int:
         raise RuntimeError("--photo-sync-existing-files and --photo-sync-staged-local-all must run separately.")
     if args.do_photo_sync_staged_local_all and args.do_photo_sync_existing_files_all:
         raise RuntimeError("--photo-sync-existing-files-all and --photo-sync-staged-local-all must run separately.")
+    if args.do_photo_source_web_all and (args.delete or args.do_import or args.do_update or args.all):
+        raise RuntimeError("--photo-source-web-all must run separately from delete/import/update/all phases.")
+    if args.do_photo_source_web_all and args.preflight:
+        raise RuntimeError("--photo-source-web-all cannot be combined with --preflight.")
+    if args.do_photo_source_web_all and args.start_at != 0:
+        raise RuntimeError("--start-at is only valid with --import/--all, not --photo-source-web-all.")
+    if args.do_photo_source_web_all and args.photo_root is not None:
+        raise RuntimeError("--photo-source-web-all does not use --photo-root.")
+    if args.do_photo_source_web_all and args.do_photo_sync:
+        raise RuntimeError("--photo-source-web-all and --photo-sync must run separately.")
+    if args.do_photo_source_web_all and args.do_photo_sync_existing_files:
+        raise RuntimeError("--photo-source-web-all and --photo-sync-existing-files must run separately.")
+    if args.do_photo_source_web_all and args.do_photo_sync_existing_files_all:
+        raise RuntimeError("--photo-source-web-all and --photo-sync-existing-files-all must run separately.")
+    if args.do_photo_source_web_all and args.do_photo_sync_staged_local_all:
+        raise RuntimeError("--photo-source-web-all and --photo-sync-staged-local-all must run separately.")
     if args.do_delete_collections and (
         args.preflight or args.delete or args.do_import or args.do_update
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-        or args.do_photo_sync_staged_local_all or args.do_generate_collections
+        or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.do_generate_collections
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
@@ -4053,7 +4378,7 @@ def main() -> int:
     if args.do_generate_collections and (
         args.preflight or args.delete or args.do_delete_collections or args.do_import
         or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-        or args.do_photo_sync_staged_local_all or args.all
+        or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.all
         or args.do_update_collection_images
         or args.start_at != 0 or args.photo_root is not None
     ):
@@ -4065,7 +4390,7 @@ def main() -> int:
     if args.do_update_collection_images and (
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_import or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files
-        or args.do_photo_sync_existing_files_all or args.do_photo_sync_staged_local_all or args.all
+        or args.do_photo_sync_existing_files_all or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.all
         or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
@@ -4077,7 +4402,7 @@ def main() -> int:
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_update_collection_images or args.do_import or args.do_update
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-        or args.do_photo_sync_staged_local_all
+        or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
@@ -4095,6 +4420,7 @@ def main() -> int:
         and not args.do_photo_sync
         and not args.do_photo_sync_existing_files
         and not args.do_photo_sync_existing_files_all
+        and not args.do_photo_source_web_all
         and not args.do_photo_sync_staged_local_all
         and not args.do_generate_collections
         and not args.do_delete_collections
@@ -4155,12 +4481,12 @@ def main() -> int:
 
     if args.do_photo_sync or args.do_photo_sync_existing_files:
         products = build_gw_product_list(strict=True)
-    elif args.do_photo_sync_existing_files_all or args.do_photo_sync_staged_local_all:
+    elif args.do_photo_sync_existing_files_all or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all:
         products = build_product_list(strict=True)
     else:
         products = prepare_products_for_import()
 
-    if args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.do_photo_sync_staged_local_all:
+    if args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all:
         run_photo_sync_preflight(client)
         location_id = ""
     else:
@@ -4219,6 +4545,17 @@ def main() -> int:
             log(
                 "Photo-sync existing-files-all dry-run complete. Review photo_sync_preview.csv, then re-run "
                 "with --photo-sync-existing-files-all (no --dry-run) to apply."
+            )
+    if args.do_photo_source_web_all:
+        phase_photo_source_web_all(
+            client,
+            products,
+            dry=args.dry_run,
+        )
+        if args.dry_run:
+            log(
+                "Photo-source web-all dry-run complete. Review photo_source_preview.csv, then re-run "
+                "with --photo-source-web-all (no --dry-run) to stage winners locally."
             )
     if args.do_photo_sync_staged_local_all:
         phase_photo_sync(

@@ -129,6 +129,38 @@ MVP behavior:
 - Successful runs write the app-owned fallback-image metafield after the full media apply path completes.
 - Existing staged-local entries from the pre-audit manifest contract can resume through the audit-only step without re-uploading media.
 
+## Catalog-wide web sourcing for empty product images
+
+This sourcing-first lane looks for products that currently have **no Shopify media at all**, searches public web sources for likely product-specific images, and stages only high-confidence winners into a local cache. It does **not** attach media to Shopify by itself. After sourcing, you run the existing staged-local apply lane against the staged cache.
+
+1. Run a sourcing dry run first:
+   ```bash
+   python3 shopify_sync.py --photo-source-web-all --dry-run
+   ```
+2. Review:
+   - `photo_source_preview.csv`
+   - `photo_source_missing.tsv`
+   - `photo_source_ambiguous.tsv`
+   - `photo_source_failures.tsv`
+   - `photo_source_unmapped_shopify.tsv`
+3. Stage winners for real:
+   ```bash
+   python3 shopify_sync.py --photo-source-web-all
+   ```
+4. Apply the staged winners to Shopify:
+   ```bash
+   python3 shopify_sync.py --photo-sync-staged-local-all --photo-root ./photo_source_cache/current --dry-run
+   python3 shopify_sync.py --photo-sync-staged-local-all --photo-root ./photo_source_cache/current
+   ```
+
+MVP sourcing behavior:
+
+- The scan only considers products that exist in both the local catalog sheets and Shopify, and only when Shopify reports zero media for that SKU.
+- Winners stage under `photo_source_cache/current/<SKU>-<title-slug>/...`.
+- Sourcing is fail-closed: low-confidence or near-tied candidates are reported, not staged.
+- The sourcing lane writes separate provenance state in `photo_source_manifest.json`; it does not reuse `photo_sync_manifest.json`.
+- AI generation/transformation is not part of this MVP source-selection step.
+
 ## Step 4 — Install Python dependencies
 
 In a Terminal:
