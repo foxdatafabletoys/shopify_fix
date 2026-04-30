@@ -214,36 +214,26 @@ Notes:
 - Products remain in the store; they are just no longer grouped into those collections.
 - This lane must run on its own and cannot be combined with import/update/photo-sync flags.
 
-## Generate storefront collections and assign existing products
+## Rebuild storefront collections and retag existing products
 
-This lane creates a Wayland-style smart collection set, stamps deterministic auto-collection tags onto existing Shopify products, and lets Shopify place those products into smart collections from tag rules.
+This lane is now the full live rebuild workflow. It deletes every Shopify collection, removes only the old managed taxonomy tags from products, applies the repo-managed taxonomy conservatively, recreates only the populated smart collections, publishes them where possible, and sets each collection image from the first alphabetical product image in that collection.
 
-Dry run first:
-
-```bash
-python3 shopify_sync.py --generate-collections --dry-run
-```
-
-Apply for real:
+Run it live:
 
 ```bash
-python3 shopify_sync.py --generate-collections
-```
-
-Recommended sequence for a clean rebuild:
-
-```bash
-python3 shopify_sync.py --delete-collections
 python3 shopify_sync.py --generate-collections
 ```
 
 Notes:
 
-- The dry run writes `collection_generation_preview.csv` and `collection_generation_unmatched.csv`.
-- The live run creates any missing smart collections in the configured Wayland-style set, retags existing products, and updates matching existing smart collections to the expected tag rule.
-- If a matching collection handle already exists as a manual collection, the script stops and tells you to delete or rename it first.
+- `--generate-collections` is live-only and rejects `--dry-run`.
+- Before mutating Shopify it writes `collection_generation_preview.csv` and `collection_generation_unmatched.csv` so you still get an audit artifact for the exact run.
+- Unrelated product tags are preserved. Only tags belonging to the old managed taxonomy are removed/replaced.
+- Manual collections such as `Bestsellers` are intentionally skipped by this workflow.
+- Empty collections are not created.
+- Collection images are copied from the first alphabetical product in the collection that already has a product image.
 - New collections are unpublished by default in Shopify, so the script attempts to publish them to the current channel. If the app is missing publication scopes, collection creation still succeeds but the collections may stay hidden on the storefront until you add `read_publications` and `write_publications`.
-- Some categories such as `Latest Releases`, `Pre-Orders`, and several board/card subtypes are best-effort heuristics based on current Shopify metadata. The lane corrects those tags when you rerun it.
+- Some categories such as `Latest releases`, `New arrivals`, `Pre-orders`, and board/card subtypes are best-effort heuristics based on current Shopify metadata. Conservative classification means uncertain faction/product-type tags are left unset rather than guessed.
 
 ## Step 7 — Live delete
 

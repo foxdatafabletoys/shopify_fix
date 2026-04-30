@@ -12,12 +12,14 @@ What it does:
   --delete-collections
                Deletes existing Shopify collections.
   --generate-collections
-               Creates a Wayland-style smart collection set and auto-tags existing
-               Shopify products so they fall into those smart collections.
+               Deletes all existing Shopify collections, removes only the old
+               managed taxonomy tags from products, applies the managed
+               taxonomy conservatively, recreates populated smart collections,
+               and sets each collection image from the first product image.
   --update-collection-images
-               For each managed Wayland smart collection, picks the first product
-               (alphabetically by title) that has an image and copies that image
-               onto the collection. Writes collection_image_preview.csv.
+               For each managed smart collection, picks the first product
+               (alphabetically by title) that has an image and copies that
+               image onto the collection. Writes collection_image_preview.csv.
   --import     Creates new Shopify products from the spreadsheets.
   --update     Matches existing Shopify products by SKU and updates price,
                compare_at_price, cost, and on-hand quantity from the sheets.
@@ -25,6 +27,9 @@ What it does:
   --publish-online-store-backfill
                Finds existing Shopify products that are not published to the
                current publication and publishes them to `Online Store`.
+  --reconcile-online-store-image-visibility
+               Reconciles `Online Store` visibility against product media:
+               publishes products with any attached Shopify media and unpublishes products with none.
   --photo-sync-staged-local-all
                Applies curated staged local fallback images across the full
                catalog and writes the fallback-image audit metafield after
@@ -58,9 +63,7 @@ Usage:
   python shopify_sync.py --dry-run
   python shopify_sync.py --preflight
   python shopify_sync.py --delete
-  python shopify_sync.py --delete-collections --dry-run
   python shopify_sync.py --delete-collections
-  python shopify_sync.py --generate-collections --dry-run
   python shopify_sync.py --generate-collections
   python shopify_sync.py --update-collection-images --dry-run
   python shopify_sync.py --update-collection-images
@@ -69,6 +72,8 @@ Usage:
   python shopify_sync.py --update
   python shopify_sync.py --publish-online-store-backfill --dry-run
   python shopify_sync.py --publish-online-store-backfill
+  python shopify_sync.py --reconcile-online-store-image-visibility --dry-run
+  python shopify_sync.py --reconcile-online-store-image-visibility
   python shopify_sync.py --photo-source-web-all --dry-run
   python shopify_sync.py --photo-source-web-all
   python shopify_sync.py --photo-sync-staged-local-all --photo-root ./fallback_photos --dry-run
@@ -80,6 +85,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime
 import hashlib
 import json
 import math
@@ -123,6 +129,7 @@ COLLECTION_GENERATION_PREVIEW_CSV = HERE / "collection_generation_preview.csv"
 COLLECTION_GENERATION_UNMATCHED_CSV = HERE / "collection_generation_unmatched.csv"
 COLLECTION_IMAGE_PREVIEW_CSV = HERE / "collection_image_preview.csv"
 ONLINE_STORE_BACKFILL_PREVIEW_CSV = HERE / "online_store_backfill_preview.csv"
+ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV = HERE / "online_store_image_visibility_preview.csv"
 GW_RESOURCES_URL = "https://trade.games-workshop.com/resources/"
 GW_PHOTO_CACHE_ROOT = HERE / "gw_photo_cache"
 GW_PHOTO_CACHE_CURRENT = GW_PHOTO_CACHE_ROOT / "current"
@@ -350,6 +357,275 @@ RPG_CHILDREN = {
     "Starfinder",
     "The One Ring",
     "Vampire: The Masquerade",
+}
+
+
+@dataclass(frozen=True)
+class CollectionRuleSpec:
+    column: str
+    relation: str
+    condition: str
+
+
+@dataclass(frozen=True)
+class ManagedCollectionSpec:
+    title: str
+    handle: str
+    kind: str
+    rules: tuple[CollectionRuleSpec, ...]
+    applied_disjunctively: bool = False
+
+
+def _tag_collection_spec(title: str, handle: str, tag: str) -> ManagedCollectionSpec:
+    return ManagedCollectionSpec(
+        title=title,
+        handle=handle,
+        kind="tag",
+        rules=(CollectionRuleSpec("TAG", "EQUALS", tag),),
+    )
+
+
+def _vendor_collection_spec(title: str, handle: str, vendor: str, extra_tag: str = "") -> ManagedCollectionSpec:
+    rules = [CollectionRuleSpec("VENDOR", "EQUALS", vendor)]
+    applied_disjunctively = False
+    if extra_tag:
+        rules.append(CollectionRuleSpec("TAG", "EQUALS", extra_tag))
+        applied_disjunctively = True
+    return ManagedCollectionSpec(
+        title=title,
+        handle=handle,
+        kind="vendor",
+        rules=tuple(rules),
+        applied_disjunctively=applied_disjunctively,
+    )
+
+
+def _smart_collection_spec(
+    title: str,
+    handle: str,
+    rules: list[tuple[str, str, str]],
+    *,
+    applied_disjunctively: bool = False,
+) -> ManagedCollectionSpec:
+    return ManagedCollectionSpec(
+        title=title,
+        handle=handle,
+        kind="smart",
+        rules=tuple(CollectionRuleSpec(column, relation, condition) for column, relation, condition in rules),
+        applied_disjunctively=applied_disjunctively,
+    )
+
+
+MANUAL_COLLECTION_HANDLES = {"bestsellers"}
+INTERNAL_NEW_ARRIVAL_TAG = "new-arrival"
+
+PRIMARY_GAME_SYSTEM_SPECS: list[ManagedCollectionSpec] = [
+    _tag_collection_spec("Warhammer 40,000", "warhammer-40k", "warhammer-40k"),
+    _tag_collection_spec("Warhammer: Age of Sigmar", "age-of-sigmar", "age-of-sigmar"),
+    _tag_collection_spec("Warhammer: The Old World", "warhammer-old-world", "old-world"),
+    _tag_collection_spec("The Horus Heresy", "horus-heresy", "horus-heresy"),
+    _tag_collection_spec("Kill Team", "kill-team", "kill-team"),
+    _tag_collection_spec("Necromunda", "necromunda", "necromunda"),
+    _tag_collection_spec("Warcry", "warcry", "warcry"),
+    _tag_collection_spec("Blood Bowl", "blood-bowl", "blood-bowl"),
+    _tag_collection_spec("Middle-earth SBG", "middle-earth-sbg", "middle-earth"),
+    _tag_collection_spec("Disney Lorcana", "lorcana", "lorcana"),
+    _tag_collection_spec("Pokémon TCG", "pokemon-tcg", "pokemon"),
+    _tag_collection_spec("Magic: The Gathering", "magic-the-gathering", "magic"),
+    _tag_collection_spec("Yu-Gi-Oh!", "yu-gi-oh", "yugioh"),
+    _tag_collection_spec("Flesh and Blood", "flesh-and-blood", "flesh-and-blood"),
+    _tag_collection_spec("One Piece TCG", "one-piece-tcg", "one-piece"),
+    _tag_collection_spec("Dungeons & Dragons", "dungeons-and-dragons", "d-and-d"),
+    _tag_collection_spec("Pathfinder", "pathfinder", "pathfinder"),
+    _tag_collection_spec("Board Games", "board-games", "board-game"),
+]
+
+FACTION_40K_SPECS: list[ManagedCollectionSpec] = [
+    _tag_collection_spec("Space Marines", "space-marines", "space-marines"),
+    _tag_collection_spec("Dark Angels", "dark-angels", "dark-angels"),
+    _tag_collection_spec("Blood Angels", "blood-angels", "blood-angels"),
+    _tag_collection_spec("Space Wolves", "space-wolves", "space-wolves"),
+    _tag_collection_spec("Black Templars", "black-templars", "black-templars"),
+    _tag_collection_spec("Deathwatch", "deathwatch", "deathwatch"),
+    _tag_collection_spec("Grey Knights", "grey-knights", "grey-knights"),
+    _tag_collection_spec("Adepta Sororitas", "adepta-sororitas", "sisters-of-battle"),
+    _tag_collection_spec("Adeptus Custodes", "adeptus-custodes", "custodes"),
+    _tag_collection_spec("Astra Militarum", "astra-militarum", "astra-militarum"),
+    _tag_collection_spec("Adeptus Mechanicus", "adeptus-mechanicus", "ad-mech"),
+    _tag_collection_spec("Imperial Knights", "imperial-knights", "imperial-knights"),
+    _tag_collection_spec("Agents of the Imperium", "agents-of-the-imperium", "agents"),
+    _tag_collection_spec("Chaos Space Marines", "chaos-space-marines", "chaos-space-marines"),
+    _tag_collection_spec("World Eaters", "world-eaters", "world-eaters"),
+    _tag_collection_spec("Death Guard", "death-guard", "death-guard"),
+    _tag_collection_spec("Thousand Sons", "thousand-sons", "thousand-sons"),
+    _tag_collection_spec("Chaos Daemons", "chaos-daemons", "chaos-daemons"),
+    _tag_collection_spec("Chaos Knights", "chaos-knights", "chaos-knights"),
+    _tag_collection_spec("Tyranids", "tyranids", "tyranids"),
+    _tag_collection_spec("Genestealer Cults", "genestealer-cults", "genestealer-cults"),
+    _tag_collection_spec("Aeldari", "aeldari", "aeldari"),
+    _tag_collection_spec("Drukhari", "drukhari", "drukhari"),
+    _tag_collection_spec("Harlequins", "harlequins", "harlequins"),
+    _tag_collection_spec("Ynnari", "ynnari", "ynnari"),
+    _tag_collection_spec("T'au Empire", "t-au-empire", "tau"),
+    _tag_collection_spec("Necrons", "necrons", "necrons"),
+    _tag_collection_spec("Orks", "orks", "orks"),
+    _tag_collection_spec("Leagues of Votann", "leagues-of-votann", "votann"),
+]
+
+FACTION_AOS_SPECS: list[ManagedCollectionSpec] = [
+    _tag_collection_spec("Stormcast Eternals", "stormcast-eternals", "stormcast-eternals"),
+    _tag_collection_spec("Cities of Sigmar", "cities-of-sigmar", "cities-of-sigmar"),
+    _tag_collection_spec("Daughters of Khaine", "daughters-of-khaine", "daughters-of-khaine"),
+    _tag_collection_spec("Fyreslayers", "fyreslayers", "fyreslayers"),
+    _tag_collection_spec("Idoneth Deepkin", "idoneth-deepkin", "idoneth-deepkin"),
+    _tag_collection_spec("Kharadron Overlords", "kharadron-overlords", "kharadron-overlords"),
+    _tag_collection_spec("Lumineth Realm-Lords", "lumineth-realm-lords", "lumineth"),
+    _tag_collection_spec("Seraphon", "seraphon", "seraphon"),
+    _tag_collection_spec("Sylvaneth", "sylvaneth", "sylvaneth"),
+    _tag_collection_spec("Slaves to Darkness", "slaves-to-darkness", "slaves-to-darkness"),
+    _tag_collection_spec("Blades of Khorne", "blades-of-khorne", "blades-of-khorne"),
+    _tag_collection_spec("Disciples of Tzeentch", "disciples-of-tzeentch", "disciples-of-tzeentch"),
+    _tag_collection_spec("Hedonites of Slaanesh", "hedonites-of-slaanesh", "hedonites-of-slaanesh"),
+    _tag_collection_spec("Maggotkin of Nurgle", "maggotkin-of-nurgle", "maggotkin-of-nurgle"),
+    _tag_collection_spec("Skaven", "skaven", "skaven"),
+    _tag_collection_spec("Beasts of Chaos", "beasts-of-chaos", "beasts-of-chaos"),
+    _tag_collection_spec("Flesh-eater Courts", "flesh-eater-courts", "flesh-eater-courts"),
+    _tag_collection_spec("Nighthaunt", "nighthaunt", "nighthaunt"),
+    _tag_collection_spec("Ossiarch Bonereapers", "ossiarch-bonereapers", "ossiarch-bonereapers"),
+    _tag_collection_spec("Soulblight Gravelords", "soulblight-gravelords", "soulblight-gravelords"),
+    _tag_collection_spec("Gloomspite Gitz", "gloomspite-gitz", "gloomspite-gitz"),
+    _tag_collection_spec("Kruleboyz", "kruleboyz", "kruleboyz"),
+    _tag_collection_spec("Ironjawz", "ironjawz", "ironjawz"),
+    _tag_collection_spec("Bonesplitterz", "bonesplitterz", "bonesplitterz"),
+    _tag_collection_spec("Ogor Mawtribes", "ogor-mawtribes", "ogor-mawtribes"),
+    _tag_collection_spec("Sons of Behemat", "sons-of-behemat", "sons-of-behemat"),
+]
+
+FACTION_OLD_WORLD_SPECS: list[ManagedCollectionSpec] = [
+    _tag_collection_spec("Empire of Man", "empire-of-man", "empire-of-man"),
+    _tag_collection_spec("Kingdom of Bretonnia", "kingdom-of-bretonnia", "bretonnia"),
+    _tag_collection_spec("Dwarfen Mountain Holds", "dwarfen-mountain-holds", "dwarfs"),
+    _tag_collection_spec("Tomb Kings of Khemri", "tomb-kings-of-khemri", "tomb-kings"),
+    _tag_collection_spec("Orc & Goblin Tribes", "orc-and-goblin-tribes", "orc-goblin"),
+    _tag_collection_spec("Warriors of Chaos", "warriors-of-chaos", "warriors-of-chaos"),
+    _tag_collection_spec("Beastmen Brayherds", "beastmen-brayherds", "beastmen"),
+    _tag_collection_spec("Wood Elf Realms", "wood-elf-realms", "wood-elves"),
+    _tag_collection_spec("High Elf Realms", "high-elf-realms", "high-elves"),
+    _tag_collection_spec("Dark Elves", "dark-elves", "dark-elves"),
+    _tag_collection_spec("Lizardmen", "lizardmen", "lizardmen"),
+    _tag_collection_spec("Vampire Counts", "vampire-counts", "vampire-counts"),
+]
+
+PRODUCT_TYPE_SPECS: list[ManagedCollectionSpec] = [
+    _tag_collection_spec("Starter sets", "starter-sets", "starter-set"),
+    _tag_collection_spec("Combat Patrols", "combat-patrols", "combat-patrol"),
+    _tag_collection_spec("Army Sets", "army-sets", "army-set"),
+    _tag_collection_spec("Codexes", "codexes", "codex"),
+    _tag_collection_spec("Battletomes", "battletomes", "battletome"),
+    _tag_collection_spec("Core Rules", "core-rules", "core-rules"),
+    _tag_collection_spec("Terrain & Scenery", "terrain-and-scenery", "terrain"),
+    _tag_collection_spec("Paints", "paints", "paint"),
+    _tag_collection_spec("Brushes & Tools", "brushes-and-tools", "tools"),
+    _tag_collection_spec("Dice & Templates", "dice-and-templates", "dice"),
+    _tag_collection_spec("Card Sleeves & Storage", "card-sleeves-and-storage", "accessories"),
+    _tag_collection_spec("Magazines & Partworks", "magazines-and-partworks", "partworks"),
+    _tag_collection_spec("Bits & Bases", "bits-and-bases", "bits"),
+]
+
+BRAND_SPECS: list[ManagedCollectionSpec] = [
+    _vendor_collection_spec("Games Workshop", "games-workshop", "Games Workshop"),
+    _vendor_collection_spec("Citadel Colour", "citadel-colour", "Citadel", extra_tag="citadel"),
+    _vendor_collection_spec("Forge World", "forge-world", "Forge World"),
+    _vendor_collection_spec("Vallejo", "vallejo", "Vallejo"),
+    _vendor_collection_spec("Army Painter", "army-painter", "Army Painter"),
+    _vendor_collection_spec("Mantic Games", "mantic-games", "Mantic Games"),
+    _vendor_collection_spec("Ravensburger", "ravensburger", "Ravensburger"),
+    _vendor_collection_spec("Asmodee", "asmodee", "Asmodee"),
+    _vendor_collection_spec("Wizards of the Coast", "wizards-of-the-coast", "Wizards of the Coast"),
+    _vendor_collection_spec("Pokémon Company", "the-pokemon-company", "The Pokemon Company"),
+]
+
+UTILITY_SPECS: list[ManagedCollectionSpec] = [
+    _tag_collection_spec("Latest releases", "latest-releases", "new-release"),
+    _tag_collection_spec("New arrivals", "new-arrivals", INTERNAL_NEW_ARRIVAL_TAG),
+    _tag_collection_spec("Pre-orders", "pre-orders", "preorder"),
+    _smart_collection_spec("Back in stock", "back-in-stock", [
+        ("TAG", "EQUALS", "restocked"),
+        ("VARIANT_INVENTORY", "GREATER_THAN", "0"),
+    ]),
+    _tag_collection_spec("Coming soon", "coming-soon", "coming-soon"),
+    _smart_collection_spec("Sale", "sale", [
+        ("IS_PRICE_REDUCED", "IS_SET", ""),
+    ]),
+    _tag_collection_spec("Staff picks", "staff-picks", "staff-pick"),
+    _tag_collection_spec("Gift ideas", "gift-ideas", "gift"),
+    _smart_collection_spec("Under £25", "under-25", [
+        ("VARIANT_PRICE", "LESS_THAN", "2500"),
+    ]),
+    _smart_collection_spec("Under £50", "under-50", [
+        ("VARIANT_PRICE", "LESS_THAN", "5000"),
+    ]),
+    _tag_collection_spec("Kids & family", "kids-and-family", "family-friendly"),
+    _smart_collection_spec("Solo & 2-player", "solo-and-2-player", [
+        ("TAG", "EQUALS", "solo"),
+        ("TAG", "EQUALS", "2-player"),
+    ], applied_disjunctively=True),
+]
+
+MANAGED_COLLECTION_SPECS: list[ManagedCollectionSpec] = (
+    PRIMARY_GAME_SYSTEM_SPECS
+    + FACTION_40K_SPECS
+    + FACTION_AOS_SPECS
+    + FACTION_OLD_WORLD_SPECS
+    + PRODUCT_TYPE_SPECS
+    + BRAND_SPECS
+    + UTILITY_SPECS
+)
+MANAGED_COLLECTION_SPECS_BY_HANDLE = {spec.handle: spec for spec in MANAGED_COLLECTION_SPECS}
+MANAGED_COLLECTION_SPECS_BY_TITLE = {spec.title: spec for spec in MANAGED_COLLECTION_SPECS}
+MANAGED_COLLECTION_HANDLES = {spec.handle for spec in MANAGED_COLLECTION_SPECS}
+MANAGED_TAGS = {
+    spec.rules[0].condition
+    for spec in MANAGED_COLLECTION_SPECS
+    if spec.kind == "tag"
+}
+
+LEGACY_MANAGED_TAG_ALIASES = {
+    "warhammer 40k",
+    "warhammer 40,000",
+    "age of sigmar",
+    "the old world",
+    "kill team",
+    "pokemon",
+    "magic: the gathering",
+    "yu-gi-oh!",
+    "games workshop",
+    "citadel colour",
+    "forge world",
+    "ravensburger",
+    "asmodee",
+    "starter sets",
+    "combat patrols",
+    "army sets",
+    "codexes",
+    "battletomes",
+    "core rules",
+    "terrain & scenery",
+    "paints",
+    "brushes & tools",
+    "dice & templates",
+    "card sleeves & storage",
+    "magazines & partworks",
+    "bits & bases",
+    "latest releases",
+    "new arrivals",
+    "pre-orders",
+    "preorders",
+    "back in stock",
+    "coming soon",
+    "staff picks",
+    "gift ideas",
+    "kids & family",
 }
 
 
@@ -1598,47 +1874,233 @@ def collection_marker_tag_from_handle(handle: str) -> str:
     return f"{AUTO_COLLECTION_TAG_PREFIX}{handle}"
 
 
-def collection_marker_tag(collection_title: str) -> str:
-    for title, handle in WAYLAND_COLLECTION_SPECS:
-        if title == collection_title:
-            return collection_marker_tag_from_handle(handle)
-    raise KeyError(f"Unknown collection title: {collection_title}")
+def _normalized_tag(tag: str) -> str:
+    return re.sub(r"\s+", " ", (tag or "").strip().lower())
 
 
-def wayland_collection_marker_tags(collection_titles: Iterable[str]) -> list[str]:
-    tags = [collection_marker_tag(title) for title in collection_titles]
-    return sorted(set(tags))
+def _record_created_age_days(record: dict[str, Any]) -> int | None:
+    raw = (record.get("created_at") or "").strip()
+    if not raw:
+        return None
+    try:
+        created = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return max(0, int((now - created).total_seconds() // 86400))
 
 
-def wayland_auto_collection_tag_set() -> set[str]:
-    return {collection_marker_tag_from_handle(handle) for _, handle in WAYLAND_COLLECTION_SPECS}
+def _record_matches_phrase_map(record: dict[str, Any], phrases: Iterable[str]) -> bool:
+    return any(_record_has_phrase(record, phrase) for phrase in phrases)
 
 
-WAYLAND_COLLECTION_HANDLES = {handle for _, handle in WAYLAND_COLLECTION_SPECS}
+GAME_SYSTEM_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "warhammer-40k": ("warhammer 40,000", "warhammer 40k", "warhammer 40000", " 40k ", " combat patrol ", " codex "),
+    "age-of-sigmar": ("age of sigmar", " battletome ", " spearhead "),
+    "old-world": ("the old world", " old world ", " forces of fantasy ", " ravening hordes "),
+    "horus-heresy": ("horus heresy", "the horus heresy", "age of darkness"),
+    "kill-team": ("kill team",),
+    "necromunda": ("necromunda",),
+    "warcry": ("warcry",),
+    "blood-bowl": ("blood bowl",),
+    "middle-earth": ("middle earth", "middle-earth", "strategy battle game"),
+    "lorcana": ("lorcana", " disney lorcana "),
+    "pokemon": ("pokemon", "pokémon", "elite trainer box", "booster bundle", "booster box"),
+    "magic": ("magic the gathering", "magic: the gathering", "mtg", "play booster", "collector booster"),
+    "yugioh": ("yu-gi-oh", "yugioh", "yu gi oh"),
+    "flesh-and-blood": ("flesh and blood",),
+    "one-piece": ("one piece card game", "one piece tcg"),
+    "d-and-d": ("dungeons dragons", "dungeons & dragons", "player's handbook", "players handbook", "essentials kit"),
+    "pathfinder": ("pathfinder", "beginner box"),
+}
+
+FACTION_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "space-marines": ("space marines",),
+    "dark-angels": ("dark angels",),
+    "blood-angels": ("blood angels",),
+    "space-wolves": ("space wolves",),
+    "black-templars": ("black templars",),
+    "deathwatch": ("deathwatch",),
+    "grey-knights": ("grey knights",),
+    "sisters-of-battle": ("adepta sororitas", "sisters of battle"),
+    "custodes": ("adeptus custodes", "custodes"),
+    "astra-militarum": ("astra militarum", "imperial guard"),
+    "ad-mech": ("adeptus mechanicus", "ad mech", "admech"),
+    "imperial-knights": ("imperial knights",),
+    "agents": ("agents of the imperium", "agents imperium"),
+    "chaos-space-marines": ("chaos space marines",),
+    "world-eaters": ("world eaters",),
+    "death-guard": ("death guard",),
+    "thousand-sons": ("thousand sons",),
+    "chaos-daemons": ("chaos daemons", "chaos demons"),
+    "chaos-knights": ("chaos knights",),
+    "tyranids": ("tyranids", "tyranid"),
+    "genestealer-cults": ("genestealer cults", "genestealer cult"),
+    "aeldari": ("aeldari", "craftworld", "asuryani"),
+    "drukhari": ("drukhari", "dark eldar"),
+    "harlequins": ("harlequins",),
+    "ynnari": ("ynnari",),
+    "tau": ("t'au", "tau empire", "tau "),
+    "necrons": ("necrons", "necron"),
+    "orks": ("orks", "ork "),
+    "votann": ("leagues of votann", "votann"),
+    "stormcast-eternals": ("stormcast eternals", "stormcast"),
+    "cities-of-sigmar": ("cities of sigmar",),
+    "daughters-of-khaine": ("daughters of khaine",),
+    "fyreslayers": ("fyreslayers",),
+    "idoneth-deepkin": ("idoneth deepkin",),
+    "kharadron-overlords": ("kharadron overlords",),
+    "lumineth": ("lumineth realm", "lumineth"),
+    "seraphon": ("seraphon",),
+    "sylvaneth": ("sylvaneth",),
+    "slaves-to-darkness": ("slaves to darkness",),
+    "blades-of-khorne": ("blades of khorne",),
+    "disciples-of-tzeentch": ("disciples of tzeentch",),
+    "hedonites-of-slaanesh": ("hedonites of slaanesh",),
+    "maggotkin-of-nurgle": ("maggotkin of nurgle",),
+    "skaven": ("skaven",),
+    "beasts-of-chaos": ("beasts of chaos",),
+    "flesh-eater-courts": ("flesh eater courts",),
+    "nighthaunt": ("nighthaunt",),
+    "ossiarch-bonereapers": ("ossiarch bonereapers",),
+    "soulblight-gravelords": ("soulblight gravelords",),
+    "gloomspite-gitz": ("gloomspite gitz",),
+    "kruleboyz": ("kruleboyz",),
+    "ironjawz": ("ironjawz",),
+    "bonesplitterz": ("bonesplitterz",),
+    "ogor-mawtribes": ("ogor mawtribes",),
+    "sons-of-behemat": ("sons of behemat",),
+    "empire-of-man": ("empire of man",),
+    "bretonnia": ("bretonnia", "bretonnian"),
+    "dwarfs": ("dwarfen mountain holds", "dwarf", "dwarfs"),
+    "tomb-kings": ("tomb kings", "khemri"),
+    "orc-goblin": ("orc & goblin", "orc and goblin", "orc goblin"),
+    "warriors-of-chaos": ("warriors of chaos",),
+    "beastmen": ("beastmen brayherds", "beastmen"),
+    "wood-elves": ("wood elf", "wood elves"),
+    "high-elves": ("high elf", "high elves"),
+    "dark-elves": ("dark elves",),
+    "lizardmen": ("lizardmen",),
+    "vampire-counts": ("vampire counts",),
+}
+
+PRODUCT_TYPE_RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("combat-patrol", ("combat patrol",)),
+    ("starter-set", ("starter set", "starter box", "beginner box", "battle academy")),
+    ("army-set", ("army set", "spearhead", "vanguard", "battleforce")),
+    ("codex", (" codex ", "codex:", "codex supplement")),
+    ("battletome", ("battletome",)),
+    ("core-rules", ("core rules", "core book", "rulebook", "rules manual")),
+    ("terrain", ("terrain", "scenery", "ruins", "killzone", "sector imperialis")),
+    ("paint", ("paint", "contrast", "shade", "technical", "layer", "base ", " air ", "spray")),
+    ("tools", ("brush", "clippers", "files", "glue", "tool", "hobby knife")),
+    ("dice", ("dice", "template", "ruler")),
+    ("accessories", ("sleeve", "deck box", "binder", "storage", "organiser", "organizer", "case")),
+    ("partworks", ("white dwarf", "stormbringer", "combat patrol magazine", "partwork")),
+    ("bits", ("bits", "bases", "base pack", "sprue")),
+]
+
+SPECIAL_TAG_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "preorder": ("preorder", "pre-order", "pre order"),
+    "coming-soon": ("coming soon",),
+    "restocked": ("restocked", "back in stock"),
+    "staff-pick": ("staff pick", "staff-pick"),
+    "gift": ("gift", "giftable"),
+    "family-friendly": ("family friendly", "family-friendly"),
+    "solo": ("solo", "1-player", "1 player"),
+    "2-player": ("2-player", "two-player", "2 player"),
+    "exclusive": ("exclusive",),
+    "limited-edition": ("limited edition", "limited-edition"),
+    "citadel": ("citadel",),
+    "contrast": ("contrast",),
+    "base": (" base ",),
+    "layer": (" layer ",),
+    "shade": (" shade ",),
+    "technical": ("technical",),
+    "dry": (" dry ",),
+    "air": (" air ",),
+}
+
+LEGACY_MANAGED_NORMALIZED_TAGS = {
+    _normalized_tag(tag)
+    for tag in (
+        *MANAGED_TAGS,
+        INTERNAL_NEW_ARRIVAL_TAG,
+        *LEGACY_MANAGED_TAG_ALIASES,
+    )
+}
+LEGACY_MANAGED_NORMALIZED_TAGS |= {
+    _normalized_tag(collection_marker_tag_from_handle(handle))
+    for _, handle in WAYLAND_COLLECTION_SPECS
+}
+
+FACTION_TO_SYSTEM = {
+    **{tag: "warhammer-40k" for tag in [spec.rules[0].condition for spec in FACTION_40K_SPECS]},
+    **{tag: "age-of-sigmar" for tag in [spec.rules[0].condition for spec in FACTION_AOS_SPECS]},
+    **{tag: "old-world" for tag in [spec.rules[0].condition for spec in FACTION_OLD_WORLD_SPECS]},
+}
 
 
-def managed_wayland_collection_tag(collection: dict[str, Any]) -> str:
-    if collection.get("collection_type") != "smart":
-        return ""
-    tag_rules = [
-        rule.get("condition") or ""
-        for rule in collection.get("rules") or []
-        if (rule.get("column") or "").upper() == "TAG"
-        and (rule.get("relation") or "").upper() == "EQUALS"
-    ]
-    if len(tag_rules) != 1:
-        return ""
-    tag = tag_rules[0].strip()
-    return tag if tag.startswith(AUTO_COLLECTION_TAG_PREFIX) else ""
+def managed_collection_signature(collection: dict[str, Any]) -> tuple[bool, tuple[tuple[str, str, str], ...]]:
+    applied = bool(collection.get("applied_disjunctively"))
+    rules = tuple(
+        sorted(
+            (
+                (rule.get("column") or "").upper(),
+                (rule.get("relation") or "").upper(),
+                rule.get("condition") or "",
+            )
+            for rule in collection.get("rules") or []
+        )
+    )
+    return applied, rules
 
 
-def is_managed_wayland_collection(collection: dict[str, Any], expected_tag: str = "") -> bool:
-    if (collection.get("handle") or "") not in WAYLAND_COLLECTION_HANDLES:
+def is_managed_collection(collection: dict[str, Any], expected_spec: ManagedCollectionSpec | None = None) -> bool:
+    handle = (collection.get("handle") or "").strip()
+    spec = expected_spec or MANAGED_COLLECTION_SPECS_BY_HANDLE.get(handle)
+    if spec is None or collection.get("collection_type") != "smart":
         return False
-    tag = managed_wayland_collection_tag(collection)
-    if not tag:
-        return False
-    return not expected_tag or tag == expected_tag
+    expected_rules = tuple(sorted((rule.column, rule.relation, rule.condition) for rule in spec.rules))
+    actual_applied, actual_rules = managed_collection_signature(collection)
+    return actual_applied == spec.applied_disjunctively and actual_rules == expected_rules
+
+
+def desired_collection_tags_for_record(record: dict[str, Any]) -> set[str]:
+    matches: set[str] = set()
+    search_text = record.get("search_text", " ")
+    for tag, phrases in GAME_SYSTEM_KEYWORDS.items():
+        if any(f" {phrase.strip()} " in search_text for phrase in map(_normalize_search_text, phrases)):
+            matches.add(tag)
+    for tag, phrases in FACTION_KEYWORDS.items():
+        if any(f" {phrase.strip()} " in search_text for phrase in map(_normalize_search_text, phrases)):
+            matches.add(tag)
+            system = FACTION_TO_SYSTEM.get(tag)
+            if system:
+                matches.add(system)
+    for tag, phrases in PRODUCT_TYPE_RULES:
+        if any(f" {phrase.strip()} " in search_text for phrase in map(_normalize_search_text, phrases)):
+            matches.add(tag)
+            break
+    for tag, phrases in SPECIAL_TAG_KEYWORDS.items():
+        if any(f" {phrase.strip()} " in search_text for phrase in map(_normalize_search_text, phrases)):
+            matches.add(tag)
+
+    vendor = (record.get("vendor") or "").strip().lower()
+    if vendor in {"asmodee", "ravensburger"} and "board-game" not in matches and not matches.intersection({"pokemon", "magic", "yugioh", "lorcana", "one-piece", "flesh-and-blood", "d-and-d", "pathfinder"}):
+        matches.add("board-game")
+    if "combat-patrol" in matches or "codex" in matches:
+        matches.add("warhammer-40k")
+    if "battletome" in matches:
+        matches.add("age-of-sigmar")
+
+    age_days = _record_created_age_days(record)
+    if age_days is not None:
+        if age_days <= 30:
+            matches.add("new-release")
+        if age_days <= 45:
+            matches.add(INTERNAL_NEW_ARRIVAL_TAG)
+    return matches
 
 
 def smart_collection_tags_for_product(product: Product) -> list[str]:
@@ -1654,41 +2116,57 @@ def smart_collection_tags_for_product(product: Product) -> list[str]:
             product.title,
             product.vendor,
             product.product_type,
+            product.description_html,
             *product.tags,
             product.sku,
         ])),
     }
-    return wayland_collection_marker_tags(classify_wayland_collection_titles(record))
+    return sorted(desired_collection_tags_for_record(record) - {INTERNAL_NEW_ARRIVAL_TAG})
 
 
-def build_wayland_collection_matches(
+def _record_matches_collection_spec(
+    record: dict[str, Any],
+    desired_tags: set[str],
+    spec: ManagedCollectionSpec,
+) -> bool:
+    evaluations: list[bool] = []
+    for rule in spec.rules:
+        if rule.column == "TAG" and rule.relation == "EQUALS":
+            evaluations.append(rule.condition in desired_tags)
+        elif rule.column == "VENDOR" and rule.relation == "EQUALS":
+            evaluations.append((record.get("vendor") or "").strip() == rule.condition)
+        elif rule.column == "VARIANT_INVENTORY" and rule.relation == "GREATER_THAN":
+            evaluations.append(int(record.get("total_inventory") or 0) > int(rule.condition))
+        elif rule.column == "VARIANT_PRICE" and rule.relation == "LESS_THAN":
+            evaluations.append(int(record.get("min_price_cents") or 0) <= int(rule.condition))
+        elif rule.column == "IS_PRICE_REDUCED" and rule.relation == "IS_SET":
+            evaluations.append(bool(record.get("is_price_reduced")))
+        else:
+            evaluations.append(False)
+    if not evaluations:
+        return False
+    return any(evaluations) if spec.applied_disjunctively else all(evaluations)
+
+
+def build_collection_matches(
     products: list[dict[str, Any]],
 ) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]], dict[str, set[str]]]:
-    by_collection: dict[str, list[dict[str, Any]]] = {title: [] for title, _ in WAYLAND_COLLECTION_SPECS}
-    matches_by_product: dict[str, set[str]] = {
-        record["id"]: classify_wayland_collection_titles(record)
+    by_collection: dict[str, list[dict[str, Any]]] = {spec.title: [] for spec in MANAGED_COLLECTION_SPECS}
+    desired_tags_by_product = {
+        record["id"]: desired_collection_tags_for_record(record)
         for record in products
     }
-
-    gw_products = sorted(
-        (record for record in products if _is_games_workshop_product(record)),
-        key=lambda item: item.get("created_at") or "",
-        reverse=True,
-    )
-    for record in gw_products[:LATEST_GW_RELEASE_LIMIT]:
-        matches_by_product[record["id"]].add("Latest Releases")
-
     unmatched: list[dict[str, Any]] = []
     for record in products:
-        product_matches = matches_by_product[record["id"]]
+        product_matches = []
+        desired_tags = desired_tags_by_product[record["id"]]
+        for spec in MANAGED_COLLECTION_SPECS:
+            if _record_matches_collection_spec(record, desired_tags, spec):
+                by_collection[spec.title].append(record)
+                product_matches.append(spec.title)
         if not product_matches:
             unmatched.append(record)
-            continue
-        for title, _ in WAYLAND_COLLECTION_SPECS:
-            if title in product_matches:
-                by_collection[title].append(record)
-
-    return by_collection, unmatched, matches_by_product
+    return by_collection, unmatched, desired_tags_by_product
 
 
 # ---------------------------------------------------------------------------
@@ -1878,6 +2356,7 @@ class Shopify:
                     "handle": node.get("handle") or "",
                     "products_count": int((node.get("productsCount") or {}).get("count") or 0),
                     "collection_type": "smart" if node.get("ruleSet") else "custom",
+                    "applied_disjunctively": bool((node.get("ruleSet") or {}).get("appliedDisjunctively")),
                     "rules": (node.get("ruleSet") or {}).get("rules") or [],
                 }
             if not data["collections"]["pageInfo"]["hasNextPage"]:
@@ -1910,8 +2389,16 @@ class Shopify:
                     title
                     vendor
                     productType
+                    description
                     tags
                     createdAt
+                    totalInventory
+                    priceRangeV2 {
+                      minVariantPrice { amount }
+                    }
+                    compareAtPriceRange {
+                      minVariantCompareAtPrice { amount }
+                    }
                     variants(first: 10) {
                       edges {
                         node {
@@ -1939,6 +2426,7 @@ class Shopify:
                     node.get("title") or "",
                     node.get("vendor") or "",
                     node.get("productType") or "",
+                    node.get("description") or "",
                     *tags,
                     *skus,
                 ]
@@ -1949,6 +2437,10 @@ class Shopify:
                     "product_type": node.get("productType") or "",
                     "tags": tags,
                     "created_at": node.get("createdAt") or "",
+                    "description": node.get("description") or "",
+                    "total_inventory": int(node.get("totalInventory") or 0),
+                    "min_price_cents": int(round((_safe_float((((node.get("priceRangeV2") or {}).get("minVariantPrice") or {}).get("amount")) or 0) or 0) * 100)),
+                    "is_price_reduced": _safe_float((((node.get("compareAtPriceRange") or {}).get("minVariantCompareAtPrice") or {}).get("amount")) or 0) not in (None, 0.0),
                     "skus": skus,
                     "search_text": _normalize_search_text(" ".join(search_parts)),
                 }
@@ -2043,7 +2535,15 @@ class Shopify:
         result_image = ((data["collectionUpdate"].get("collection") or {}).get("image") or {})
         return result_image.get("url") or ""
 
-    def create_smart_collection(self, title: str, handle: str, tag: str, description_html: str = "") -> dict[str, Any]:
+    def create_smart_collection(
+        self,
+        title: str,
+        handle: str,
+        rules: list[CollectionRuleSpec],
+        *,
+        applied_disjunctively: bool = False,
+        description_html: str = "",
+    ) -> dict[str, Any]:
         q = """
             mutation($input: CollectionInput!) {
               collectionCreate(input: $input) {
@@ -2057,21 +2557,22 @@ class Shopify:
             }
         """
         data = self.gql(q, {
-            "input": {
-                "title": title,
-                "handle": handle,
-                "descriptionHtml": description_html,
-                "ruleSet": {
-                    "appliedDisjunctively": False,
-                    "rules": [
-                        {
-                            "column": "TAG",
-                            "relation": "EQUALS",
-                            "condition": tag,
-                        }
-                    ],
-                },
-            }
+                "input": {
+                    "title": title,
+                    "handle": handle,
+                    "descriptionHtml": description_html,
+                    "ruleSet": {
+                        "appliedDisjunctively": applied_disjunctively,
+                        "rules": [
+                            {
+                                "column": rule.column,
+                                "relation": rule.relation,
+                                "condition": rule.condition,
+                            }
+                            for rule in rules
+                        ],
+                    },
+                }
         })
         errs = data["collectionCreate"]["userErrors"]
         if errs:
@@ -2081,7 +2582,15 @@ class Shopify:
             raise RuntimeError(f"collectionCreate did not return a collection for {title!r}")
         return collection
 
-    def update_smart_collection(self, collection_id: str, title: str, handle: str, tag: str) -> None:
+    def update_smart_collection(
+        self,
+        collection_id: str,
+        title: str,
+        handle: str,
+        rules: list[CollectionRuleSpec],
+        *,
+        applied_disjunctively: bool = False,
+    ) -> None:
         q = """
             mutation($input: CollectionInput!) {
               collectionUpdate(input: $input) {
@@ -2098,13 +2607,14 @@ class Shopify:
                 "title": title,
                 "handle": handle,
                 "ruleSet": {
-                    "appliedDisjunctively": False,
+                    "appliedDisjunctively": applied_disjunctively,
                     "rules": [
                         {
-                            "column": "TAG",
-                            "relation": "EQUALS",
-                            "condition": tag,
+                            "column": rule.column,
+                            "relation": rule.relation,
+                            "condition": rule.condition,
                         }
+                        for rule in rules
                     ],
                 },
             }
@@ -2164,6 +2674,27 @@ class Shopify:
                 f"on publication {publication_id}"
             )
 
+    def unpublish_from_publication(self, resource_id: str, publication_id: str) -> None:
+        q = """
+            mutation($id: ID!, $publicationId: ID!) {
+              publishableUnpublish(id: $id, input: {publicationId: $publicationId}) {
+                publishable {
+                  publishedOnPublication(publicationId: $publicationId)
+                }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {"id": resource_id, "publicationId": publication_id})
+        errs = data["publishableUnpublish"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"publishableUnpublish errors: {errs}")
+        if data["publishableUnpublish"]["publishable"]["publishedOnPublication"]:
+            raise RuntimeError(
+                f"publishableUnpublish did not confirm unpublication for resource {resource_id} "
+                f"on publication {publication_id}"
+            )
+
     def publish_to_online_store(self, resource_id: str) -> None:
         publication_id = self.get_publication_id_by_name(ONLINE_STORE_PUBLICATION_NAME)
         self.publish_to_publication(resource_id, publication_id)
@@ -2203,6 +2734,59 @@ class Shopify:
                     "title": node.get("title") or "",
                     "published_on_publication": False,
                     "publication_id": publication_id,
+                    "skus": [
+                        (variant_edge.get("node") or {}).get("sku") or ""
+                        for variant_edge in (node.get("variants") or {}).get("edges") or []
+                        if ((variant_edge.get("node") or {}).get("sku") or "").strip()
+                    ],
+                }
+            if not data["products"]["pageInfo"]["hasNextPage"]:
+                break
+            cursor = data["products"]["pageInfo"]["endCursor"]
+
+    def iter_products_for_online_store_image_visibility(self, publication_id: str) -> Iterable[dict[str, Any]]:
+        # Per the clarified workflow contract, any attached Shopify product media
+        # counts for visibility, not only MediaImage entries.
+        cursor = None
+        page_q = """
+            query($cursor: String, $publicationId: ID!) {
+              products(first: 100, after: $cursor) {
+                edges {
+                  cursor
+                  node {
+                    id
+                    title
+                    publishedOnPublication(publicationId: $publicationId)
+                    variants(first: 10) {
+                      edges {
+                        node {
+                          sku
+                        }
+                      }
+                    }
+                    media(first: 1) {
+                      edges {
+                        node {
+                          id
+                        }
+                      }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"cursor": cursor, "publicationId": publication_id})
+            for edge in data["products"]["edges"]:
+                node = edge["node"]
+                yield {
+                    "id": node["id"],
+                    "title": node.get("title") or "",
+                    "published_on_publication": bool(node.get("publishedOnPublication")),
+                    "publication_id": publication_id,
+                    "has_media": bool(((node.get("media") or {}).get("edges") or [])),
                     "skus": [
                         (variant_edge.get("node") or {}).get("sku") or ""
                         for variant_edge in (node.get("variants") or {}).get("edges") or []
@@ -2980,16 +3564,9 @@ def phase_delete(client: Shopify, dry: bool) -> None:
 
 
 def phase_delete_collections(client: Shopify, dry: bool) -> None:
-    log("=== DELETE COLLECTIONS phase: removing managed Wayland collections ===")
+    log("=== DELETE COLLECTIONS phase: removing all Shopify collections ===")
     deleted = 0
     for collection in client.iter_all_collections():
-        if not is_managed_wayland_collection(collection):
-            log(
-                "  skip unmanaged collection: "
-                f"{collection['title']!r} [{collection['collection_type']}] "
-                f"handle={collection['handle']!r} ({collection['id']})"
-            )
-            continue
         log(
             "  delete collection: "
             f"{collection['title']!r} [{collection['collection_type']}] "
@@ -3007,6 +3584,7 @@ def phase_delete_collections(client: Shopify, dry: bool) -> None:
 def write_collection_generation_preview(
     by_collection: dict[str, list[dict[str, Any]]],
     unmatched: list[dict[str, Any]],
+    desired_tags_by_product: dict[str, set[str]],
 ) -> None:
     preview_cols = [
         "collection_title",
@@ -3017,21 +3595,23 @@ def write_collection_generation_preview(
         "product_type",
         "skus",
         "tags",
+        "desired_tags",
     ]
     with COLLECTION_GENERATION_PREVIEW_CSV.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=preview_cols)
         writer.writeheader()
-        for title, handle in WAYLAND_COLLECTION_SPECS:
-            for record in by_collection[title]:
+        for spec in MANAGED_COLLECTION_SPECS:
+            for record in by_collection[spec.title]:
                 writer.writerow({
-                    "collection_title": title,
-                    "collection_handle": handle,
+                    "collection_title": spec.title,
+                    "collection_handle": spec.handle,
                     "product_id": record["id"],
                     "title": record["title"],
                     "vendor": record["vendor"],
                     "product_type": record["product_type"],
                     "skus": "|".join(record["skus"]),
                     "tags": "|".join(record["tags"]),
+                    "desired_tags": "|".join(sorted(desired_tags_by_product[record["id"]] - {INTERNAL_NEW_ARRIVAL_TAG})),
                 })
 
     unmatched_cols = ["product_id", "title", "vendor", "product_type", "skus", "tags"]
@@ -3050,11 +3630,11 @@ def write_collection_generation_preview(
 
 
 def phase_generate_collections(client: Shopify, dry: bool) -> None:
-    log("=== GENERATE COLLECTIONS phase: building Wayland-style smart collections ===")
+    log("=== GENERATE COLLECTIONS phase: rebuilding the managed storefront collection taxonomy ===")
     products = list(client.iter_existing_for_collection_generation())
-    existing_collections = {item["handle"]: item for item in client.iter_all_collections()}
-    by_collection, unmatched, matches_by_product = build_wayland_collection_matches(products)
-    write_collection_generation_preview(by_collection, unmatched)
+    existing_collections = list(client.iter_all_collections())
+    by_collection, unmatched, desired_tags_by_product = build_collection_matches(products)
+    write_collection_generation_preview(by_collection, unmatched, desired_tags_by_product)
     log(
         f"  wrote collection preview: {COLLECTION_GENERATION_PREVIEW_CSV} "
         f"and unmatched report: {COLLECTION_GENERATION_UNMATCHED_CSV}"
@@ -3062,66 +3642,80 @@ def phase_generate_collections(client: Shopify, dry: bool) -> None:
     matched_count = sum(len(items) for items in by_collection.values())
     non_empty = sum(1 for items in by_collection.values() if items)
     log(
-        f"  planned memberships={matched_count} across {non_empty}/{len(WAYLAND_COLLECTION_SPECS)} "
+        f"  planned memberships={matched_count} across {non_empty}/{len(MANAGED_COLLECTION_SPECS)} "
         f"collections; unmatched_products={len(unmatched)}"
     )
-    for title, _ in WAYLAND_COLLECTION_SPECS:
-        if by_collection[title]:
-            log(f"  match count: {title} -> {len(by_collection[title])}")
+    for spec in MANAGED_COLLECTION_SPECS:
+        if by_collection[spec.title]:
+            log(f"  match count: {spec.title} -> {len(by_collection[spec.title])}")
 
     if dry:
-        return
+        raise RuntimeError("--generate-collections now performs a live rebuild only and cannot be used with --dry-run.")
 
-    auto_tags = wayland_auto_collection_tag_set()
     updated_products = 0
     created = 0
-    refreshed = 0
+    deleted = 0
     published = 0
+    images_updated = 0
+    images_skipped = 0
+
+    for collection in existing_collections:
+        client.delete_collection(collection["id"])
+        deleted += 1
+
     for record in products:
-        desired_auto_tags = set(wayland_collection_marker_tags(matches_by_product[record["id"]]))
-        current_tags = set(record["tags"])
-        next_tags = sorted((current_tags - auto_tags) | desired_auto_tags)
-        if next_tags != sorted(current_tags):
+        desired_tags = desired_tags_by_product[record["id"]] - {INTERNAL_NEW_ARRIVAL_TAG}
+        preserved_tags = [
+            tag for tag in record["tags"]
+            if _normalized_tag(tag) not in LEGACY_MANAGED_NORMALIZED_TAGS
+        ]
+        next_tags = sorted(set(preserved_tags) | desired_tags)
+        if next_tags != sorted(set(record["tags"])):
             client.update_product_tags(record["id"], next_tags)
             updated_products += 1
 
-    for title, handle in WAYLAND_COLLECTION_SPECS:
-        collection = existing_collections.get(handle)
-        marker_tag = collection_marker_tag_from_handle(handle)
-        if collection and collection["collection_type"] != "smart":
-            raise RuntimeError(
-                f"Existing collection handle {handle!r} is a manual collection. "
-                "Delete it first with --delete-collections or rename it before regenerating."
-            )
-        if collection and not is_managed_wayland_collection(collection, expected_tag=marker_tag):
-            raise RuntimeError(
-                f"Existing smart collection handle {handle!r} is not managed by this script. "
-                "Refusing to overwrite a non-marker rule set."
-            )
-
-        if collection:
-            refreshed += 1
-            client.update_smart_collection(collection["id"], title, handle, marker_tag)
-        else:
-            collection = client.create_smart_collection(title, handle, marker_tag)
-            created += 1
-
+    for spec in MANAGED_COLLECTION_SPECS:
+        members = by_collection[spec.title]
+        if not members:
+            continue
+        collection = client.create_smart_collection(
+            spec.title,
+            spec.handle,
+            list(spec.rules),
+            applied_disjunctively=spec.applied_disjunctively,
+        )
+        created += 1
         try:
             published += client.publish_to_all_channels(collection["id"])
         except Exception as e:
             log(
-                f"  warn: could not publish collection {title!r} to all sales channels: {e}. "
+                f"  warn: could not publish collection {spec.title!r} to all sales channels: {e}. "
                 "The collection may remain hidden until the app has publication scopes."
             )
+        picked = client.find_first_alphabetical_product_with_image(collection["id"])
+        if not picked:
+            images_skipped += 1
+            continue
+        current = client.get_collection_image(collection["id"])
+        if current.get("url") == picked["image_url"]:
+            images_skipped += 1
+            continue
+        client.update_collection_image(
+            collection["id"],
+            picked["image_url"],
+            alt_text=picked.get("image_alt") or spec.title,
+        )
+        images_updated += 1
 
     log(
-        f"GENERATE COLLECTIONS summary: tagged_products={updated_products} created={created} refreshed={refreshed} "
-        f"publication_links={published} unmatched_products={len(unmatched)}"
+        f"GENERATE COLLECTIONS summary: deleted={deleted} tagged_products={updated_products} created={created} "
+        f"publication_links={published} images_updated={images_updated} images_skipped={images_skipped} "
+        f"unmatched_products={len(unmatched)}"
     )
 
 
 def phase_update_collection_images(client: Shopify, dry: bool) -> None:
-    """For each managed Wayland smart collection, set the collection image to the
+    """For each managed smart collection, set the collection image to the
     image of the first product (alphabetically by title) in that collection that
     has a featuredImage. Idempotent: skips collections whose image already matches.
     """
@@ -3130,7 +3724,9 @@ def phase_update_collection_images(client: Shopify, dry: bool) -> None:
     rows: list[dict[str, str]] = []
     actions = {"updated": 0, "already_set": 0, "no_products_with_image": 0, "missing_collection": 0, "skip_unmanaged": 0, "errors": 0}
 
-    for title, handle in WAYLAND_COLLECTION_SPECS:
+    for spec in MANAGED_COLLECTION_SPECS:
+        title = spec.title
+        handle = spec.handle
         collection = existing_collections.get(handle)
         if not collection:
             log(f"  skip (no collection): {title!r} handle={handle!r}")
@@ -3147,11 +3743,10 @@ def phase_update_collection_images(client: Shopify, dry: bool) -> None:
             actions["missing_collection"] += 1
             continue
 
-        marker_tag = collection_marker_tag_from_handle(handle)
-        if not is_managed_wayland_collection(collection, expected_tag=marker_tag):
+        if not is_managed_collection(collection, expected_spec=spec):
             log(
                 f"  skip (unmanaged collection): {title!r} handle={handle!r} "
-                f"id={collection['id']} -- not a Wayland smart collection"
+                f"id={collection['id']} -- rule set does not match the managed taxonomy"
             )
             rows.append({
                 "collection_title": title,
@@ -3507,10 +4102,113 @@ def phase_publish_online_store_backfill(client: Shopify, dry: bool) -> None:
     )
 
 
+def phase_reconcile_online_store_image_visibility(client: Shopify, dry: bool) -> None:
+    log("=== ONLINE STORE IMAGE VISIBILITY phase: reconciling publication against any product media ===")
+    publication_id = client.get_publication_id_by_name(ONLINE_STORE_PUBLICATION_NAME)
+    candidates = list(client.iter_products_for_online_store_image_visibility(publication_id))
+    rows: list[dict[str, str]] = []
+    published = 0
+    unpublished = 0
+    publish_failed = 0
+    unpublish_failed = 0
+    unchanged = 0
+
+    for candidate in candidates:
+        has_media = candidate["has_media"]
+        is_published = candidate["published_on_publication"]
+        if has_media and not is_published:
+            status = "dry_run_publish" if dry else "published"
+            if not dry:
+                try:
+                    client.publish_to_publication(candidate["id"], publication_id)
+                    published += 1
+                except Exception as e:
+                    publish_failed += 1
+                    status = f"publish_failed: {e}"
+                    log(f"  FAILED publish {candidate['title']!r} ({candidate['id']}): {e}")
+                    with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+                        fh.write(
+                            f"image_visibility_publish\t{_safe_spreadsheet_cell('|'.join(candidate['skus']))}\t"
+                            f"{_safe_spreadsheet_cell(candidate['title'])}\t{_safe_spreadsheet_cell(e)}\n"
+                        )
+            rows.append({
+                "product_id": candidate["id"],
+                "title": _safe_spreadsheet_cell(candidate["title"]),
+                "skus": _safe_spreadsheet_cell("|".join(candidate["skus"])),
+                "publication_name": ONLINE_STORE_PUBLICATION_NAME,
+                "publication_id": candidate["publication_id"],
+                "published_on_publication": "false",
+                "has_media": "true",
+                "desired_published_on_publication": "true",
+                "status": status,
+            })
+            continue
+        if not has_media and is_published:
+            status = "dry_run_unpublish" if dry else "unpublished"
+            if not dry:
+                try:
+                    client.unpublish_from_publication(candidate["id"], publication_id)
+                    unpublished += 1
+                except Exception as e:
+                    unpublish_failed += 1
+                    status = f"unpublish_failed: {e}"
+                    log(f"  FAILED unpublish {candidate['title']!r} ({candidate['id']}): {e}")
+                    with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+                        fh.write(
+                            f"image_visibility_unpublish\t{_safe_spreadsheet_cell('|'.join(candidate['skus']))}\t"
+                            f"{_safe_spreadsheet_cell(candidate['title'])}\t{_safe_spreadsheet_cell(e)}\n"
+                        )
+            rows.append({
+                "product_id": candidate["id"],
+                "title": _safe_spreadsheet_cell(candidate["title"]),
+                "skus": _safe_spreadsheet_cell("|".join(candidate["skus"])),
+                "publication_name": ONLINE_STORE_PUBLICATION_NAME,
+                "publication_id": candidate["publication_id"],
+                "published_on_publication": "true",
+                "has_media": "false",
+                "desired_published_on_publication": "false",
+                "status": status,
+            })
+            continue
+        unchanged += 1
+
+    cols = [
+        "product_id",
+        "title",
+        "skus",
+        "publication_name",
+        "publication_id",
+        "published_on_publication",
+        "has_media",
+        "desired_published_on_publication",
+        "status",
+    ]
+    with ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=cols)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    log(f"  wrote preview: {ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV}")
+    log(
+        "ONLINE STORE IMAGE VISIBILITY summary: "
+        f"candidates={len(candidates)} actions={len(rows)} published={published} "
+        f"unpublished={unpublished} unchanged={unchanged} "
+        f"publish_failed={publish_failed} unpublish_failed={unpublish_failed} dry_run={dry}"
+    )
+
+
 def _graphql_error_code(err: Any) -> str | None:
     if isinstance(err, dict):
         return err.get("extensions", {}).get("code")
     return None
+
+
+def _safe_spreadsheet_cell(value: Any) -> str:
+    text = "" if value is None else str(value)
+    text = text.replace("\r", " ").replace("\n", " ")
+    if text.startswith(("=", "+", "-", "@")):
+        return "'" + text
+    return text
 
 
 def _format_graphql_errors(errors: Any) -> str:
@@ -4247,9 +4945,9 @@ def main() -> int:
                         help="Validate auth and location readiness without delete/import side effects.")
     parser.add_argument("--delete", action="store_true", help="Run delete phase.")
     parser.add_argument("--delete-collections", dest="do_delete_collections", action="store_true",
-                        help="Delete only managed Wayland Shopify collections.")
+                        help="Delete all Shopify collections.")
     parser.add_argument("--generate-collections", dest="do_generate_collections", action="store_true",
-                        help="Create Wayland-style smart collections and auto-tag existing Shopify products.")
+                        help="Delete all collections, retag products into the managed taxonomy, recreate populated smart collections, and set collection images.")
     parser.add_argument("--update-collection-images", dest="do_update_collection_images", action="store_true",
                         help="Set each managed collection's image to the first alphabetical product's image.")
     parser.add_argument("--import", dest="do_import", action="store_true", help="Run import phase.")
@@ -4257,6 +4955,8 @@ def main() -> int:
                         help="Update existing products in place (matched by SKU).")
     parser.add_argument("--publish-online-store-backfill", dest="do_publish_online_store_backfill", action="store_true",
                         help="Publish existing Shopify products that are not on the current publication.")
+    parser.add_argument("--reconcile-online-store-image-visibility", dest="do_reconcile_online_store_image_visibility", action="store_true",
+                        help="Publish products with any Shopify media to Online Store and unpublish products with none.")
     parser.add_argument("--photo-sync", dest="do_photo_sync", action="store_true",
                         help="Replace GW product media from the repo-local cache or an explicit local photo root.")
     parser.add_argument("--photo-sync-existing-files", dest="do_photo_sync_existing_files", action="store_true",
@@ -4277,6 +4977,7 @@ def main() -> int:
     if not (args.dry_run or args.preflight or args.delete or args.do_delete_collections
             or args.do_generate_collections or args.do_update_collection_images
             or args.do_gw_refresh_cache or args.do_import or args.do_update or args.do_publish_online_store_backfill
+            or args.do_reconcile_online_store_image_visibility
             or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
             or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.all):
         parser.print_help()
@@ -4287,14 +4988,16 @@ def main() -> int:
             args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
             or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.do_update or args.do_import or args.delete
             or args.do_delete_collections or args.do_generate_collections or args.do_update_collection_images
-            or args.do_publish_online_store_backfill or args.all or args.preflight
+            or args.do_publish_online_store_backfill or args.do_reconcile_online_store_image_visibility
+            or args.all or args.preflight
             or args.start_at != 0 or args.photo_root is not None
         )
         if invalid_refresh_combo:
             raise RuntimeError(
                 "--gw-refresh-cache must run separately and cannot be combined with "
                 "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --photo-source-web-all, --photo-sync-staged-local-all, --update, --import, --delete, --delete-collections, "
-                "--generate-collections, --update-collection-images, --all, --preflight, --start-at, or --photo-root."
+                "--generate-collections, --update-collection-images, --publish-online-store-backfill, "
+                "--reconcile-online-store-image-visibility, --all, --preflight, --start-at, or --photo-root."
             )
         refresh_gw_cache(
             resources_url=GW_RESOURCES_URL,
@@ -4387,6 +5090,8 @@ def main() -> int:
             "import/update/photo-sync/photo-sync-existing-files/photo-sync-existing-files-all/update-collection-images/all "
             "and cannot be combined with --start-at or --photo-root."
         )
+    if args.do_generate_collections and args.dry_run:
+        raise RuntimeError("--generate-collections always applies live for the managed collection rebuild and cannot be combined with --dry-run.")
     if args.do_update_collection_images and (
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_import or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files
@@ -4401,14 +5106,28 @@ def main() -> int:
     if args.do_publish_online_store_backfill and (
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_update_collection_images or args.do_import or args.do_update
+        or args.do_reconcile_online_store_image_visibility
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
         or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
             "--publish-online-store-backfill must run separately from preflight/delete/delete-collections/"
-            "generate-collections/update-collection-images/import/update/photo-sync/photo-sync-existing-files/"
+            "generate-collections/update-collection-images/import/update/reconcile-online-store-image-visibility/photo-sync/photo-sync-existing-files/"
             "photo-sync-existing-files-all/all and cannot be combined with --start-at or --photo-root."
+        )
+    if args.do_reconcile_online_store_image_visibility and (
+        args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
+        or args.do_update_collection_images or args.do_import or args.do_update
+        or args.do_publish_online_store_backfill
+        or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+        or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all
+        or args.all or args.start_at != 0 or args.photo_root is not None
+    ):
+        raise RuntimeError(
+            "--reconcile-online-store-image-visibility must run separately from preflight/delete/delete-collections/"
+            "generate-collections/update-collection-images/import/update/publish-online-store-backfill/photo-sync/"
+            "photo-sync-existing-files/photo-sync-existing-files-all/all and cannot be combined with --start-at or --photo-root."
         )
 
     # Plain --dry-run (without --update / --photo-sync) means: read sheets,
@@ -4426,6 +5145,7 @@ def main() -> int:
         and not args.do_delete_collections
         and not args.do_update_collection_images
         and not args.do_publish_online_store_backfill
+        and not args.do_reconcile_online_store_image_visibility
     ):
         prepare_products_for_import()
         log("Dry run complete. Review preview.csv, then re-run with --delete, --import, or --update.")
@@ -4472,6 +5192,15 @@ def main() -> int:
                 "Online Store backfill dry-run complete. Review "
                 "online_store_backfill_preview.csv, then re-run with "
                 "--publish-online-store-backfill (no --dry-run) to apply."
+            )
+        return 0
+    if args.do_reconcile_online_store_image_visibility:
+        phase_reconcile_online_store_image_visibility(client, dry=args.dry_run)
+        if args.dry_run:
+            log(
+                "Online Store image-visibility dry-run complete. Review "
+                "online_store_image_visibility_preview.csv, then re-run with "
+                "--reconcile-online-store-image-visibility (no --dry-run) to apply."
             )
         return 0
 

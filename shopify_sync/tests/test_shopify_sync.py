@@ -416,10 +416,10 @@ class ProductCreateTests(unittest.TestCase):
                     "productType": "Warhammer 40,000",
                     "tags": [
                         "40K - Generic",
-                        "AUTO_COLLECTION::games-workshop",
-                        "AUTO_COLLECTION::warhammer-40k",
                         "Games Workshop",
                         "Warhammer 40,000",
+                        "deathwatch",
+                        "warhammer-40k",
                     ],
                     "descriptionHtml": "SS Code: 39-13",
                     "status": "ACTIVE",
@@ -585,6 +585,7 @@ class CollectionManagementTests(unittest.TestCase):
                     "handle": "wargames",
                     "products_count": 0,
                     "collection_type": "custom",
+                    "applied_disjunctively": False,
                     "rules": [],
                 },
                 {
@@ -593,31 +594,30 @@ class CollectionManagementTests(unittest.TestCase):
                     "handle": "plush-figures",
                     "products_count": 0,
                     "collection_type": "smart",
+                    "applied_disjunctively": False,
                     "rules": [],
                 },
             ],
         )
 
-    def test_managed_wayland_collection_tag_detects_marker_rule(self):
+    def test_is_managed_collection_matches_expected_rule_signature(self):
+        spec = shopify_sync.MANAGED_COLLECTION_SPECS_BY_HANDLE["games-workshop"]
         collection = {
             "id": "gid://shopify/Collection/1",
             "title": "Games Workshop",
             "handle": "games-workshop",
             "collection_type": "smart",
+            "applied_disjunctively": False,
             "rules": [
                 {
-                    "column": "TAG",
+                    "column": "VENDOR",
                     "relation": "EQUALS",
-                    "condition": "AUTO_COLLECTION::games-workshop",
+                    "condition": "Games Workshop",
                 }
             ],
         }
 
-        self.assertEqual(
-            shopify_sync.managed_wayland_collection_tag(collection),
-            "AUTO_COLLECTION::games-workshop",
-        )
-        self.assertTrue(shopify_sync.is_managed_wayland_collection(collection))
+        self.assertTrue(shopify_sync.is_managed_collection(collection, expected_spec=spec))
 
     def test_delete_collection_uses_collection_delete_mutation(self):
         self.client.gql = mock.Mock(return_value={
@@ -636,7 +636,7 @@ class CollectionManagementTests(unittest.TestCase):
             {"input": {"id": "gid://shopify/Collection/2"}},
         )
 
-    def test_create_smart_collection_uses_tag_rule_input(self):
+    def test_create_smart_collection_uses_rule_input(self):
         self.client.gql = mock.Mock(return_value={
             "collectionCreate": {
                 "collection": {
@@ -651,7 +651,7 @@ class CollectionManagementTests(unittest.TestCase):
         result = self.client.create_smart_collection(
             "Games Workshop",
             "games-workshop",
-            "AUTO_COLLECTION::games-workshop",
+            [shopify_sync.CollectionRuleSpec("VENDOR", "EQUALS", "Games Workshop")],
         )
 
         self.assertEqual(
@@ -675,9 +675,9 @@ class CollectionManagementTests(unittest.TestCase):
                         "appliedDisjunctively": False,
                         "rules": [
                             {
-                                "column": "TAG",
+                                "column": "VENDOR",
                                 "relation": "EQUALS",
-                                "condition": "AUTO_COLLECTION::games-workshop",
+                                "condition": "Games Workshop",
                             }
                         ],
                     },
@@ -887,6 +887,26 @@ class ProductPublicationTests(unittest.TestCase):
             {"id": "gid://shopify/Product/9", "publicationId": "gid://shopify/Publication/2"},
         )
 
+    def test_unpublish_from_publication_uses_publishable_unpublish(self):
+        self.client.gql = mock.Mock(return_value={
+            "publishableUnpublish": {
+                "publishable": {
+                    "publishedOnPublication": False,
+                },
+                "userErrors": [],
+            }
+        })
+
+        self.client.unpublish_from_publication("gid://shopify/Product/9", "gid://shopify/Publication/2")
+
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("publishableUnpublish", query)
+        self.assertIn("publishedOnPublication", query)
+        self.assertEqual(
+            variables,
+            {"id": "gid://shopify/Product/9", "publicationId": "gid://shopify/Publication/2"},
+        )
+
     def test_iter_products_unpublished_on_publication_filters_published_products(self):
         self.client.gql = mock.Mock(return_value={
             "products": {
@@ -930,6 +950,63 @@ class ProductPublicationTests(unittest.TestCase):
         )
         query, variables = self.client.gql.call_args.args
         self.assertIn("publishedOnPublication", query)
+        self.assertEqual(variables, {"cursor": None, "publicationId": "gid://shopify/Publication/2"})
+
+    def test_iter_products_for_online_store_image_visibility_treats_any_media_as_present(self):
+        self.client.gql = mock.Mock(return_value={
+            "products": {
+                "edges": [
+                    {
+                        "cursor": "cur-1",
+                        "node": {
+                            "id": "gid://shopify/Product/1",
+                            "title": "Visible With Video Only",
+                            "publishedOnPublication": True,
+                            "variants": {"edges": [{"node": {"sku": "VIS-1"}}]},
+                            "media": {"edges": [{"node": {"id": "gid://shopify/Video/1"}}]},
+                        },
+                    },
+                    {
+                        "cursor": "cur-2",
+                        "node": {
+                            "id": "gid://shopify/Product/2",
+                            "title": "Hidden Without Media",
+                            "publishedOnPublication": False,
+                            "variants": {"edges": [{"node": {"sku": "HID-1"}}]},
+                            "media": {"edges": []},
+                        },
+                    },
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        })
+
+        rows = list(self.client.iter_products_for_online_store_image_visibility("gid://shopify/Publication/2"))
+
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "id": "gid://shopify/Product/1",
+                    "title": "Visible With Video Only",
+                    "published_on_publication": True,
+                    "publication_id": "gid://shopify/Publication/2",
+                    "has_media": True,
+                    "skus": ["VIS-1"],
+                },
+                {
+                    "id": "gid://shopify/Product/2",
+                    "title": "Hidden Without Media",
+                    "published_on_publication": False,
+                    "publication_id": "gid://shopify/Publication/2",
+                    "has_media": False,
+                    "skus": ["HID-1"],
+                },
+            ],
+        )
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("publishedOnPublication", query)
+        self.assertIn("media(first: 1)", query)
         self.assertEqual(variables, {"cursor": None, "publicationId": "gid://shopify/Publication/2"})
 
 
@@ -1040,6 +1117,11 @@ class MainFlowTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "--generate-collections must run separately"):
                 shopify_sync.main()
 
+    def test_generate_collections_rejects_dry_run(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--generate-collections", "--dry-run"]):
+            with self.assertRaisesRegex(RuntimeError, "--generate-collections always applies live"):
+                shopify_sync.main()
+
     def test_publish_online_store_backfill_runs_without_prepare_or_location_lookup(self):
         client = mock.Mock()
 
@@ -1080,6 +1162,52 @@ class MainFlowTests(unittest.TestCase):
 
     def test_publish_online_store_backfill_rejects_update_combination(self):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--publish-online-store-backfill", "--update"]):
+            with self.assertRaisesRegex(RuntimeError, "--publish-online-store-backfill must run separately"):
+                shopify_sync.main()
+
+    def test_reconcile_online_store_image_visibility_runs_without_prepare_or_location_lookup(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--reconcile-online-store-image-visibility"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_reconcile_online_store_image_visibility") as phase_reconcile, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_reconcile.assert_called_once_with(client, dry=False)
+        run_preflight.assert_not_called()
+        prepare_products.assert_not_called()
+
+    def test_reconcile_online_store_image_visibility_dry_run_bypasses_plain_preview_flow(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--reconcile-online-store-image-visibility", "--dry-run"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_reconcile_online_store_image_visibility") as phase_reconcile, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_reconcile.assert_called_once_with(client, dry=True)
+        prepare_products.assert_not_called()
+        run_preflight.assert_not_called()
+
+    def test_reconcile_online_store_image_visibility_rejects_backfill_combination(self):
+        with mock.patch(
+            "shopify_sync.sys.argv",
+            ["shopify_sync.py", "--reconcile-online-store-image-visibility", "--publish-online-store-backfill"],
+        ):
             with self.assertRaisesRegex(RuntimeError, "--publish-online-store-backfill must run separately"):
                 shopify_sync.main()
 
@@ -1343,6 +1471,154 @@ class PhaseOnlineStoreBackfillTests(unittest.TestCase):
         self.assertIn("published", preview)
 
 
+class PhaseOnlineStoreImageVisibilityTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+        self.preview_path = Path(tempfile.gettempdir()) / "_tmp_online_store_image_visibility_preview.csv"
+
+    def test_dry_run_reports_publish_and_unpublish_candidates_only(self):
+        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"
+        self.client.iter_products_for_online_store_image_visibility.return_value = iter([
+            {
+                "id": "gid://shopify/Product/1",
+                "title": "Needs Publish",
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/2",
+                "has_media": True,
+                "skus": ["PUB-1"],
+            },
+            {
+                "id": "gid://shopify/Product/2",
+                "title": "Needs Unpublish",
+                "published_on_publication": True,
+                "publication_id": "gid://shopify/Publication/2",
+                "has_media": False,
+                "skus": ["UNPUB-1"],
+            },
+            {
+                "id": "gid://shopify/Product/3",
+                "title": "Already Hidden",
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/2",
+                "has_media": False,
+                "skus": ["SKIP-1"],
+            },
+        ])
+
+        with mock.patch("shopify_sync.ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV", new=self.preview_path):
+            shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=True)
+
+        self.client.publish_to_publication.assert_not_called()
+        self.client.unpublish_from_publication.assert_not_called()
+        preview = self.preview_path.read_text(encoding="utf-8")
+        self.assertIn("dry_run_publish", preview)
+        self.assertIn("dry_run_unpublish", preview)
+        self.assertNotIn("Already Hidden", preview)
+
+    def test_live_run_publishes_and_unpublishes_mismatches(self):
+        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"
+        self.client.iter_products_for_online_store_image_visibility.return_value = iter([
+            {
+                "id": "gid://shopify/Product/1",
+                "title": "Needs Publish",
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/2",
+                "has_media": True,
+                "skus": ["PUB-1"],
+            },
+            {
+                "id": "gid://shopify/Product/2",
+                "title": "Needs Unpublish",
+                "published_on_publication": True,
+                "publication_id": "gid://shopify/Publication/2",
+                "has_media": False,
+                "skus": ["UNPUB-1"],
+            },
+        ])
+
+        with mock.patch("shopify_sync.ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV", new=self.preview_path):
+            shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=False)
+
+        self.client.publish_to_publication.assert_called_once_with(
+            "gid://shopify/Product/1",
+            "gid://shopify/Publication/2",
+        )
+        self.client.unpublish_from_publication.assert_called_once_with(
+            "gid://shopify/Product/2",
+            "gid://shopify/Publication/2",
+        )
+        preview = self.preview_path.read_text(encoding="utf-8")
+        self.assertIn("published", preview)
+        self.assertIn("unpublished", preview)
+
+    def test_live_run_continues_after_publish_and_unpublish_failures(self):
+        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"
+        self.client.iter_products_for_online_store_image_visibility.return_value = iter([
+            {
+                "id": "gid://shopify/Product/1",
+                "title": "Publish Failure",
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/2",
+                "has_media": True,
+                "skus": ["PUB-FAIL"],
+            },
+            {
+                "id": "gid://shopify/Product/2",
+                "title": "Unpublish Failure",
+                "published_on_publication": True,
+                "publication_id": "gid://shopify/Publication/2",
+                "has_media": False,
+                "skus": ["UNPUB-FAIL"],
+            },
+        ])
+        self.client.publish_to_publication.side_effect = RuntimeError("publish broke")
+        self.client.unpublish_from_publication.side_effect = RuntimeError("unpublish broke")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            preview_path = Path(tmp) / "preview.csv"
+            failures_path = Path(tmp) / "failures.tsv"
+            with mock.patch("shopify_sync.ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV", new=preview_path), \
+                 mock.patch("shopify_sync.HERE", new=Path(tmp)):
+                shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=False)
+
+            preview = preview_path.read_text(encoding="utf-8")
+            failures = failures_path.read_text(encoding="utf-8")
+
+        self.assertIn("publish_failed: publish broke", preview)
+        self.assertIn("unpublish_failed: unpublish broke", preview)
+        self.assertIn("image_visibility_publish\tPUB-FAIL\tPublish Failure\tpublish broke", failures)
+        self.assertIn("image_visibility_unpublish\tUNPUB-FAIL\tUnpublish Failure\tunpublish broke", failures)
+
+    def test_exports_sanitize_formula_like_titles_and_skus(self):
+        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"
+        self.client.iter_products_for_online_store_image_visibility.return_value = iter([
+            {
+                "id": "gid://shopify/Product/1",
+                "title": "=cmd",
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/2",
+                "has_media": True,
+                "skus": ["@SKU"],
+            },
+        ])
+        self.client.publish_to_publication.side_effect = RuntimeError("-boom")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            preview_path = Path(tmp) / "preview.csv"
+            failures_path = Path(tmp) / "failures.tsv"
+            with mock.patch("shopify_sync.ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV", new=preview_path), \
+                 mock.patch("shopify_sync.HERE", new=Path(tmp)):
+                shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=False)
+
+            preview = preview_path.read_text(encoding="utf-8")
+            failures = failures_path.read_text(encoding="utf-8")
+
+        self.assertIn("'=cmd", preview)
+        self.assertIn("'@SKU", preview)
+        self.assertIn("'@SKU", failures)
+        self.assertIn("'=cmd", failures)
+        self.assertIn("'-boom", failures)
+
 
 class PhaseDeleteCollectionsTests(unittest.TestCase):
     def setUp(self):
@@ -1396,7 +1672,7 @@ class PhaseDeleteCollectionsTests(unittest.TestCase):
 
         self.assertEqual(
             [call.args[0] for call in self.client.delete_collection.call_args_list],
-            ["gid://shopify/Collection/1"],
+            ["gid://shopify/Collection/1", "gid://shopify/Collection/2"],
         )
 
 
@@ -1414,34 +1690,19 @@ class CollectionClassificationTests(unittest.TestCase):
             "search_text": shopify_sync._normalize_search_text(" ".join([title, vendor, product_type, *tags, product_id])),
         }
 
-    def test_build_wayland_collection_matches_assigns_expected_buckets(self):
+    def test_build_collection_matches_assigns_expected_buckets(self):
         products = [
             self._record(
                 "gw-1",
-                "KILL TEAM: STARTER SET",
-                "Games Workshop",
-                "Generic",
-                ["Games Workshop", "Kill Team - Generic"],
-                created_at="2026-04-28T10:00:00Z",
-            ),
-            self._record(
-                "gw-2",
-                "WHITE DWARF 512",
+                "Tyranid Combat Patrol",
                 "Games Workshop",
                 "Generic",
                 ["Games Workshop"],
-                created_at="2026-04-29T10:00:00Z",
+                created_at="2026-04-28T10:00:00Z",
             ),
             self._record(
-                "mini-1",
-                "Band of Brothers Two-Player Starter Set",
-                "Warlord Games",
-                "Warlord Games",
-                ["Warlord Games"],
-            ),
-            self._record(
-                "puzzle-1",
-                "Mediterranean View Puzzle",
+                "board-1",
+                "Disney Lorcana Starter Deck",
                 "Ravensburger",
                 "Ravensburger",
                 ["Ravensburger"],
@@ -1454,36 +1715,49 @@ class CollectionClassificationTests(unittest.TestCase):
                 ["Simon & Schuster"],
             ),
         ]
+        products[0]["description"] = ""
+        products[0]["total_inventory"] = 3
+        products[0]["min_price_cents"] = 14000
+        products[0]["is_price_reduced"] = False
+        products[1]["description"] = ""
+        products[1]["total_inventory"] = 6
+        products[1]["min_price_cents"] = 1699
+        products[1]["is_price_reduced"] = False
+        products[2]["description"] = ""
+        products[2]["total_inventory"] = 0
+        products[2]["min_price_cents"] = 7000
+        products[2]["is_price_reduced"] = False
 
-        by_collection, unmatched, matches_by_product = shopify_sync.build_wayland_collection_matches(products)
+        by_collection, unmatched, desired_tags_by_product = shopify_sync.build_collection_matches(products)
 
-        self.assertEqual([item["id"] for item in by_collection["Games Workshop"]], ["gw-1", "gw-2"])
-        self.assertEqual([item["id"] for item in by_collection["Kill Team"]], ["gw-1"])
-        self.assertEqual([item["id"] for item in by_collection["White Dwarf"]], ["gw-2"])
-        self.assertIn("gw-2", [item["id"] for item in by_collection["Latest Releases"]])
-        self.assertEqual([item["id"] for item in by_collection["Miniatures Games"]], ["mini-1"])
-        self.assertEqual([item["id"] for item in by_collection["Two-Player Games"]], ["mini-1"])
-        self.assertEqual([item["id"] for item in by_collection["Getting Started"]], ["mini-1"])
-        self.assertEqual([item["id"] for item in by_collection["Jigsaws"]], ["puzzle-1"])
+        self.assertEqual(desired_tags_by_product["gw-1"], {"warhammer-40k", "tyranids", "combat-patrol", "new-release", "new-arrival"})
+        self.assertEqual([item["id"] for item in by_collection["Warhammer 40,000"]], ["gw-1"])
+        self.assertEqual([item["id"] for item in by_collection["Tyranids"]], ["gw-1"])
+        self.assertEqual([item["id"] for item in by_collection["Combat Patrols"]], ["gw-1"])
+        self.assertEqual([item["id"] for item in by_collection["Disney Lorcana"]], ["board-1"])
+        self.assertEqual([item["id"] for item in by_collection["Ravensburger"]], ["board-1"])
         self.assertEqual([item["id"] for item in unmatched], ["book-1"])
-        self.assertIn("Games Workshop", matches_by_product["gw-1"])
 
 
 class PhaseGenerateCollectionsTests(unittest.TestCase):
     def setUp(self):
         self.client = mock.Mock()
 
-    def test_dry_run_writes_preview_only(self):
+    def test_dry_run_is_rejected(self):
         products = [
             {
                 "id": "gw-1",
-                "title": "KILL TEAM: STARTER SET",
+                "title": "Tyranid Combat Patrol",
                 "vendor": "Games Workshop",
                 "product_type": "Generic",
-                "tags": ["Games Workshop", "Kill Team - Generic"],
+                "tags": ["Games Workshop"],
                 "created_at": "2026-04-29T10:00:00Z",
+                "description": "",
+                "total_inventory": 2,
+                "min_price_cents": 14000,
+                "is_price_reduced": False,
                 "skus": ["gw-1"],
-                "search_text": shopify_sync._normalize_search_text("KILL TEAM: STARTER SET Games Workshop Generic Kill Team - Generic"),
+                "search_text": shopify_sync._normalize_search_text("Tyranid Combat Patrol Games Workshop Generic"),
             }
         ]
         self.client.iter_existing_for_collection_generation.return_value = iter(products)
@@ -1492,47 +1766,53 @@ class PhaseGenerateCollectionsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              mock.patch("shopify_sync.COLLECTION_GENERATION_PREVIEW_CSV", new=Path(tmp) / "preview.csv"), \
              mock.patch("shopify_sync.COLLECTION_GENERATION_UNMATCHED_CSV", new=Path(tmp) / "unmatched.csv"):
-            shopify_sync.phase_generate_collections(self.client, dry=True)
+            with self.assertRaisesRegex(RuntimeError, "cannot be used with --dry-run"):
+                shopify_sync.phase_generate_collections(self.client, dry=True)
 
         self.client.create_smart_collection.assert_not_called()
         self.client.update_product_tags.assert_not_called()
 
-    def test_live_run_retags_products_and_upserts_smart_collections(self):
+    def test_live_run_rebuilds_taxonomy_and_sets_images(self):
         products = [
             {
                 "id": "gw-1",
-                "title": "WHITE DWARF 512",
+                "title": "Tyranid Combat Patrol",
                 "vendor": "Games Workshop",
                 "product_type": "Generic",
-                "tags": ["Games Workshop"],
+                "tags": ["Games Workshop", "AUTO_COLLECTION::games-workshop", "Warhammer 40K", "keep-me"],
                 "created_at": "2026-04-29T10:00:00Z",
+                "description": "",
+                "total_inventory": 2,
+                "min_price_cents": 14000,
+                "is_price_reduced": False,
                 "skus": ["gw-1"],
-                "search_text": shopify_sync._normalize_search_text("WHITE DWARF 512 Games Workshop Generic"),
+                "search_text": shopify_sync._normalize_search_text("Tyranid Combat Patrol Games Workshop Generic"),
             }
         ]
         self.client.iter_existing_for_collection_generation.return_value = iter(products)
         self.client.iter_all_collections.return_value = iter([
             {
                 "id": "gid://shopify/Collection/1",
-                "title": "Games Workshop",
-                "handle": "games-workshop",
+                "title": "Legacy",
+                "handle": "legacy",
                 "products_count": 1,
                 "collection_type": "smart",
-                "rules": [
-                    {
-                        "column": "TAG",
-                        "relation": "EQUALS",
-                        "condition": "AUTO_COLLECTION::games-workshop",
-                    }
-                ],
+                "rules": [],
             }
         ])
-        self.client.create_smart_collection.side_effect = lambda title, handle, tag: {
+        self.client.create_smart_collection.side_effect = lambda title, handle, rules, **kwargs: {
             "id": f"gid://shopify/Collection/{handle}",
             "title": title,
             "handle": handle,
         }
         self.client.publish_to_all_channels.return_value = 2
+        self.client.find_first_alphabetical_product_with_image.return_value = {
+            "product_id": "gid://shopify/Product/100",
+            "product_title": "Tyranid Combat Patrol",
+            "image_url": "https://cdn.shopify.com/tyranid.jpg",
+            "image_alt": "",
+        }
+        self.client.get_collection_image.return_value = {"url": "", "alt_text": ""}
 
         with tempfile.TemporaryDirectory() as tmp, \
              mock.patch("shopify_sync.COLLECTION_GENERATION_PREVIEW_CSV", new=Path(tmp) / "preview.csv"), \
@@ -1541,57 +1821,59 @@ class PhaseGenerateCollectionsTests(unittest.TestCase):
 
         self.client.update_product_tags.assert_called_once_with(
             "gw-1",
-            ["AUTO_COLLECTION::games-workshop", "AUTO_COLLECTION::latest-releases", "AUTO_COLLECTION::white-dwarf", "Games Workshop"],
+            ["combat-patrol", "keep-me", "new-release", "tyranids", "warhammer-40k"],
         )
-        self.client.update_smart_collection.assert_called_once_with(
-            "gid://shopify/Collection/1",
-            "Games Workshop",
-            "games-workshop",
-            "AUTO_COLLECTION::games-workshop",
+        self.client.delete_collection.assert_called_once_with("gid://shopify/Collection/1")
+        self.assertFalse(self.client.update_smart_collection.called)
+        self.client.update_collection_image.assert_any_call(
+            "gid://shopify/Collection/warhammer-40k",
+            "https://cdn.shopify.com/tyranid.jpg",
+            alt_text="Warhammer 40,000",
         )
-        self.assertEqual(self.client.publish_to_all_channels.call_count, len(shopify_sync.WAYLAND_COLLECTION_SPECS))
         created_titles = {call.args[0] for call in self.client.create_smart_collection.call_args_list}
-        self.assertIn("White Dwarf", created_titles)
-        self.assertIn("Latest Releases", created_titles)
+        self.assertIn("Warhammer 40,000", created_titles)
+        self.assertIn("Tyranids", created_titles)
+        self.assertIn("Combat Patrols", created_titles)
+        self.assertIn("Latest releases", created_titles)
+        self.assertIn("Games Workshop", created_titles)
 
-    def test_live_run_refuses_to_overwrite_unmanaged_smart_collection(self):
+    def test_live_run_skips_empty_and_manual_collections(self):
         products = [
             {
-                "id": "gw-1",
-                "title": "WHITE DWARF 512",
-                "vendor": "Games Workshop",
-                "product_type": "Generic",
-                "tags": ["Games Workshop"],
-                "created_at": "2026-04-29T10:00:00Z",
-                "skus": ["gw-1"],
-                "search_text": shopify_sync._normalize_search_text("WHITE DWARF 512 Games Workshop Generic"),
+                "id": "board-1",
+                "title": "Disney Lorcana Starter Deck",
+                "vendor": "Ravensburger",
+                "product_type": "Card Game",
+                "tags": ["Ravensburger"],
+                "created_at": "2026-02-01T10:00:00Z",
+                "description": "",
+                "total_inventory": 1,
+                "min_price_cents": 1699,
+                "is_price_reduced": False,
+                "skus": ["board-1"],
+                "search_text": shopify_sync._normalize_search_text("Disney Lorcana Starter Deck Ravensburger Card Game"),
             }
         ]
         self.client.iter_existing_for_collection_generation.return_value = iter(products)
-        self.client.iter_all_collections.return_value = iter([
-            {
-                "id": "gid://shopify/Collection/1",
-                "title": "Games Workshop",
-                "handle": "games-workshop",
-                "products_count": 1,
-                "collection_type": "smart",
-                "rules": [
-                    {
-                        "column": "TITLE",
-                        "relation": "CONTAINS",
-                        "condition": "Workshop",
-                    }
-                ],
-            }
-        ])
+        self.client.iter_all_collections.return_value = iter([])
+        self.client.create_smart_collection.side_effect = lambda title, handle, rules, **kwargs: {
+            "id": f"gid://shopify/Collection/{handle}",
+            "title": title,
+            "handle": handle,
+        }
+        self.client.publish_to_all_channels.return_value = 1
+        self.client.find_first_alphabetical_product_with_image.return_value = {}
 
         with tempfile.TemporaryDirectory() as tmp, \
              mock.patch("shopify_sync.COLLECTION_GENERATION_PREVIEW_CSV", new=Path(tmp) / "preview.csv"), \
              mock.patch("shopify_sync.COLLECTION_GENERATION_UNMATCHED_CSV", new=Path(tmp) / "unmatched.csv"):
-            with self.assertRaisesRegex(RuntimeError, "not managed by this script"):
-                shopify_sync.phase_generate_collections(self.client, dry=False)
+            shopify_sync.phase_generate_collections(self.client, dry=False)
 
-        self.client.update_smart_collection.assert_not_called()
+        created_titles = {call.args[0] for call in self.client.create_smart_collection.call_args_list}
+        self.assertIn("Disney Lorcana", created_titles)
+        self.assertIn("Ravensburger", created_titles)
+        self.assertNotIn("Warhammer 40,000", created_titles)
+        self.assertNotIn("Bestsellers", created_titles)
 
 
 class PhotoAssetMatchingTests(unittest.TestCase):
