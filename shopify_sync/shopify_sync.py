@@ -152,6 +152,10 @@ LATEST_GW_RELEASE_LIMIT = 60
 AUTO_COLLECTION_TAG_PREFIX = "AUTO_COLLECTION::"
 ONLINE_STORE_PUBLICATION_NAME = "Online Store"
 PHOTO_SOURCE_SEARCH_URL = "https://html.duckduckgo.com/html/"
+PHOTO_SOURCE_SEARCH_URLS = (
+    "https://html.duckduckgo.com/html/",
+    "https://lite.duckduckgo.com/lite/",
+)
 PHOTO_SOURCE_MAX_RESULT_URLS = 8
 PHOTO_SOURCE_MAX_CANDIDATE_PAGES = 5
 PHOTO_SOURCE_MAX_IMAGE_DOWNLOADS = 3
@@ -163,6 +167,7 @@ PHOTO_SOURCE_AMBIGUOUS_THRESHOLD = 70
 PHOTO_SOURCE_MARGIN_THRESHOLD = 15
 PHOTO_SOURCE_USER_AGENT = "Mozilla/5.0 (compatible; FoxfablePhotoSource/1.0; +https://foxfable.co.uk)"
 PHOTO_SOURCE_DUPLICATE_SKU_REASON = "multiple Shopify products share this SKU"
+PHOTO_SOURCE_SUPPLIER_ROOTS_ENV = "PHOTO_SOURCE_SUPPLIER_ROOTS"
 PHOTO_SOURCE_BANNED_DOMAIN_FRAGMENTS = (
     "facebook.com",
     "instagram.com",
@@ -200,6 +205,19 @@ PHOTO_SOURCE_GENERIC_PAGE_MARKERS = (
     "guide",
     "news",
     "search",
+)
+BOOK_PHOTO_SOURCE_VENDORS = {
+    "penguin",
+    "penguin books",
+    "scholastic",
+    "simon & schuster",
+    "scribneruk",
+    "viz media",
+    "walker books",
+}
+AMAZON_PHOTO_SOURCE_URLS = (
+    "https://www.amazon.co.uk/dp/{asin}",
+    "https://www.amazon.com/dp/{asin}",
 )
 FALLBACK_IMAGE_METAFIELD_NAMESPACE = "$app"
 FALLBACK_IMAGE_METAFIELD_KEY = "fallback_image_used"
@@ -655,7 +673,7 @@ def load_env() -> dict[str, str]:
                 continue
             k, v = line.split("=", 1)
             env[k.strip()] = v.strip().strip('"').strip("'")
-    for k in ("SHOPIFY_STORE", "SHOPIFY_TOKEN", "SHOPIFY_LOCATION"):
+    for k in ("SHOPIFY_STORE", "SHOPIFY_TOKEN", "SHOPIFY_LOCATION", PHOTO_SOURCE_SUPPLIER_ROOTS_ENV):
         if os.environ.get(k):
             env[k] = os.environ[k]
     return env
@@ -1245,6 +1263,9 @@ def build_photo_source_query(product: Product) -> str:
     parts = [product.sku, product.title, product.vendor]
     if product.barcode:
         parts.append(product.barcode)
+    asin = extract_product_asin(product)
+    if asin:
+        parts.append(asin)
     return " ".join(part for part in parts if part).strip()
 
 
@@ -1305,6 +1326,22 @@ def fetch_url_with_retries(
     raise RuntimeError(f"Failed to fetch {url}")
 
 
+def fetch_json_with_retries(
+    session: requests.Session,
+    url: str,
+    *,
+    timeout: int,
+) -> dict[str, Any]:
+    response = fetch_url_with_retries(session, url, timeout=timeout)
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid JSON while fetching {url}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Expected JSON object while fetching {url}")
+    return payload
+
+
 def parse_photo_source_html(html: str) -> _PhotoSourceHTMLParser:
     parser = _PhotoSourceHTMLParser()
     parser.feed(html)
@@ -1344,21 +1381,61 @@ def photo_source_vendor_tokens(product: Product) -> list[str]:
     return [token for token in re.findall(r"[a-z0-9]+", (product.vendor or "").lower()) if len(token) >= 3]
 
 
-def photo_source_has_sku_evidence(sku: str, raw_text: str, normalized_text: str) -> bool:
-    raw_sku = (sku or "").strip().lower()
-    if not raw_sku:
+def _photo_source_identifier_matches(identifier: str, raw_text: str, normalized_text: str) -> bool:
+    normalized_identifier = (identifier or "").strip().lower()
+    if not normalized_identifier:
         return False
-    escaped = re.escape(raw_sku)
+    escaped = re.escape(normalized_identifier)
     if re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", (raw_text or "").lower()):
         return True
-    normalized_sku = " ".join(re.findall(r"[a-z0-9]+", raw_sku))
-    return bool(normalized_sku) and f" {normalized_sku} " in normalized_text
+    compact = " ".join(re.findall(r"[a-z0-9]+", normalized_identifier))
+    return bool(compact) and f" {compact} " in normalized_text
+
+
+def _normalize_isbn_candidate(value: str) -> str:
+    compact = re.sub(r"[^0-9xX]+", "", value or "").upper()
+    if len(compact) == 10 and re.fullmatch(r"[0-9]{9}[0-9X]", compact):
+        return compact
+    if len(compact) == 13 and compact.isdigit():
+        return compact
+    return ""
+
+
+def product_isbn_candidates(product: Product) -> list[str]:
+    candidates: list[str] = []
+    for raw in (product.barcode, product.sku):
+        normalized = _normalize_isbn_candidate(raw)
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+    return candidates
+
+
+def extract_product_asin(product: Product) -> str:
+    tag_sources = list(product.tags)
+    if product.description_html:
+        tag_sources.append(re.sub(r"<[^>]+>", " ", product.description_html))
+    for source in tag_sources:
+        match = re.search(r"\bASIN:\s*([A-Z0-9]{10})\b", source or "", flags=re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+    return ""
+
+
+def photo_source_identifier_reasons(product: Product, raw_text: str, normalized_text: str) -> list[str]:
+    reasons: list[str] = []
+    if _photo_source_identifier_matches(product.sku, raw_text, normalized_text):
+        reasons.append("sku")
+    if product.barcode and _photo_source_identifier_matches(product.barcode, raw_text, normalized_text):
+        reasons.append("barcode")
+    asin = extract_product_asin(product)
+    if asin and _photo_source_identifier_matches(asin, raw_text, normalized_text):
+        reasons.append("asin")
+    return reasons
 
 
 def photo_source_detail_signals(raw_text: str, search_text: str, product: Product) -> list[str]:
     signals: list[str] = []
-    if photo_source_has_sku_evidence(product.sku, raw_text, search_text):
-        signals.append("sku")
+    signals.extend(photo_source_identifier_reasons(product, raw_text, search_text))
     title_tokens = photo_source_title_tokens(product)
     if title_tokens and sum(1 for token in title_tokens if f" {token} " in search_text) >= min(2, len(title_tokens)):
         signals.append("title")
@@ -1386,9 +1463,10 @@ def score_photo_source_candidate(
         return None
     score = 0
     reasons: list[str] = []
-    if photo_source_has_sku_evidence(product.sku, raw_text, search_text):
+    identifier_reasons = photo_source_identifier_reasons(product, raw_text, search_text)
+    if identifier_reasons:
         score += 55
-        reasons.append("sku")
+        reasons.extend(identifier_reasons)
     title_tokens = photo_source_title_tokens(product)
     title_hits = sum(1 for token in title_tokens if f" {token} " in search_text)
     if title_hits >= max(2, min(4, len(title_tokens))):
@@ -1468,6 +1546,183 @@ def choose_photo_source_winner(candidates: list[PhotoSourceCandidate]) -> tuple[
     if top.score >= PHOTO_SOURCE_AMBIGUOUS_THRESHOLD:
         return "ambiguous", None, f"top-vs-runner-up margin {margin} is below {PHOTO_SOURCE_MARGIN_THRESHOLD}"
     return "missing", None, f"no candidate reached {PHOTO_SOURCE_AMBIGUOUS_THRESHOLD}"
+
+
+def photo_source_is_book_product(product: Product) -> bool:
+    vendor = normalize_text(product.vendor).lower()
+    return vendor in BOOK_PHOTO_SOURCE_VENDORS
+
+
+def _build_direct_photo_source_candidate(
+    product: Product,
+    *,
+    page_url: str,
+    image_url: str,
+    score: int,
+    reasons: list[str],
+    page_title: str = "",
+    image_alt: str = "",
+) -> PhotoSourceCandidate:
+    unique_reasons: list[str] = []
+    for reason in reasons:
+        if reason not in unique_reasons:
+            unique_reasons.append(reason)
+    return PhotoSourceCandidate(
+        page_url=page_url,
+        image_url=image_url,
+        page_title=page_title or product.title,
+        image_alt=image_alt or product.title,
+        score=score,
+        reasons=unique_reasons,
+        detail_signals=unique_reasons,
+    )
+
+
+def _preferred_google_books_image(image_links: dict[str, Any]) -> str:
+    for key in ("extraLarge", "large", "medium", "thumbnail", "smallThumbnail", "small"):
+        value = image_links.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.replace("http://", "https://")
+    return ""
+
+
+def fetch_book_photo_source_candidates(
+    session: requests.Session,
+    product: Product,
+) -> tuple[list[PhotoSourceCandidate], int, list[str]]:
+    candidates: list[PhotoSourceCandidate] = []
+    errors: list[str] = []
+    successes = 0
+    for isbn in product_isbn_candidates(product):
+        cover_url = f"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false"
+        try:
+            fetch_url_with_retries(session, cover_url, timeout=PHOTO_SOURCE_IMAGE_TIMEOUT_SECONDS, binary=True)
+            successes += 1
+            candidates.append(_build_direct_photo_source_candidate(
+                product,
+                page_url=cover_url,
+                image_url=cover_url,
+                score=100,
+                reasons=["barcode", "openlibrary"] if isbn == product.barcode else ["sku", "openlibrary"],
+                page_title=f"Open Library ISBN {isbn}",
+            ))
+        except Exception as exc:
+            errors.append(str(exc))
+
+        google_url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{quote_plus(isbn)}"
+        try:
+            payload = fetch_json_with_retries(session, google_url, timeout=PHOTO_SOURCE_HTML_TIMEOUT_SECONDS)
+            successes += 1
+            for item in payload.get("items") or []:
+                if not isinstance(item, dict):
+                    continue
+                volume_info = item.get("volumeInfo") or {}
+                if not isinstance(volume_info, dict):
+                    continue
+                image_url = _preferred_google_books_image(volume_info.get("imageLinks") or {})
+                if not image_url:
+                    continue
+                candidates.append(_build_direct_photo_source_candidate(
+                    product,
+                    page_url=(item.get("selfLink") or google_url),
+                    image_url=image_url,
+                    score=95,
+                    reasons=["barcode", "google_books"] if isbn == product.barcode else ["sku", "google_books"],
+                    page_title=volume_info.get("title") or product.title,
+                ))
+                break
+        except Exception as exc:
+            errors.append(str(exc))
+    return candidates, successes, errors
+
+
+def fetch_direct_page_photo_source_candidates(
+    session: requests.Session,
+    product: Product,
+    page_url: str,
+) -> tuple[list[PhotoSourceCandidate], int, list[str]]:
+    try:
+        response = fetch_url_with_retries(session, page_url, timeout=PHOTO_SOURCE_HTML_TIMEOUT_SECONDS)
+    except Exception as exc:
+        return [], 0, [str(exc)]
+    return extract_photo_source_candidates(product, page_url, response.text), 1, []
+
+
+def fetch_amazon_photo_source_candidates(
+    session: requests.Session,
+    product: Product,
+) -> tuple[list[PhotoSourceCandidate], int, list[str]]:
+    asin = extract_product_asin(product)
+    if not asin:
+        return [], 0, []
+    candidates: list[PhotoSourceCandidate] = []
+    errors: list[str] = []
+    successes = 0
+    for template in AMAZON_PHOTO_SOURCE_URLS:
+        page_candidates, page_successes, page_errors = fetch_direct_page_photo_source_candidates(
+            session,
+            product,
+            template.format(asin=asin),
+        )
+        candidates.extend(page_candidates)
+        successes += page_successes
+        errors.extend(page_errors)
+        if candidates:
+            break
+    return candidates, successes, errors
+
+
+def fetch_photo_source_search_results(
+    session: requests.Session,
+    query: str,
+) -> tuple[list[PhotoSourceSearchResult], int, list[str]]:
+    errors: list[str] = []
+    successes = 0
+    for search_base in PHOTO_SOURCE_SEARCH_URLS:
+        search_url = f"{search_base}?q={quote_plus(query)}"
+        try:
+            search_response = fetch_url_with_retries(
+                session,
+                search_url,
+                timeout=PHOTO_SOURCE_HTML_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            errors.append(str(exc))
+            continue
+        successes += 1
+        results = extract_photo_source_search_results(search_response.text)
+        if results:
+            return results, successes, errors
+    return [], successes, errors
+
+
+def fetch_search_page_photo_source_candidates(
+    session: requests.Session,
+    product: Product,
+    query: str,
+) -> tuple[list[PhotoSourceCandidate], int, list[str]]:
+    candidates: list[PhotoSourceCandidate] = []
+    errors: list[str] = []
+    successes = 0
+    result_urls, search_successes, search_errors = fetch_photo_source_search_results(session, query)
+    successes += search_successes
+    errors.extend(search_errors)
+    for result in result_urls[:PHOTO_SOURCE_MAX_CANDIDATE_PAGES]:
+        if not is_allowed_photo_source_url(result.url):
+            continue
+        try:
+            page_response = fetch_url_with_retries(
+                session,
+                result.url,
+                timeout=PHOTO_SOURCE_HTML_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            errors.append(str(exc))
+            continue
+        successes += 1
+        candidates.extend(extract_photo_source_candidates(product, result.url, page_response.text))
+    candidates.sort(key=lambda item: (-item.score, item.image_url))
+    return candidates, successes, errors
 
 
 def stable_photo_source_dirname(product: Product) -> str:
@@ -1559,6 +1814,60 @@ def display_path(path: Path) -> str:
         return str(path.relative_to(HERE))
     except ValueError:
         return str(path)
+
+
+def photo_source_supplier_roots() -> list[Path]:
+    raw = load_env().get(PHOTO_SOURCE_SUPPLIER_ROOTS_ENV, "").strip()
+    if not raw:
+        return []
+    normalized = raw.replace(os.pathsep, "\n")
+    roots: list[Path] = []
+    for chunk in re.split(r"[\n,]+", normalized):
+        value = chunk.strip()
+        if not value:
+            continue
+        roots.append(Path(value).expanduser())
+    return roots
+
+
+def build_photo_source_supplier_indexes(
+    roots: list[Path],
+) -> tuple[dict[str, list[PhotoAssetSet]], dict[str, list[PhotoAssetSet]]]:
+    combined: list[PhotoAssetSet] = []
+    for root in roots:
+        if not root.exists() or not root.is_dir():
+            log(f"PHOTO SOURCE skipping missing supplier root: {root}")
+            continue
+        try:
+            combined.extend(discover_photo_asset_sets(root))
+        except RuntimeError as exc:
+            log(f"PHOTO SOURCE skipping empty supplier root {root}: {exc}")
+    if not combined:
+        return {}, {}
+    return build_photo_indexes(combined)
+
+
+def stage_photo_source_local_asset_set(
+    asset_set: PhotoAssetSet,
+    current_root: Path,
+    pack_name: str,
+    metadata: dict[str, Any],
+) -> None:
+    current_root.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=current_root.parent) as tmp:
+        temp_root = Path(tmp)
+        pack_dir = temp_root / pack_name
+        pack_dir.mkdir(parents=True, exist_ok=True)
+        copied_files: list[str] = []
+        for image_path in asset_set.image_paths:
+            target = pack_dir / image_path.name
+            shutil.copy2(image_path, target)
+            copied_files.append(target.name)
+        metadata = dict(metadata)
+        metadata["copied_files"] = copied_files
+        metadata["source_label"] = asset_set.label
+        (pack_dir / "_source.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
+        publish_photo_source_pack(pack_dir, current_root, pack_name)
 
 
 def resolve_photo_asset(
@@ -4275,6 +4584,7 @@ def phase_photo_source_web_all(
 ) -> None:
     log("=== PHOTO SOURCE phase: discovering zero-media catalog products and staging web winners ===")
     manifest = load_photo_manifest(manifest_path)
+    supplier_by_code, supplier_by_slug = build_photo_source_supplier_indexes(photo_source_supplier_roots())
     session = getattr(client, "session", None)
     if session is None:
         session = requests.Session()
@@ -4336,34 +4646,120 @@ def phase_photo_source_web_all(
             ))
             continue
 
+        supplier_note = ""
+        if supplier_by_code or supplier_by_slug:
+            action, match_type, asset_set, reason = resolve_photo_asset(product, supplier_by_code, supplier_by_slug)
+            if action == "replace" and asset_set is not None:
+                staged_dir_display = display_path(current_root / pack_name)
+                if not dry:
+                    update_and_save_photo_manifest_entry(
+                        manifest,
+                        manifest_path,
+                        sku=product.sku,
+                        state="staging_local",
+                        query=query,
+                        top_score=100,
+                        winner_page_url=f"supplier://{match_type}",
+                        winner_image_url=asset_set.image_paths[0].name if asset_set.image_paths else "",
+                        winner_reasons=["supplier_local", match_type],
+                        staged_dir=staged_dir_display,
+                        manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                    )
+                    stage_photo_source_local_asset_set(
+                        asset_set,
+                        current_root,
+                        pack_name,
+                        {
+                            "sku": product.sku,
+                            "title": product.title,
+                            "query": query,
+                            "score": 100,
+                            "source": "supplier-local",
+                            "match_type": match_type,
+                            "source_root": str(asset_set.image_paths[0].parent if asset_set.image_paths else ""),
+                            "reasons": ["supplier_local", match_type],
+                        },
+                    )
+                    update_and_save_photo_manifest_entry(
+                        manifest,
+                        manifest_path,
+                        sku=product.sku,
+                        state="completed",
+                        query=query,
+                        top_score=100,
+                        winner_page_url=f"supplier://{match_type}",
+                        winner_image_url=asset_set.image_paths[0].name if asset_set.image_paths else "",
+                        winner_reasons=["supplier_local", match_type],
+                        staged_dir=staged_dir_display,
+                        manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                        reason="",
+                    )
+                preview_rows.append(build_photo_source_preview_row(
+                    product,
+                    status="winner",
+                    query=query,
+                    top_score=100,
+                    winner=_build_direct_photo_source_candidate(
+                        product,
+                        page_url=f"supplier://{match_type}",
+                        image_url=asset_set.image_paths[0].name if asset_set.image_paths else "",
+                        score=100,
+                        reasons=["supplier_local", match_type],
+                    ),
+                    staged_dir=staged_dir_display if not dry else "",
+                ))
+                continue
+            if reason:
+                supplier_note = reason
+
         try:
-            search_url = f"{PHOTO_SOURCE_SEARCH_URL}?q={quote_plus(query)}"
-            search_response = fetch_url_with_retries(
-                session,
-                search_url,
-                timeout=PHOTO_SOURCE_HTML_TIMEOUT_SECONDS,
-            )
-            result_urls = extract_photo_source_search_results(search_response.text)
             candidates: list[PhotoSourceCandidate] = []
-            for result in result_urls[:PHOTO_SOURCE_MAX_CANDIDATE_PAGES]:
-                if not is_allowed_photo_source_url(result.url):
-                    continue
-                page_response = fetch_url_with_retries(
-                    session,
-                    result.url,
-                    timeout=PHOTO_SOURCE_HTML_TIMEOUT_SECONDS,
-                )
-                candidates.extend(extract_photo_source_candidates(product, result.url, page_response.text))
+            provider_errors: list[str] = []
+            provider_successes = 0
+
+            if photo_source_is_book_product(product):
+                book_candidates, successes, errors = fetch_book_photo_source_candidates(session, product)
+                candidates.extend(book_candidates)
+                provider_successes += successes
+                provider_errors.extend(errors)
+
+            amazon_candidates, successes, errors = fetch_amazon_photo_source_candidates(session, product)
+            candidates.extend(amazon_candidates)
+            provider_successes += successes
+            provider_errors.extend(errors)
+
+            if not any(candidate.score >= PHOTO_SOURCE_WINNER_THRESHOLD for candidate in candidates):
+                search_candidates, successes, errors = fetch_search_page_photo_source_candidates(session, product, query)
+                candidates.extend(search_candidates)
+                provider_successes += successes
+                provider_errors.extend(errors)
+
             candidates.sort(key=lambda item: (-item.score, item.image_url))
+            if not candidates and provider_successes == 0 and provider_errors:
+                detail = supplier_note or " | ".join(provider_errors[:3])
+                record_photo_source_non_winner(
+                    product,
+                    status="failed",
+                    query=query,
+                    top_score=0,
+                    reason=detail,
+                    preview_rows=preview_rows,
+                    log_rows=failure_rows,
+                    dry=dry,
+                    manifest=manifest,
+                    manifest_path=manifest_path,
+                )
+                continue
             outcome, winner, reason = choose_photo_source_winner(candidates)
             top_score = candidates[0].score if candidates else 0
             if outcome == "missing":
+                detail = reason if not supplier_note else f"{reason}; supplier: {supplier_note}"
                 record_photo_source_non_winner(
                     product,
                     status="missing",
                     query=query,
                     top_score=top_score,
-                    reason=reason,
+                    reason=detail,
                     preview_rows=preview_rows,
                     log_rows=missing_rows,
                     dry=dry,
@@ -4372,12 +4768,13 @@ def phase_photo_source_web_all(
                 )
                 continue
             if outcome == "ambiguous":
+                detail = reason if not supplier_note else f"{reason}; supplier: {supplier_note}"
                 record_photo_source_non_winner(
                     product,
                     status="ambiguous",
                     query=query,
                     top_score=top_score,
-                    reason=reason,
+                    reason=detail,
                     preview_rows=preview_rows,
                     log_rows=ambiguous_rows,
                     dry=dry,
@@ -4402,8 +4799,8 @@ def phase_photo_source_web_all(
                     staged_dir=staged_dir_display,
                     manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
                 )
-                PHOTO_SOURCE_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-                with tempfile.TemporaryDirectory(dir=PHOTO_SOURCE_CACHE_ROOT) as tmp:
+                current_root.parent.mkdir(parents=True, exist_ok=True)
+                with tempfile.TemporaryDirectory(dir=current_root.parent) as tmp:
                     temp_root = Path(tmp)
                     pack_dir = temp_root / pack_name
                     pack_dir.mkdir(parents=True, exist_ok=True)

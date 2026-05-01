@@ -2705,6 +2705,110 @@ class PhotoSourcePhaseTests(unittest.TestCase):
         self.assertEqual(self.client.session.headers["X-Shopify-Access-Token"], "secret-token")
         self.assertTrue(self.client.session.headers.get("User-Agent"))
 
+    def test_photo_source_web_all_uses_open_library_for_book_vendors_before_search(self):
+        book = shopify_sync.Product(
+            title="A Great Book",
+            sku="9781234567890",
+            barcode="9781234567890",
+            vendor="Simon & Schuster",
+            source="INV",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = book.sku
+        existing["title"] = book.title
+        existing["vendor"] = book.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+        self.client.session.get.side_effect = [
+            FakeResponse(content=b"cover-bytes", headers={"Content-Type": "image/jpeg"}),
+            FakeResponse(payload={"items": []}),
+            FakeResponse(content=b"cover-bytes", headers={"Content-Type": "image/jpeg"}),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache_root = root / "photo_source_cache" / "current"
+            manifest_path = root / "photo_source_manifest.json"
+            with self._patched_photo_source_outputs(root):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [book],
+                    dry=False,
+                    manifest_path=manifest_path,
+                    cache_root=cache_root,
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            staged_dir = cache_root / "9781234567890-a-great-book"
+            self.assertIn("openlibrary", preview)
+            self.assertEqual(manifest[book.sku]["state"], "completed")
+            self.assertTrue(staged_dir.exists())
+
+        self.assertEqual(self.client.session.get.call_count, 3)
+
+    def test_photo_source_web_all_stages_supplier_folder_matches_without_network(self):
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            supplier_root = root / "supplier"
+            pack = supplier_root / "PKM-001-Pokemon-Booster-Box"
+            pack.mkdir(parents=True)
+            (pack / "01.jpg").write_bytes(b"supplier-image")
+            cache_root = root / "photo_source_cache" / "current"
+            manifest_path = root / "photo_source_manifest.json"
+
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.load_env", return_value={shopify_sync.PHOTO_SOURCE_SUPPLIER_ROOTS_ENV: str(supplier_root)}):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [self.product],
+                    dry=False,
+                    manifest_path=manifest_path,
+                    cache_root=cache_root,
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            staged_dir = cache_root / "PKM-001-pokemon-booster-box"
+            self.assertIn("supplier_local", preview)
+            self.assertEqual(manifest[self.product.sku]["state"], "completed")
+            self.assertTrue((staged_dir / "01.jpg").exists())
+
+        self.client.session.get.assert_not_called()
+
+    def test_photo_source_web_all_falls_back_to_lite_search_when_html_search_is_blocked(self):
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+        search_html = '<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'
+        candidate_html = """
+        <html><head>
+          <title>PKM-001 Pokemon Booster Box</title>
+          <meta property="og:image" content="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg">
+        </head><body>
+          <div>Pokemon Booster Box</div><div>SKU PKM-001</div><div>Add to cart</div>
+        </body></html>
+        """
+        self.client.session.get.side_effect = [
+            FakeResponse(status_code=403),
+            FakeResponse(text=search_html),
+            FakeResponse(text=candidate_html),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self._patched_photo_source_outputs(root):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [self.product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+
+        self.assertIn("winner", preview)
+        self.assertEqual(self.client.session.get.call_count, 3)
+
     def test_photo_source_candidate_rejects_adjacent_sku_false_positive(self):
         candidate = shopify_sync.score_photo_source_candidate(
             self.product,

@@ -155,9 +155,12 @@ This sourcing-first lane looks for products that currently have **no Shopify med
 
 MVP sourcing behavior:
 
+- If `PHOTO_SOURCE_SUPPLIER_ROOTS` is set in `.env`, the lane tries those local supplier folders first and stages exact/fallback matches without hitting the web.
+- Book-heavy vendors such as Penguin, Simon & Schuster, Scholastic, ScribnerUK, VIZ Media, and Walker Books now try ISBN-based cover sources before generic search.
+- Non-book inventory with `ASIN: ...` tags now tries direct Amazon product pages before generic search.
 - The scan only considers products that exist in both the local catalog sheets and Shopify, and only when Shopify reports zero media for that SKU.
 - Winners stage under `photo_source_cache/current/<SKU>-<title-slug>/...`.
-- Sourcing is fail-closed: low-confidence or near-tied candidates are reported, not staged.
+- Sourcing is fail-closed: low-confidence or near-tied candidates are reported, not staged, and one blocked search provider does not abort the whole SKU if other providers still succeed.
 - The sourcing lane writes separate provenance state in `photo_source_manifest.json`; it does not reuse `photo_sync_manifest.json`.
 - AI generation/transformation is not part of this MVP source-selection step.
 

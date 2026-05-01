@@ -1,0 +1,1858 @@
+{
+  "52170206002": {
+    "manifest_version": 1,
+    "query": "52170206002 AOS SKAVEN + PAINT SET ENG/SPA/PORT/LAT Games Workshop 5011921260195",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=52170206002+AOS+SKAVEN+%2B+PAINT+SET+ENG%2FSPA%2FPORT%2FLAT+Games+Workshop+5011921260195: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=52170206002+AOS+SKAVEN+%2B+PAINT+SET+ENG%2FSPA%2FPORT%2FLAT+Games+Workshop+5011921260195 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=52170206002+AOS+SKAVEN+%2B+PAINT+SET+ENG%2FSPA%2FPORT%2FLAT+Games+Workshop+5011921260195: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=52170206002+AOS+SKAVEN+%2B+PAINT+SET+ENG%2FSPA%2FPORT%2FLAT+Games+Workshop+5011921260195 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:15:06Z"
+  },
+  "52170218004": {
+    "manifest_version": 1,
+    "query": "52170218004 AOS S/E + PAINT SET ENG/SPA/PORT/LATV/RM Games Workshop 5011921260157",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=52170218004+AOS+S%2FE+%2B+PAINT+SET+ENG%2FSPA%2FPORT%2FLATV%2FRM+Games+Workshop+5011921260157: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=52170218004+AOS+S%2FE+%2B+PAINT+SET+ENG%2FSPA%2FPORT%2FLATV%2FRM+Games+Workshop+5011921260157 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10da840d0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=52170218004+AOS+S%2FE+%2B+PAINT+SET+ENG%2FSPA%2FPORT%2FLATV%2FRM+Games+Workshop+5011921260157: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=52170218004+AOS+S%2FE+%2B+PAINT+SET+ENG%2FSPA%2FPORT%2FLATV%2FRM+Games+Workshop+5011921260157 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dfa67f0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:59:40Z"
+  },
+  "52170299004": {
+    "manifest_version": 1,
+    "query": "52170299004 AOS PAINTS+TOOLS ENG/SPA/PORT/LATV/ROM Games Workshop 5011921260102",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=52170299004+AOS+PAINTS%2BTOOLS+ENG%2FSPA%2FPORT%2FLATV%2FROM+Games+Workshop+5011921260102: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=52170299004+AOS+PAINTS%2BTOOLS+ENG%2FSPA%2FPORT%2FLATV%2FROM+Games+Workshop+5011921260102 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=52170299004+AOS+PAINTS%2BTOOLS+ENG%2FSPA%2FPORT%2FLATV%2FROM+Games+Workshop+5011921260102: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=52170299004+AOS+PAINTS%2BTOOLS+ENG%2FSPA%2FPORT%2FLATV%2FROM+Games+Workshop+5011921260102 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:15:00Z"
+  },
+  "60010299050": {
+    "manifest_version": 1,
+    "query": "60010299050 AGE OF SIGMAR: INTRODUCTORY SET (ENG) Games Workshop 5011921251438",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=60010299050+AGE+OF+SIGMAR%3A+INTRODUCTORY+SET+%28ENG%29+Games+Workshop+5011921251438 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=60010299050+AGE+OF+SIGMAR%3A+INTRODUCTORY+SET+%28ENG%29+Games+Workshop+5011921251438",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:49Z"
+  },
+  "60040199169": {
+    "manifest_version": 1,
+    "query": "60040199169 GETTING STARTED WITH WARHAMMER 40K (ENG) Games Workshop 9781804571712",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=60040199169+GETTING+STARTED+WITH+WARHAMMER+40K+%28ENG%29+Games+Workshop+9781804571712: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=60040199169+GETTING+STARTED+WITH+WARHAMMER+40K+%28ENG%29+Games+Workshop+9781804571712 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b99e310>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:31:25Z"
+  },
+  "60249999665": {
+    "manifest_version": 1,
+    "query": "60249999665 WHITE DWARF 523 (APR-26) (ENGLISH) Games Workshop 5011921263837",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=60249999665+WHITE+DWARF+523+%28APR-26%29+%28ENGLISH%29+Games+Workshop+5011921263837: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=60249999665+WHITE+DWARF+523+%28APR-26%29+%28ENGLISH%29+Games+Workshop+5011921263837 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dbc40d0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=60249999665+WHITE+DWARF+523+%28APR-26%29+%28ENGLISH%29+Games+Workshop+5011921263837: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=60249999665+WHITE+DWARF+523+%28APR-26%29+%28ENGLISH%29+Games+Workshop+5011921263837 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df04430>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:02:52Z"
+  },
+  "99070102024": {
+    "manifest_version": 1,
+    "query": "99070102024 CHAOS SPACE MARINES MASTER OF EXECUTIONS Games Workshop 5011921178070",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070102024+CHAOS+SPACE+MARINES+MASTER+OF+EXECUTIONS+Games+Workshop+5011921178070: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070102024+CHAOS+SPACE+MARINES+MASTER+OF+EXECUTIONS+Games+Workshop+5011921178070 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b99e610>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:40:13Z"
+  },
+  "99070102026": {
+    "manifest_version": 1,
+    "query": "99070102026 CHAOS SPACE MARINES: SORCERER Games Workshop 5011921178094",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070102026+CHAOS+SPACE+MARINES%3A+SORCERER+Games+Workshop+5011921178094: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070102026+CHAOS+SPACE+MARINES%3A+SORCERER+Games+Workshop+5011921178094 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b649d00>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:42:37Z"
+  },
+  "99070103005": {
+    "manifest_version": 1,
+    "query": "99070103005 ORKS: PAINBOY Games Workshop 5011921128273",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070103005+ORKS%3A+PAINBOY+Games+Workshop+5011921128273: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070103005+ORKS%3A+PAINBOY+Games+Workshop+5011921128273 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b7207c0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:52:14Z"
+  },
+  "99070104008": {
+    "manifest_version": 1,
+    "query": "99070104008 AELDARI: ELDRAD ULTHRAN Games Workshop 5011921163755",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070104008+AELDARI%3A+ELDRAD+ULTHRAN+Games+Workshop+5011921163755: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070104008+AELDARI%3A+ELDRAD+ULTHRAN+Games+Workshop+5011921163755 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879dc0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:02:39Z"
+  },
+  "99070104012": {
+    "manifest_version": 1,
+    "query": "99070104012 AELDARI: FARSEER SKYRUNNER Games Workshop 5011921172399",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070104012+AELDARI%3A+FARSEER+SKYRUNNER+Games+Workshop+5011921172399: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070104012+AELDARI%3A+FARSEER+SKYRUNNER+Games+Workshop+5011921172399 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50e640>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:00:15Z"
+  },
+  "99070104013": {
+    "manifest_version": 1,
+    "query": "99070104013 AELDARI: SPIRITSEER Games Workshop 5011921172405",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070104013+AELDARI%3A+SPIRITSEER+Games+Workshop+5011921172405: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070104013+AELDARI%3A+SPIRITSEER+Games+Workshop+5011921172405 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf8d00>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:03:27Z"
+  },
+  "99070107002": {
+    "manifest_version": 1,
+    "query": "99070107002 GREY KNIGHTS GRAND MASTER VOLDUS Games Workshop 5011921153749",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070107002+GREY+KNIGHTS+GRAND+MASTER+VOLDUS+Games+Workshop+5011921153749: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070107002+GREY+KNIGHTS+GRAND+MASTER+VOLDUS+Games+Workshop+5011921153749 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b99e370>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:20:16Z"
+  },
+  "99070109007": {
+    "manifest_version": 1,
+    "query": "99070109007 DEATHWATCH UPGRADES Games Workshop 5011921149001",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070109007+DEATHWATCH+UPGRADES+Games+Workshop+5011921149001: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070109007+DEATHWATCH+UPGRADES+Games+Workshop+5011921149001 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b4decd0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:22:40Z"
+  },
+  "99070109008": {
+    "manifest_version": 1,
+    "query": "99070109008 DEATHWATCH WATCH MASTER Games Workshop 5011921149018",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070109008+DEATHWATCH+WATCH+MASTER+Games+Workshop+5011921149018: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070109008+DEATHWATCH+WATCH+MASTER+Games+Workshop+5011921149018 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879e50>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:21:52Z"
+  },
+  "99070110005": {
+    "manifest_version": 1,
+    "query": "99070110005 NECRONS: CRYPTEK Games Workshop 5011921140343",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070110005+NECRONS%3A+CRYPTEK+Games+Workshop+5011921140343: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070110005+NECRONS%3A+CRYPTEK+Games+Workshop+5011921140343 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10bb04b20>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:30:41Z"
+  },
+  "99070111004": {
+    "manifest_version": 1,
+    "query": "99070111004 AELDARI: DEATH JESTER Games Workshop 5011921172870",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070111004+AELDARI%3A+DEATH+JESTER+Games+Workshop+5011921172870: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070111004+AELDARI%3A+DEATH+JESTER+Games+Workshop+5011921172870 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6a30>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:07:27Z"
+  },
+  "99070111005": {
+    "manifest_version": 1,
+    "query": "99070111005 AELDARI: SHADOWSEER Games Workshop 5011921172887",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070111005+AELDARI%3A+SHADOWSEER+Games+Workshop+5011921172887: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070111005+AELDARI%3A+SHADOWSEER+Games+Workshop+5011921172887 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981040>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:06:39Z"
+  },
+  "99070113006": {
+    "manifest_version": 1,
+    "query": "99070113006 T'AU EMPIRE: CADRE FIREBLADE Games Workshop 5011921169900",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99070113006+T%27AU+EMPIRE%3A+CADRE+FIREBLADE+Games+Workshop+5011921169900: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99070113006+T%27AU+EMPIRE%3A+CADRE+FIREBLADE+Games+Workshop+5011921169900 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6790>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:43:29Z"
+  },
+  "99120102131": {
+    "manifest_version": 1,
+    "query": "99120102131 AHRIMAN ARCH-SORCERER OF TZEENTCH Games Workshop 5011921153695",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120102131+AHRIMAN+ARCH-SORCERER+OF+TZEENTCH+Games+Workshop+5011921153695: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120102131+AHRIMAN+ARCH-SORCERER+OF+TZEENTCH+Games+Workshop+5011921153695 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b720790>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:39:25Z"
+  },
+  "99120102165": {
+    "manifest_version": 1,
+    "query": "99120102165 CHAOS SPACE MARINES: FORGEFIEND Games Workshop 5011921178186",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120102165+CHAOS+SPACE+MARINES%3A+FORGEFIEND+Games+Workshop+5011921178186: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120102165+CHAOS+SPACE+MARINES%3A+FORGEFIEND+Games+Workshop+5011921178186 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6492b0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:37:01Z"
+  },
+  "99120102166": {
+    "manifest_version": 1,
+    "query": "99120102166 CHAOS SPACE MARINES: HELDRAKE Games Workshop 5011921178193",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120102166+CHAOS+SPACE+MARINES%3A+HELDRAKE+Games+Workshop+5011921178193: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120102166+CHAOS+SPACE+MARINES%3A+HELDRAKE+Games+Workshop+5011921178193 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50e7f0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:37:49Z"
+  },
+  "99120102167": {
+    "manifest_version": 1,
+    "query": "99120102167 CHAOS SPACE MARINES: CHAOS BIKERS Games Workshop 5011921178209",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120102167+CHAOS+SPACE+MARINES%3A+CHAOS+BIKERS+Games+Workshop+5011921178209: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120102167+CHAOS+SPACE+MARINES%3A+CHAOS+BIKERS+Games+Workshop+5011921178209 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf84f0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:34:37Z"
+  },
+  "99120102168": {
+    "manifest_version": 1,
+    "query": "99120102168 CHAOS SPACE MARINES: CHAOS RHINO Games Workshop 5011921178216",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120102168+CHAOS+SPACE+MARINES%3A+CHAOS+RHINO+Games+Workshop+5011921178216: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120102168+CHAOS+SPACE+MARINES%3A+CHAOS+RHINO+Games+Workshop+5011921178216 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879b80>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:35:25Z"
+  },
+  "99120102169": {
+    "manifest_version": 1,
+    "query": "99120102169 CSM: CHAOS LORD IN TERMINATOR ARMOUR Games Workshop 5011921178223",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120102169+CSM%3A+CHAOS+LORD+IN+TERMINATOR+ARMOUR+Games+Workshop+5011921178223: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120102169+CSM%3A+CHAOS+LORD+IN+TERMINATOR+ARMOUR+Games+Workshop+5011921178223 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6bb0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:36:13Z"
+  },
+  "99120102171": {
+    "manifest_version": 1,
+    "query": "99120102171 CHAOS SPACE MARINES: TERMINATORS Games Workshop 5011921178247",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120102171+CHAOS+SPACE+MARINES%3A+TERMINATORS+Games+Workshop+5011921178247: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120102171+CHAOS+SPACE+MARINES%3A+TERMINATORS+Games+Workshop+5011921178247 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879c70>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:38:37Z"
+  },
+  "99120102174": {
+    "manifest_version": 1,
+    "query": "99120102174 CSM: LORD DISCORDANT ON HELSTALKER Games Workshop 5011921178278",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120102174+CSM%3A+LORD+DISCORDANT+ON+HELSTALKER+Games+Workshop+5011921178278: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120102174+CSM%3A+LORD+DISCORDANT+ON+HELSTALKER+Games+Workshop+5011921178278 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879b80>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:41:01Z"
+  },
+  "99120102175": {
+    "manifest_version": 1,
+    "query": "99120102175 CSM ABADDON THE DESPOILER Games Workshop 5011921178285",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120102175+CSM+ABADDON+THE+DESPOILER+Games+Workshop+5011921178285: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120102175+CSM+ABADDON+THE+DESPOILER+Games+Workshop+5011921178285 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e69d0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:41:49Z"
+  },
+  "99120103083": {
+    "manifest_version": 1,
+    "query": "99120103083 ORKS: TRUKK Games Workshop 5011921156870",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103083+ORKS%3A+TRUKK+Games+Workshop+5011921156870: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103083+ORKS%3A+TRUKK+Games+Workshop+5011921156870 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b7206a0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:45:02Z"
+  },
+  "99120103085": {
+    "manifest_version": 1,
+    "query": "99120103085 ORKS: KILLA KANS Games Workshop 5011921156894",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103085+ORKS%3A+KILLA+KANS+Games+Workshop+5011921156894: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103085+ORKS%3A+KILLA+KANS+Games+Workshop+5011921156894 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9812e0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:49:02Z"
+  },
+  "99120103086": {
+    "manifest_version": 1,
+    "query": "99120103086 ORKS: MEK GUN Games Workshop 5011921156900",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103086+ORKS%3A+MEK+GUN+Games+Workshop+5011921156900: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103086+ORKS%3A+MEK+GUN+Games+Workshop+5011921156900 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6ca0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:53:02Z"
+  },
+  "99120103087": {
+    "manifest_version": 1,
+    "query": "99120103087 ORKS: FLASH GITZ Games Workshop 5011921156931",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103087+ORKS%3A+FLASH+GITZ+Games+Workshop+5011921156931: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103087+ORKS%3A+FLASH+GITZ+Games+Workshop+5011921156931 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d61c0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:51:26Z"
+  },
+  "99120103088": {
+    "manifest_version": 1,
+    "query": "99120103088 ORKS: MORKANAUT Games Workshop 5011921156948",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103088+ORKS%3A+MORKANAUT+Games+Workshop+5011921156948: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103088+ORKS%3A+MORKANAUT+Games+Workshop+5011921156948 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6610>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:49:50Z"
+  },
+  "99120103089": {
+    "manifest_version": 1,
+    "query": "99120103089 ORKS: MEGANOBZ Games Workshop 5011921156955",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103089+ORKS%3A+MEGANOBZ+Games+Workshop+5011921156955: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103089+ORKS%3A+MEGANOBZ+Games+Workshop+5011921156955 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6d90>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:44:13Z"
+  },
+  "99120103090": {
+    "manifest_version": 1,
+    "query": "99120103090 ORKS: DAKKAJET Games Workshop 5011921156962",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103090+ORKS%3A+DAKKAJET+Games+Workshop+5011921156962: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103090+ORKS%3A+DAKKAJET+Games+Workshop+5011921156962 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9813d0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:53:50Z"
+  },
+  "99120103091": {
+    "manifest_version": 1,
+    "query": "99120103091 ORKS: BOYZ Games Workshop 5011921156979",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103091+ORKS%3A+BOYZ+Games+Workshop+5011921156979: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103091+ORKS%3A+BOYZ+Games+Workshop+5011921156979 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d6700>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:45:50Z"
+  },
+  "99120103092": {
+    "manifest_version": 1,
+    "query": "99120103092 ORKS: RUNTHERD AND GRETCHIN Games Workshop 5011921156986",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103092+ORKS%3A+RUNTHERD+AND+GRETCHIN+Games+Workshop+5011921156986: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103092+ORKS%3A+RUNTHERD+AND+GRETCHIN+Games+Workshop+5011921156986 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50ee50>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:48:14Z"
+  },
+  "99120103093": {
+    "manifest_version": 1,
+    "query": "99120103093 ORKS: LOOTAS Games Workshop 5011921156993",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103093+ORKS%3A+LOOTAS+Games+Workshop+5011921156993: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103093+ORKS%3A+LOOTAS+Games+Workshop+5011921156993 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879d30>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:50:38Z"
+  },
+  "99120103094": {
+    "manifest_version": 1,
+    "query": "99120103094 ORKS: NOBZ Games Workshop 5011921157006",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103094+ORKS%3A+NOBZ+Games+Workshop+5011921157006: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103094+ORKS%3A+NOBZ+Games+Workshop+5011921157006 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b720c40>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:46:38Z"
+  },
+  "99120103095": {
+    "manifest_version": 1,
+    "query": "99120103095 ORKS: STORMBOYZ Games Workshop 5011921157013",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103095+ORKS%3A+STORMBOYZ+Games+Workshop+5011921157013: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103095+ORKS%3A+STORMBOYZ+Games+Workshop+5011921157013 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6a90>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:47:26Z"
+  },
+  "99120103096": {
+    "manifest_version": 1,
+    "query": "99120103096 ORKS: WARBIKERS Games Workshop 5011921157020",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103096+ORKS%3A+WARBIKERS+Games+Workshop+5011921157020: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103096+ORKS%3A+WARBIKERS+Games+Workshop+5011921157020 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6492b0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:43:25Z"
+  },
+  "99120103098": {
+    "manifest_version": 1,
+    "query": "99120103098 ORKS: BOOMDAKKA SNAZZWAGON Games Workshop 5011921157044",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103098+ORKS%3A+BOOMDAKKA+SNAZZWAGON+Games+Workshop+5011921157044: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103098+ORKS%3A+BOOMDAKKA+SNAZZWAGON+Games+Workshop+5011921157044 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b99e400>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:57:02Z"
+  },
+  "99120103099": {
+    "manifest_version": 1,
+    "query": "99120103099 ORKS: DEFFKILLA WARTRIKE Games Workshop 5011921157051",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103099+ORKS%3A+DEFFKILLA+WARTRIKE+Games+Workshop+5011921157051: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103099+ORKS%3A+DEFFKILLA+WARTRIKE+Games+Workshop+5011921157051 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6640>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:56:14Z"
+  },
+  "99120103101": {
+    "manifest_version": 1,
+    "query": "99120103101 ORKS: MEGATRAKK SCRAPJET Games Workshop 5011921157075",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103101+ORKS%3A+MEGATRAKK+SCRAPJET+Games+Workshop+5011921157075: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103101+ORKS%3A+MEGATRAKK+SCRAPJET+Games+Workshop+5011921157075 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981940>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:55:26Z"
+  },
+  "99120103103": {
+    "manifest_version": 1,
+    "query": "99120103103 ORKS: SHOKKJUMP DRAGSTA Games Workshop 5011921157099",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120103103+ORKS%3A+SHOKKJUMP+DRAGSTA+Games+Workshop+5011921157099: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120103103+ORKS%3A+SHOKKJUMP+DRAGSTA+Games+Workshop+5011921157099 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b99e220>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:54:38Z"
+  },
+  "99120104082": {
+    "manifest_version": 1,
+    "query": "99120104082 AELDARI: WINDRIDERS Games Workshop 5011921172818",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120104082+AELDARI%3A+WINDRIDERS+Games+Workshop+5011921172818: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120104082+AELDARI%3A+WINDRIDERS+Games+Workshop+5011921172818 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b99ef40>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:57:50Z"
+  },
+  "99120104083": {
+    "manifest_version": 1,
+    "query": "99120104083 AELDARI: WRAITHGUARD Games Workshop 5011921172825",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120104083+AELDARI%3A+WRAITHGUARD+Games+Workshop+5011921172825: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120104083+AELDARI%3A+WRAITHGUARD+Games+Workshop+5011921172825 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b8795e0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:58:39Z"
+  },
+  "99120104085": {
+    "manifest_version": 1,
+    "query": "99120104085 AELDARI: WRAITHLORD Games Workshop 5011921172849",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120104085+AELDARI%3A+WRAITHLORD+Games+Workshop+5011921172849: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120104085+AELDARI%3A+WRAITHLORD+Games+Workshop+5011921172849 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9817f0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:59:27Z"
+  },
+  "99120104086": {
+    "manifest_version": 1,
+    "query": "99120104086 AELDARI: HOWLING BANSHEES Games Workshop 5011921172856",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120104086+AELDARI%3A+HOWLING+BANSHEES+Games+Workshop+5011921172856: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120104086+AELDARI%3A+HOWLING+BANSHEES+Games+Workshop+5011921172856 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50e910>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:01:03Z"
+  },
+  "99120104087": {
+    "manifest_version": 1,
+    "query": "99120104087 AELDARI: JAIN ZAR Games Workshop 5011921172863",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120104087+AELDARI%3A+JAIN+ZAR+Games+Workshop+5011921172863: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120104087+AELDARI%3A+JAIN+ZAR+Games+Workshop+5011921172863 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b622f40>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:01:51Z"
+  },
+  "99120105114": {
+    "manifest_version": 1,
+    "query": "99120105114 ASTRA MILITARUM CHIMERA Games Workshop 5011921196098",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120105114+ASTRA+MILITARUM+CHIMERA+Games+Workshop+5011921196098: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120105114+ASTRA+MILITARUM+CHIMERA+Games+Workshop+5011921196098 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b8790d0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:08:15Z"
+  },
+  "99120105115": {
+    "manifest_version": 1,
+    "query": "99120105115 ASTRA MILITARUM HYDRA Games Workshop 5011921196104",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120105115+ASTRA+MILITARUM+HYDRA+Games+Workshop+5011921196104: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120105115+ASTRA+MILITARUM+HYDRA+Games+Workshop+5011921196104 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879e50>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:10:39Z"
+  },
+  "99120105116": {
+    "manifest_version": 1,
+    "query": "99120105116 ASTRA MILITARUM: TEMPESTUS SCIONS Games Workshop 5011921196111",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120105116+ASTRA+MILITARUM%3A+TEMPESTUS+SCIONS+Games+Workshop+5011921196111: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120105116+ASTRA+MILITARUM%3A+TEMPESTUS+SCIONS+Games+Workshop+5011921196111 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf88e0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:09:51Z"
+  },
+  "99120105117": {
+    "manifest_version": 1,
+    "query": "99120105117 ASTRA MILITARUM: BULLGRYNS Games Workshop 5011921196128",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120105117+ASTRA+MILITARUM%3A+BULLGRYNS+Games+Workshop+5011921196128: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120105117+ASTRA+MILITARUM%3A+BULLGRYNS+Games+Workshop+5011921196128 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf8520>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:09:03Z"
+  },
+  "99120105118": {
+    "manifest_version": 1,
+    "query": "99120105118 ASTRA MILITARUM: GAUNT'S GHOSTS Games Workshop 5011921196814",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120105118+ASTRA+MILITARUM%3A+GAUNT%27S+GHOSTS+Games+Workshop+5011921196814: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120105118+ASTRA+MILITARUM%3A+GAUNT%27S+GHOSTS+Games+Workshop+5011921196814 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b4ded00>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:11:27Z"
+  },
+  "99120106052": {
+    "manifest_version": 1,
+    "query": "99120106052 TYRANIDS: GARGOYLES Games Workshop 5011921173655",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120106052+TYRANIDS%3A+GARGOYLES+Games+Workshop+5011921173655: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120106052+TYRANIDS%3A+GARGOYLES+Games+Workshop+5011921173655 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879d00>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:13:52Z"
+  },
+  "99120106055": {
+    "manifest_version": 1,
+    "query": "99120106055 TYRANIDS: HIVE GUARD Games Workshop 5011921173686",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120106055+TYRANIDS%3A+HIVE+GUARD+Games+Workshop+5011921173686: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120106055+TYRANIDS%3A+HIVE+GUARD+Games+Workshop+5011921173686 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d6d30>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:12:16Z"
+  },
+  "99120106057": {
+    "manifest_version": 1,
+    "query": "99120106057 TYRANIDS: VENOMTHROPES Games Workshop 5011921173709",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120106057+TYRANIDS%3A+VENOMTHROPES+Games+Workshop+5011921173709: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120106057+TYRANIDS%3A+VENOMTHROPES+Games+Workshop+5011921173709 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b649df0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:15:28Z"
+  },
+  "99120106058": {
+    "manifest_version": 1,
+    "query": "99120106058 TYRANIDS: WARRIORS Games Workshop 5011921173716",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120106058+TYRANIDS%3A+WARRIORS+Games+Workshop+5011921173716: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120106058+TYRANIDS%3A+WARRIORS+Games+Workshop+5011921173716 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf8160>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:14:40Z"
+  },
+  "99120106059": {
+    "manifest_version": 1,
+    "query": "99120106059 TYRANIDS: BROODLORD Games Workshop 5011921173723",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120106059+TYRANIDS%3A+BROODLORD+Games+Workshop+5011921173723: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120106059+TYRANIDS%3A+BROODLORD+Games+Workshop+5011921173723 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879b50>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:16:16Z"
+  },
+  "99120106060": {
+    "manifest_version": 1,
+    "query": "99120106060 TYRANIDS: WINGED HIVE TYRANT Games Workshop 5011921173730",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120106060+TYRANIDS%3A+WINGED+HIVE+TYRANT+Games+Workshop+5011921173730: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120106060+TYRANIDS%3A+WINGED+HIVE+TYRANT+Games+Workshop+5011921173730 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b622ee0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:13:04Z"
+  },
+  "99120106070": {
+    "manifest_version": 1,
+    "query": "99120106070 TYRANIDS: VON RYAN'S LEAPERS Games Workshop 5011921200368",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120106070+TYRANIDS%3A+VON+RYAN%27S+LEAPERS+Games+Workshop+5011921200368: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120106070+TYRANIDS%3A+VON+RYAN%27S+LEAPERS+Games+Workshop+5011921200368 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10bb04970>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:17:52Z"
+  },
+  "99120106071": {
+    "manifest_version": 1,
+    "query": "99120106071 TYRANIDS: NEUROGAUNTS Games Workshop 5011921200375",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120106071+TYRANIDS%3A+NEUROGAUNTS+Games+Workshop+5011921200375: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120106071+TYRANIDS%3A+NEUROGAUNTS+Games+Workshop+5011921200375 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b4decd0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:17:04Z"
+  },
+  "99120107018": {
+    "manifest_version": 1,
+    "query": "99120107018 GREY KNIGHTS: STRIKE SQUAD Games Workshop 5011921153763",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120107018+GREY+KNIGHTS%3A+STRIKE+SQUAD+Games+Workshop+5011921153763: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120107018+GREY+KNIGHTS%3A+STRIKE+SQUAD+Games+Workshop+5011921153763 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981130>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:18:40Z"
+  },
+  "99120107019": {
+    "manifest_version": 1,
+    "query": "99120107019 G/KNIGHTS BROTHERHOOD TERMINATOR SQUAD Games Workshop 5011921153770",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120107019+G%2FKNIGHTS+BROTHERHOOD+TERMINATOR+SQUAD+Games+Workshop+5011921153770: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120107019+G%2FKNIGHTS+BROTHERHOOD+TERMINATOR+SQUAD+Games+Workshop+5011921153770 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6700>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:19:28Z"
+  },
+  "99120108080": {
+    "manifest_version": 1,
+    "query": "99120108080 IMPERIAL KNIGHTS: KNIGHT ARMIGERS Games Workshop 5011921173990",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120108080+IMPERIAL+KNIGHTS%3A+KNIGHT+ARMIGERS+Games+Workshop+5011921173990: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120108080+IMPERIAL+KNIGHTS%3A+KNIGHT+ARMIGERS+Games+Workshop+5011921173990 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b649f70>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:33:05Z"
+  },
+  "99120108081": {
+    "manifest_version": 1,
+    "query": "99120108081 IMPERIAL KNIGHTS: KNIGHT DOMINUS Games Workshop 5011921174003",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120108081+IMPERIAL+KNIGHTS%3A+KNIGHT+DOMINUS+Games+Workshop+5011921174003: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120108081+IMPERIAL+KNIGHTS%3A+KNIGHT+DOMINUS+Games+Workshop+5011921174003 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e69d0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:33:53Z"
+  },
+  "99120109016": {
+    "manifest_version": 1,
+    "query": "99120109016 DEATHWATCH: CORVUS BLACKSTAR Games Workshop 5011921149032",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120109016+DEATHWATCH%3A+CORVUS+BLACKSTAR+Games+Workshop+5011921149032: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120109016+DEATHWATCH%3A+CORVUS+BLACKSTAR+Games+Workshop+5011921149032 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10bb04280>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:21:04Z"
+  },
+  "99120110053": {
+    "manifest_version": 1,
+    "query": "99120110053 NECRONS OPHYDIAN DESTROYERS Games Workshop 5011921138609",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110053+NECRONS+OPHYDIAN+DESTROYERS+Games+Workshop+5011921138609: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110053+NECRONS+OPHYDIAN+DESTROYERS+Games+Workshop+5011921138609 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b649e50>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:32:17Z"
+  },
+  "99120110054": {
+    "manifest_version": 1,
+    "query": "99120110054 NECRONS: C'TAN SHARD OF THE VOID DRAGON Games Workshop 5011921138616",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110054+NECRONS%3A+C%27TAN+SHARD+OF+THE+VOID+DRAGON+Games+Workshop+5011921138616: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110054+NECRONS%3A+C%27TAN+SHARD+OF+THE+VOID+DRAGON+Games+Workshop+5011921138616 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6640>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:31:29Z"
+  },
+  "99120110057": {
+    "manifest_version": 1,
+    "query": "99120110057 NECRONS: IMMORTALS Games Workshop 5011921139125",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110057+NECRONS%3A+IMMORTALS+Games+Workshop+5011921139125: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110057+NECRONS%3A+IMMORTALS+Games+Workshop+5011921139125 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10bb04460>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:24:16Z"
+  },
+  "99120110058": {
+    "manifest_version": 1,
+    "query": "99120110058 NECRONS: TRIARCH PRAETORIANS Games Workshop 5011921139132",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110058+NECRONS%3A+TRIARCH+PRAETORIANS+Games+Workshop+5011921139132: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110058+NECRONS%3A+TRIARCH+PRAETORIANS+Games+Workshop+5011921139132 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10bb04dc0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:23:28Z"
+  },
+  "99120110059": {
+    "manifest_version": 1,
+    "query": "99120110059 NECRONS: TOMB BLADES Games Workshop 5011921139149",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110059+NECRONS%3A+TOMB+BLADES+Games+Workshop+5011921139149: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110059+NECRONS%3A+TOMB+BLADES+Games+Workshop+5011921139149 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10bb21340>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:26:41Z"
+  },
+  "99120110060": {
+    "manifest_version": 1,
+    "query": "99120110060 NECRONS: CANOPTEK WRAITHS Games Workshop 5011921139156",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110060+NECRONS%3A+CANOPTEK+WRAITHS+Games+Workshop+5011921139156: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110060+NECRONS%3A+CANOPTEK+WRAITHS+Games+Workshop+5011921139156 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879b80>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:27:29Z"
+  },
+  "99120110061": {
+    "manifest_version": 1,
+    "query": "99120110061 NECRONS: CANOPTEK SPYDER Games Workshop 5011921139163",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110061+NECRONS%3A+CANOPTEK+SPYDER+Games+Workshop+5011921139163: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110061+NECRONS%3A+CANOPTEK+SPYDER+Games+Workshop+5011921139163 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d61f0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:29:05Z"
+  },
+  "99120110062": {
+    "manifest_version": 1,
+    "query": "99120110062 NECRONS: TRIARCH STALKER Games Workshop 5011921139170",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110062+NECRONS%3A+TRIARCH+STALKER+Games+Workshop+5011921139170: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110062+NECRONS%3A+TRIARCH+STALKER+Games+Workshop+5011921139170 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d6250>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:29:53Z"
+  },
+  "99120110063": {
+    "manifest_version": 1,
+    "query": "99120110063 NECRONS: GHOST ARK Games Workshop 5011921139187",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110063+NECRONS%3A+GHOST+ARK+Games+Workshop+5011921139187: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110063+NECRONS%3A+GHOST+ARK+Games+Workshop+5011921139187 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e60a0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:25:04Z"
+  },
+  "99120110064": {
+    "manifest_version": 1,
+    "query": "99120110064 NECRONS: CATACOMB COMMAND BARGE Games Workshop 5011921139194",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110064+NECRONS%3A+CATACOMB+COMMAND+BARGE+Games+Workshop+5011921139194: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110064+NECRONS%3A+CATACOMB+COMMAND+BARGE+Games+Workshop+5011921139194 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b8790d0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:25:52Z"
+  },
+  "99120110065": {
+    "manifest_version": 1,
+    "query": "99120110065 NECRONS: DOOM SCYTHE Games Workshop 5011921140329",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120110065+NECRONS%3A+DOOM+SCYTHE+Games+Workshop+5011921140329: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120110065+NECRONS%3A+DOOM+SCYTHE+Games+Workshop+5011921140329 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b622f70>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:28:17Z"
+  },
+  "99120111005": {
+    "manifest_version": 1,
+    "query": "99120111005 AELDARI: SKYWEAVERS Games Workshop 5011921172894",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120111005+AELDARI%3A+SKYWEAVERS+Games+Workshop+5011921172894: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120111005+AELDARI%3A+SKYWEAVERS+Games+Workshop+5011921172894 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6880>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:05:03Z"
+  },
+  "99120111006": {
+    "manifest_version": 1,
+    "query": "99120111006 AELDARI: STARWEAVER Games Workshop 5011921172900",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120111006+AELDARI%3A+STARWEAVER+Games+Workshop+5011921172900: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120111006+AELDARI%3A+STARWEAVER+Games+Workshop+5011921172900 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981ca0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:05:51Z"
+  },
+  "99120111007": {
+    "manifest_version": 1,
+    "query": "99120111007 AELDARI: HARLEQUIN TROUPE Games Workshop 5011921172917",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120111007+AELDARI%3A+HARLEQUIN+TROUPE+Games+Workshop+5011921172917: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120111007+AELDARI%3A+HARLEQUIN+TROUPE+Games+Workshop+5011921172917 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b99e400>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:04:15Z"
+  },
+  "99120112044": {
+    "manifest_version": 1,
+    "query": "99120112044 DRUKHARI WYCHES Games Workshop 5011921155811",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120112044+DRUKHARI+WYCHES+Games+Workshop+5011921155811: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120112044+DRUKHARI+WYCHES+Games+Workshop+5011921155811 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10bb046d0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:34:41Z"
+  },
+  "99120112047": {
+    "manifest_version": 1,
+    "query": "99120112047 DRUKHARI SCOURGES Games Workshop 5011921155842",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120112047+DRUKHARI+SCOURGES+Games+Workshop+5011921155842: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120112047+DRUKHARI+SCOURGES+Games+Workshop+5011921155842 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d6b20>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:36:17Z"
+  },
+  "99120112048": {
+    "manifest_version": 1,
+    "query": "99120112048 DRUKHARI TALOS Games Workshop 5011921155859",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120112048+DRUKHARI+TALOS+Games+Workshop+5011921155859: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120112048+DRUKHARI+TALOS+Games+Workshop+5011921155859 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf81f0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:35:29Z"
+  },
+  "99120112049": {
+    "manifest_version": 1,
+    "query": "99120112049 DRUKHARI VENOM Games Workshop 5011921155866",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120112049+DRUKHARI+VENOM+Games+Workshop+5011921155866: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120112049+DRUKHARI+VENOM+Games+Workshop+5011921155866 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b4dec40>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:37:05Z"
+  },
+  "99120112051": {
+    "manifest_version": 1,
+    "query": "99120112051 DRUKHARI INCUBI Games Workshop 5011921155880",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120112051+DRUKHARI+INCUBI+Games+Workshop+5011921155880: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120112051+DRUKHARI+INCUBI+Games+Workshop+5011921155880 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b8799a0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:37:53Z"
+  },
+  "99120113070": {
+    "manifest_version": 1,
+    "query": "99120113070 T'AU EMPIRE: HAMMERHEAD GUNSHIP Games Workshop 5011921169917",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113070+T%27AU+EMPIRE%3A+HAMMERHEAD+GUNSHIP+Games+Workshop+5011921169917: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120113070+T%27AU+EMPIRE%3A+HAMMERHEAD+GUNSHIP+Games+Workshop+5011921169917 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf8c40>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:41:53Z"
+  },
+  "99120113071": {
+    "manifest_version": 1,
+    "query": "99120113071 T'AU EMPIRE: STORMSURGE Games Workshop 5011921169924",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113071+T%27AU+EMPIRE%3A+STORMSURGE+Games+Workshop+5011921169924: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120113071+T%27AU+EMPIRE%3A+STORMSURGE+Games+Workshop+5011921169924 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50e3d0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:44:18Z"
+  },
+  "99120113072": {
+    "manifest_version": 1,
+    "query": "99120113072 T'AU EMPIRE: CRISIS BATTLESUITS Games Workshop 5011921169931",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113072+T%27AU+EMPIRE%3A+CRISIS+BATTLESUITS+Games+Workshop+5011921169931: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120113072+T%27AU+EMPIRE%3A+CRISIS+BATTLESUITS+Games+Workshop+5011921169931 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6fd0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:39:29Z"
+  },
+  "99120113073": {
+    "manifest_version": 1,
+    "query": "99120113073 T'AU EMPIRE: PIRANHA Games Workshop 5011921169948",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113073+T%27AU+EMPIRE%3A+PIRANHA+Games+Workshop+5011921169948: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120113073+T%27AU+EMPIRE%3A+PIRANHA+Games+Workshop+5011921169948 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6ac0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:45:06Z"
+  },
+  "99120113074": {
+    "manifest_version": 1,
+    "query": "99120113074 T'AU EMPIRE: DEVILFISH Games Workshop 5011921169955",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113074+T%27AU+EMPIRE%3A+DEVILFISH+Games+Workshop+5011921169955: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120113074+T%27AU+EMPIRE%3A+DEVILFISH+Games+Workshop+5011921169955 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf8ca0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:41:05Z"
+  },
+  "99120113076": {
+    "manifest_version": 1,
+    "query": "99120113076 T'AU EMPIRE: FIRE WARRIORS Games Workshop 5011921169979",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113076+T%27AU+EMPIRE%3A+FIRE+WARRIORS+Games+Workshop+5011921169979: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120113076+T%27AU+EMPIRE%3A+FIRE+WARRIORS+Games+Workshop+5011921169979 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b7208e0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:38:41Z"
+  },
+  "99120113077": {
+    "manifest_version": 1,
+    "query": "99120113077 T'AU EMPIRE: RIPTIDE BATTLESUIT Games Workshop 5011921169986",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113077+T%27AU+EMPIRE%3A+RIPTIDE+BATTLESUIT+Games+Workshop+5011921169986: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120113077+T%27AU+EMPIRE%3A+RIPTIDE+BATTLESUIT+Games+Workshop+5011921169986 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10bb04fd0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:42:41Z"
+  },
+  "99120113078": {
+    "manifest_version": 1,
+    "query": "99120113078 T'AU EMPIRE: GHOSTKEEL BATTLESUIT Games Workshop 5011921169993",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113078+T%27AU+EMPIRE%3A+GHOSTKEEL+BATTLESUIT+Games+Workshop+5011921169993: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120113078+T%27AU+EMPIRE%3A+GHOSTKEEL+BATTLESUIT+Games+Workshop+5011921169993 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10bb04f70>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:45:54Z"
+  },
+  "99120113079": {
+    "manifest_version": 1,
+    "query": "99120113079 T'AU EMPIRE: COMMANDER Games Workshop 5011921170005",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113079+T%27AU+EMPIRE%3A+COMMANDER+Games+Workshop+5011921170005: ('Connection aborted.', ConnectionResetError(54, 'Connection reset by peer'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:46:35Z"
+  },
+  "99120113080": {
+    "manifest_version": 1,
+    "query": "99120113080 T'AU EMPIRE: PATHFINDER TEAM Games Workshop 5011921170012",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113080+T%27AU+EMPIRE%3A+PATHFINDER+TEAM+Games+Workshop+5011921170012: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120113080+T%27AU+EMPIRE%3A+PATHFINDER+TEAM+Games+Workshop+5011921170012 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10bb04c70>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:40:17Z"
+  },
+  "99120113083": {
+    "manifest_version": 1,
+    "query": "99120113083 T'AU EMPIRE: COMMANDER SHADOWSUN Games Workshop 5011921170043",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120113083+T%27AU+EMPIRE%3A+COMMANDER+SHADOWSUN+Games+Workshop+5011921170043: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120113083+T%27AU+EMPIRE%3A+COMMANDER+SHADOWSUN+Games+Workshop+5011921170043 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf8b80>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:47:23Z"
+  },
+  "99120199092": {
+    "manifest_version": 1,
+    "query": "99120199092 B/Z MANUF.:MUNITORUM ARMOURED CONTAINERS Games Workshop 5011921155132",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120199092+B%2FZ+MANUF.%3AMUNITORUM+ARMOURED+CONTAINERS+Games+Workshop+5011921155132: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120199092+B%2FZ+MANUF.%3AMUNITORUM+ARMOURED+CONTAINERS+Games+Workshop+5011921155132 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879b50>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:33:01Z"
+  },
+  "99120199098": {
+    "manifest_version": 1,
+    "query": "99120199098 B/Z FRONTERIS: STC HAB-BUNKER & STOCKADE Games Workshop 5011921177592",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120199098+B%2FZ+FRONTERIS%3A+STC+HAB-BUNKER+%26+STOCKADE+Games+Workshop+5011921177592: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120199098+B%2FZ+FRONTERIS%3A+STC+HAB-BUNKER+%26+STOCKADE+Games+Workshop+5011921177592 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e68e0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:32:13Z"
+  },
+  "99120199133": {
+    "manifest_version": 1,
+    "query": "99120199133 WARHAMMER 40000: VOID WAR BASES Games Workshop 5011921232949",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99120199133+WARHAMMER+40000%3A+VOID+WAR+BASES+Games+Workshop+5011921232949: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99120199133+WARHAMMER+40000%3A+VOID+WAR+BASES+Games+Workshop+5011921232949 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf8940>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:33:49Z"
+  },
+  "99120207208": {
+    "manifest_version": 1,
+    "query": "99120207208 OSSIARCH BONEREAPERS:MORTISAN BONESHAPER Games Workshop 5011921254668",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=99120207208+OSSIARCH+BONEREAPERS%3AMORTISAN+BONESHAPER+Games+Workshop+5011921254668 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=99120207208+OSSIARCH+BONEREAPERS%3AMORTISAN+BONESHAPER+Games+Workshop+5011921254668",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:50Z"
+  },
+  "9918995026506": {
+    "manifest_version": 1,
+    "query": "9918995026506 B: AVERLAND SUNSET 12ML ROW X6 Games Workshop 99189950265067",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995026506+B%3A+AVERLAND+SUNSET+12ML+ROW+X6+Games+Workshop+99189950265067 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995026506+B%3A+AVERLAND+SUNSET+12ML+ROW+X6+Games+Workshop+99189950265067",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:51Z"
+  },
+  "9918995026606": {
+    "manifest_version": 1,
+    "query": "9918995026606 B: JOKAERO ORANGE 12ML ROW X6 Games Workshop 99189950266064",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995026606+B%3A+JOKAERO+ORANGE+12ML+ROW+X6+Games+Workshop+99189950266064 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995026606+B%3A+JOKAERO+ORANGE+12ML+ROW+X6+Games+Workshop+99189950266064",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:52Z"
+  },
+  "9918995026706": {
+    "manifest_version": 1,
+    "query": "9918995026706 B: MEPHISTON RED 12ML ROW X6 Games Workshop 99189950267061",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995026706+B%3A+MEPHISTON+RED+12ML+ROW+X6+Games+Workshop+99189950267061 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995026706+B%3A+MEPHISTON+RED+12ML+ROW+X6+Games+Workshop+99189950267061",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:53Z"
+  },
+  "9918995026806": {
+    "manifest_version": 1,
+    "query": "9918995026806 B: KHORNE RED 12ML ROW X6 Games Workshop 99189950268068",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995026806+B%3A+KHORNE+RED+12ML+ROW+X6+Games+Workshop+99189950268068 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995026806+B%3A+KHORNE+RED+12ML+ROW+X6+Games+Workshop+99189950268068",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:55Z"
+  },
+  "9918995026906": {
+    "manifest_version": 1,
+    "query": "9918995026906 B: NAGGAROTH NIGHT 12ML ROW X6 Games Workshop 99189950269065",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995026906+B%3A+NAGGAROTH+NIGHT+12ML+ROW+X6+Games+Workshop+99189950269065 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995026906+B%3A+NAGGAROTH+NIGHT+12ML+ROW+X6+Games+Workshop+99189950269065",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:56Z"
+  },
+  "9918995027006": {
+    "manifest_version": 1,
+    "query": "9918995027006 B: DAEMONETTE HIDE 12ML ROW X6 Games Workshop 99189950270061",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995027006+B%3A+DAEMONETTE+HIDE+12ML+ROW+X6+Games+Workshop+99189950270061 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995027006+B%3A+DAEMONETTE+HIDE+12ML+ROW+X6+Games+Workshop+99189950270061",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:57Z"
+  },
+  "9918995027106": {
+    "manifest_version": 1,
+    "query": "9918995027106 B: KANTOR BLUE 12ML ROW X6 Games Workshop 99189950271068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995027106+B%3A+KANTOR+BLUE+12ML+ROW+X6+Games+Workshop+99189950271068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995027106+B%3A+KANTOR+BLUE+12ML+ROW+X6+Games+Workshop+99189950271068 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995027106+B%3A+KANTOR+BLUE+12ML+ROW+X6+Games+Workshop+99189950271068: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995027106+B%3A+KANTOR+BLUE+12ML+ROW+X6+Games+Workshop+99189950271068 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:28:31Z"
+  },
+  "9918995027206": {
+    "manifest_version": 1,
+    "query": "9918995027206 B: MACRAGGE BLUE 12ML ROW X6 Games Workshop 99189950272065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995027206+B%3A+MACRAGGE+BLUE+12ML+ROW+X6+Games+Workshop+99189950272065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995027206+B%3A+MACRAGGE+BLUE+12ML+ROW+X6+Games+Workshop+99189950272065 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995027206+B%3A+MACRAGGE+BLUE+12ML+ROW+X6+Games+Workshop+99189950272065: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995027206+B%3A+MACRAGGE+BLUE+12ML+ROW+X6+Games+Workshop+99189950272065 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:28:37Z"
+  },
+  "9918995027306": {
+    "manifest_version": 1,
+    "query": "9918995027306 B: CALEDOR SKY 12ML ROW X6 Games Workshop 99189950273062",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995027306+B%3A+CALEDOR+SKY+12ML+ROW+X6+Games+Workshop+99189950273062: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995027306+B%3A+CALEDOR+SKY+12ML+ROW+X6+Games+Workshop+99189950273062 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995027306+B%3A+CALEDOR+SKY+12ML+ROW+X6+Games+Workshop+99189950273062: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995027306+B%3A+CALEDOR+SKY+12ML+ROW+X6+Games+Workshop+99189950273062 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:28:43Z"
+  },
+  "9918995027406": {
+    "manifest_version": 1,
+    "query": "9918995027406 B: STEGADON SCALE GREEN 12ML ROW X6 Games Workshop 99189950274069",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995027406+B%3A+STEGADON+SCALE+GREEN+12ML+ROW+X6+Games+Workshop+99189950274069 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995027406+B%3A+STEGADON+SCALE+GREEN+12ML+ROW+X6+Games+Workshop+99189950274069",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:58Z"
+  },
+  "9918995027506": {
+    "manifest_version": 1,
+    "query": "9918995027506 B: INCUBI DARKNESS 12ML ROW X6 Games Workshop 99189950275066",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995027506+B%3A+INCUBI+DARKNESS+12ML+ROW+X6+Games+Workshop+99189950275066 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995027506+B%3A+INCUBI+DARKNESS+12ML+ROW+X6+Games+Workshop+99189950275066",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:59Z"
+  },
+  "9918995027606": {
+    "manifest_version": 1,
+    "query": "9918995027606 B: CALIBAN GREEN 12ML ROW X6 Games Workshop 99189950276063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995027606+B%3A+CALIBAN+GREEN+12ML+ROW+X6+Games+Workshop+99189950276063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995027606+B%3A+CALIBAN+GREEN+12ML+ROW+X6+Games+Workshop+99189950276063 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995027606+B%3A+CALIBAN+GREEN+12ML+ROW+X6+Games+Workshop+99189950276063: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995027606+B%3A+CALIBAN+GREEN+12ML+ROW+X6+Games+Workshop+99189950276063 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:28:49Z"
+  },
+  "9918995027706": {
+    "manifest_version": 1,
+    "query": "9918995027706 B: WAAAGH! FLESH 12ML ROW X6 Games Workshop 99189950277060",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:29:24Z"
+  },
+  "9918995027806": {
+    "manifest_version": 1,
+    "query": "9918995027806 B: CASTELLAN GREEN 12ML ROW X6 Games Workshop 99189950278067",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:29:28Z"
+  },
+  "9918995027906": {
+    "manifest_version": 1,
+    "query": "9918995027906 B: DEATH WORLD FOREST 12ML ROW X6 Games Workshop 99189950279064",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995027906+B%3A+DEATH+WORLD+FOREST+12ML+ROW+X6+Games+Workshop+99189950279064 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995027906+B%3A+DEATH+WORLD+FOREST+12ML+ROW+X6+Games+Workshop+99189950279064",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:13:01Z"
+  },
+  "9918995028006": {
+    "manifest_version": 1,
+    "query": "9918995028006 B: ZANDRI DUST 12ML ROW X6 Games Workshop 99189950280060",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995028006+B%3A+ZANDRI+DUST+12ML+ROW+X6+Games+Workshop+99189950280060 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995028006+B%3A+ZANDRI+DUST+12ML+ROW+X6+Games+Workshop+99189950280060",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:13:02Z"
+  },
+  "9918995028106": {
+    "manifest_version": 1,
+    "query": "9918995028106 B: STEEL LEGION DRAB 12ML ROW X6 Games Workshop 99189950281067",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995028106+B%3A+STEEL+LEGION+DRAB+12ML+ROW+X6+Games+Workshop+99189950281067 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995028106+B%3A+STEEL+LEGION+DRAB+12ML+ROW+X6+Games+Workshop+99189950281067",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:13:03Z"
+  },
+  "9918995028206": {
+    "manifest_version": 1,
+    "query": "9918995028206 B: BUGMAN'S GLOW 12ML ROW X6 Games Workshop 99189950282064",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995028206+B%3A+BUGMAN%27S+GLOW+12ML+ROW+X6+Games+Workshop+99189950282064 | HTTP 403 while fetching https://lite.duckduckgo.com/lite/?q=9918995028206+B%3A+BUGMAN%27S+GLOW+12ML+ROW+X6+Games+Workshop+99189950282064",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:13:04Z"
+  },
+  "9918995028406": {
+    "manifest_version": 1,
+    "query": "9918995028406 B: MOURNFANG BROWN 12ML ROW X6 Games Workshop 99189950284068",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:29:31Z"
+  },
+  "9918995028506": {
+    "manifest_version": 1,
+    "query": "9918995028506 B: XV-88 12ML ROW X6 Games Workshop 99189950285065",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:29:34Z"
+  },
+  "9918995028606": {
+    "manifest_version": 1,
+    "query": "9918995028606 B: RHINOX HIDE 12ML ROW X6 Games Workshop 99189950286062",
+    "reason": "HTTP 403 while fetching https://html.duckduckgo.com/html/?q=9918995028606+B%3A+RHINOX+HIDE+12ML+ROW+X6+Games+Workshop+99189950286062 | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995028606+B%3A+RHINOX+HIDE+12ML+ROW+X6+Games+Workshop+99189950286062: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995028606+B%3A+RHINOX+HIDE+12ML+ROW+X6+Games+Workshop+99189950286062 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df80040>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:15:15Z"
+  },
+  "9918995028706": {
+    "manifest_version": 1,
+    "query": "9918995028706 B: DRYAD BARK 12ML ROW X6 Games Workshop 99189950287069",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995028706+B%3A+DRYAD+BARK+12ML+ROW+X6+Games+Workshop+99189950287069: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995028706+B%3A+DRYAD+BARK+12ML+ROW+X6+Games+Workshop+99189950287069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dcc3e80>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995028706+B%3A+DRYAD+BARK+12ML+ROW+X6+Games+Workshop+99189950287069: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995028706+B%3A+DRYAD+BARK+12ML+ROW+X6+Games+Workshop+99189950287069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df4c7c0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:16:52Z"
+  },
+  "9918995028806": {
+    "manifest_version": 1,
+    "query": "9918995028806 B: MECHANICUS STANDARD GREY 12ML ROW X6 Games Workshop 99189950288066",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:29:37Z"
+  },
+  "9918995028906": {
+    "manifest_version": 1,
+    "query": "9918995028906 B: ABADDON BLACK 12ML ROW X6 Games Workshop 99189950289063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995028906+B%3A+ABADDON+BLACK+12ML+ROW+X6+Games+Workshop+99189950289063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995028906+B%3A+ABADDON+BLACK+12ML+ROW+X6+Games+Workshop+99189950289063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dbe7130>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995028906+B%3A+ABADDON+BLACK+12ML+ROW+X6+Games+Workshop+99189950289063: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995028906+B%3A+ABADDON+BLACK+12ML+ROW+X6+Games+Workshop+99189950289063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dbc4220>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:18:28Z"
+  },
+  "9918995029006": {
+    "manifest_version": 1,
+    "query": "9918995029006 B: CELESTRA GREY 12ML ROW X6 Games Workshop 99189950290069",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995029006+B%3A+CELESTRA+GREY+12ML+ROW+X6+Games+Workshop+99189950290069: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995029006+B%3A+CELESTRA+GREY+12ML+ROW+X6+Games+Workshop+99189950290069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10df4c490>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995029006+B%3A+CELESTRA+GREY+12ML+ROW+X6+Games+Workshop+99189950290069: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995029006+B%3A+CELESTRA+GREY+12ML+ROW+X6+Games+Workshop+99189950290069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dcc3820>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:20:04Z"
+  },
+  "9918995029106": {
+    "manifest_version": 1,
+    "query": "9918995029106 B: RAKARTH FLESH 12ML ROW X6 Games Workshop 99189950291066",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:29:40Z"
+  },
+  "9918995029206": {
+    "manifest_version": 1,
+    "query": "9918995029206 B: LEADBELCHER 12ML ROW X6 Games Workshop 99189950292063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995029206+B%3A+LEADBELCHER+12ML+ROW+X6+Games+Workshop+99189950292063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995029206+B%3A+LEADBELCHER+12ML+ROW+X6+Games+Workshop+99189950292063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10df04af0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995029206+B%3A+LEADBELCHER+12ML+ROW+X6+Games+Workshop+99189950292063: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995029206+B%3A+LEADBELCHER+12ML+ROW+X6+Games+Workshop+99189950292063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df803a0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:21:40Z"
+  },
+  "9918995029306": {
+    "manifest_version": 1,
+    "query": "9918995029306 B: SCREAMING BELL 12ML ROW X6 Games Workshop 99189950293060",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995029306+B%3A+SCREAMING+BELL+12ML+ROW+X6+Games+Workshop+99189950293060: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995029306+B%3A+SCREAMING+BELL+12ML+ROW+X6+Games+Workshop+99189950293060 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10df4c490>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995029306+B%3A+SCREAMING+BELL+12ML+ROW+X6+Games+Workshop+99189950293060: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995029306+B%3A+SCREAMING+BELL+12ML+ROW+X6+Games+Workshop+99189950293060 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df4c370>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:23:16Z"
+  },
+  "9918995029406": {
+    "manifest_version": 1,
+    "query": "9918995029406 B: WARPLOCK BRONZE 12ML ROW X6 Games Workshop 99189950294067",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995029406+B%3A+WARPLOCK+BRONZE+12ML+ROW+X6+Games+Workshop+99189950294067: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995029406+B%3A+WARPLOCK+BRONZE+12ML+ROW+X6+Games+Workshop+99189950294067 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dfa6ee0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995029406+B%3A+WARPLOCK+BRONZE+12ML+ROW+X6+Games+Workshop+99189950294067: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995029406+B%3A+WARPLOCK+BRONZE+12ML+ROW+X6+Games+Workshop+99189950294067 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df4c8e0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:24:52Z"
+  },
+  "9918995029506": {
+    "manifest_version": 1,
+    "query": "9918995029506 B: THE FANG 12ML ROW X6 Games Workshop 99189950295064",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995029506+B%3A+THE+FANG+12ML+ROW+X6+Games+Workshop+99189950295064: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995029506+B%3A+THE+FANG+12ML+ROW+X6+Games+Workshop+99189950295064 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dcc3400>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995029506+B%3A+THE+FANG+12ML+ROW+X6+Games+Workshop+99189950295064: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995029506+B%3A+THE+FANG+12ML+ROW+X6+Games+Workshop+99189950295064 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df04430>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:26:28Z"
+  },
+  "9918995029606": {
+    "manifest_version": 1,
+    "query": "9918995029606 B: SCREAMER PINK 12ML ROW X6 Games Workshop 99189950296061",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995029606+B%3A+SCREAMER+PINK+12ML+ROW+X6+Games+Workshop+99189950296061: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995029606+B%3A+SCREAMER+PINK+12ML+ROW+X6+Games+Workshop+99189950296061 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dfa6c40>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995029606+B%3A+SCREAMER+PINK+12ML+ROW+X6+Games+Workshop+99189950296061: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995029606+B%3A+SCREAMER+PINK+12ML+ROW+X6+Games+Workshop+99189950296061 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df04640>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:28:04Z"
+  },
+  "9918995029706": {
+    "manifest_version": 1,
+    "query": "9918995029706 B: RETRIBUTOR ARMOUR 12ML ROW X6 Games Workshop 99189950297068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995029706+B%3A+RETRIBUTOR+ARMOUR+12ML+ROW+X6+Games+Workshop+99189950297068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995029706+B%3A+RETRIBUTOR+ARMOUR+12ML+ROW+X6+Games+Workshop+99189950297068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10df4cb20>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995029706+B%3A+RETRIBUTOR+ARMOUR+12ML+ROW+X6+Games+Workshop+99189950297068: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995029706+B%3A+RETRIBUTOR+ARMOUR+12ML+ROW+X6+Games+Workshop+99189950297068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df4ca90>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:29:40Z"
+  },
+  "9918995029806": {
+    "manifest_version": 1,
+    "query": "9918995029806 B: THOUSAND SONS BLUE 12ML ROW X6 Games Workshop 99189950298065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995029806+B%3A+THOUSAND+SONS+BLUE+12ML+ROW+X6+Games+Workshop+99189950298065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995029806+B%3A+THOUSAND+SONS+BLUE+12ML+ROW+X6+Games+Workshop+99189950298065 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995029806+B%3A+THOUSAND+SONS+BLUE+12ML+ROW+X6+Games+Workshop+99189950298065: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995029806+B%3A+THOUSAND+SONS+BLUE+12ML+ROW+X6+Games+Workshop+99189950298065 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:15:12Z"
+  },
+  "9918995029906": {
+    "manifest_version": 1,
+    "query": "9918995029906 B: DEATH GUARD GREEN 12ML ROW X6 Games Workshop 99189950299062",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995029906+B%3A+DEATH+GUARD+GREEN+12ML+ROW+X6+Games+Workshop+99189950299062: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995029906+B%3A+DEATH+GUARD+GREEN+12ML+ROW+X6+Games+Workshop+99189950299062 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dd0c250>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995029906+B%3A+DEATH+GUARD+GREEN+12ML+ROW+X6+Games+Workshop+99189950299062: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995029906+B%3A+DEATH+GUARD+GREEN+12ML+ROW+X6+Games+Workshop+99189950299062 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df4c430>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:31:16Z"
+  },
+  "9918995030006": {
+    "manifest_version": 1,
+    "query": "9918995030006 B: IONRACH SKIN 12ML ROW X6 Games Workshop 99189950300065",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:29:46Z"
+  },
+  "9918995030106": {
+    "manifest_version": 1,
+    "query": "9918995030106 B: PHOENICIAN PURPLE 12ML ROW X6 Games Workshop 99189950301062",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995030106+B%3A+PHOENICIAN+PURPLE+12ML+ROW+X6+Games+Workshop+99189950301062: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995030106+B%3A+PHOENICIAN+PURPLE+12ML+ROW+X6+Games+Workshop+99189950301062 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10df04760>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995030106+B%3A+PHOENICIAN+PURPLE+12ML+ROW+X6+Games+Workshop+99189950301062: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995030106+B%3A+PHOENICIAN+PURPLE+12ML+ROW+X6+Games+Workshop+99189950301062 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dfa61f0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:32:53Z"
+  },
+  "9918995030406": {
+    "manifest_version": 1,
+    "query": "9918995030406 B: NIGHT LORDS BLUE 12ML ROW X6 Games Workshop 99189950304063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995030406+B%3A+NIGHT+LORDS+BLUE+12ML+ROW+X6+Games+Workshop+99189950304063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995030406+B%3A+NIGHT+LORDS+BLUE+12ML+ROW+X6+Games+Workshop+99189950304063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10df80a30>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995030406+B%3A+NIGHT+LORDS+BLUE+12ML+ROW+X6+Games+Workshop+99189950304063: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995030406+B%3A+NIGHT+LORDS+BLUE+12ML+ROW+X6+Games+Workshop+99189950304063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df044c0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:34:29Z"
+  },
+  "9918995030606": {
+    "manifest_version": 1,
+    "query": "9918995030606 B: CORVUS BLACK 12ML ROW X6 Games Workshop 99189950306067",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:29:50Z"
+  },
+  "9918995030806": {
+    "manifest_version": 1,
+    "query": "9918995030806 B: IRON HANDS STEEL 12ML ROW X6 Games Workshop 99189950308061",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995030806+B%3A+IRON+HANDS+STEEL+12ML+ROW+X6+Games+Workshop+99189950308061: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995030806+B%3A+IRON+HANDS+STEEL+12ML+ROW+X6+Games+Workshop+99189950308061 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dcc35e0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995030806+B%3A+IRON+HANDS+STEEL+12ML+ROW+X6+Games+Workshop+99189950308061: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995030806+B%3A+IRON+HANDS+STEEL+12ML+ROW+X6+Games+Workshop+99189950308061 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10df4cd60>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:36:05Z"
+  },
+  "9918995030906": {
+    "manifest_version": 1,
+    "query": "9918995030906 B: GREY KNIGHTS STEEL 12ML ROW X6 Games Workshop 99189950309068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995030906+B%3A+GREY+KNIGHTS+STEEL+12ML+ROW+X6+Games+Workshop+99189950309068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995030906+B%3A+GREY+KNIGHTS+STEEL+12ML+ROW+X6+Games+Workshop+99189950309068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10df4c1f0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995030906+B%3A+GREY+KNIGHTS+STEEL+12ML+ROW+X6+Games+Workshop+99189950309068: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995030906+B%3A+GREY+KNIGHTS+STEEL+12ML+ROW+X6+Games+Workshop+99189950309068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dd0c070>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:37:41Z"
+  },
+  "9918995031006": {
+    "manifest_version": 1,
+    "query": "9918995031006 B: BALTHASAR GOLD 12ML ROW X6 Games Workshop 99189950310064",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:29:43Z"
+  },
+  "9918995031106": {
+    "manifest_version": 1,
+    "query": "9918995031106 B: IRON WARRIORS 12ML ROW X6 Games Workshop 99189950311061",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995031106+B%3A+IRON+WARRIORS+12ML+ROW+X6+Games+Workshop+99189950311061: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995031106+B%3A+IRON+WARRIORS+12ML+ROW+X6+Games+Workshop+99189950311061 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995031106+B%3A+IRON+WARRIORS+12ML+ROW+X6+Games+Workshop+99189950311061: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995031106+B%3A+IRON+WARRIORS+12ML+ROW+X6+Games+Workshop+99189950311061 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:36Z"
+  },
+  "9918995031206": {
+    "manifest_version": 1,
+    "query": "9918995031206 B: BARAK-NAR BURGUNDY 12ML ROW X6 Games Workshop 99189950312068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995031206+B%3A+BARAK-NAR+BURGUNDY+12ML+ROW+X6+Games+Workshop+99189950312068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995031206+B%3A+BARAK-NAR+BURGUNDY+12ML+ROW+X6+Games+Workshop+99189950312068 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995031206+B%3A+BARAK-NAR+BURGUNDY+12ML+ROW+X6+Games+Workshop+99189950312068: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995031206+B%3A+BARAK-NAR+BURGUNDY+12ML+ROW+X6+Games+Workshop+99189950312068 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:15:18Z"
+  },
+  "9918995031306": {
+    "manifest_version": 1,
+    "query": "9918995031306 B: CATACHAN FLESH 12ML ROW X6 Games Workshop 99189950313065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995031306+B%3A+CATACHAN+FLESH+12ML+ROW+X6+Games+Workshop+99189950313065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995031306+B%3A+CATACHAN+FLESH+12ML+ROW+X6+Games+Workshop+99189950313065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10df04e80>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995031306+B%3A+CATACHAN+FLESH+12ML+ROW+X6+Games+Workshop+99189950313065: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995031306+B%3A+CATACHAN+FLESH+12ML+ROW+X6+Games+Workshop+99189950313065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dfa61c0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:39:17Z"
+  },
+  "9918995031506": {
+    "manifest_version": 1,
+    "query": "9918995031506 B: CORAX WHITE 12ML ROW X6 Games Workshop 99189950315069",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:41Z"
+  },
+  "9918995031606": {
+    "manifest_version": 1,
+    "query": "9918995031606 B: WRAITHBONE 12ML ROW X6 Games Workshop 99189950316066",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:42Z"
+  },
+  "9918995031706": {
+    "manifest_version": 1,
+    "query": "9918995031706 B: GREY SEER 12ML ROW X6 Games Workshop 99189950317063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995031706+B%3A+GREY+SEER+12ML+ROW+X6+Games+Workshop+99189950317063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995031706+B%3A+GREY+SEER+12ML+ROW+X6+Games+Workshop+99189950317063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d6310>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T05:54:34Z"
+  },
+  "9918995031806": {
+    "manifest_version": 1,
+    "query": "9918995031806 B: RUNELORD BRASS 12ML ROW X6 Games Workshop 99189950318060",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:42Z"
+  },
+  "9918995031906": {
+    "manifest_version": 1,
+    "query": "9918995031906 B: ORRUK FLESH 12ML ROW X6 Games Workshop 99189950319067",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:43Z"
+  },
+  "9918995129906": {
+    "manifest_version": 1,
+    "query": "9918995129906 L: YRIEL YELLOW 12ML ROW X6 Games Workshop 99189951299061",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995129906+L%3A+YRIEL+YELLOW+12ML+ROW+X6+Games+Workshop+99189951299061: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995129906+L%3A+YRIEL+YELLOW+12ML+ROW+X6+Games+Workshop+99189951299061 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981be0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T05:55:23Z"
+  },
+  "9918995130006": {
+    "manifest_version": 1,
+    "query": "9918995130006 L: FLASH GITZ YELLOW 12ML ROW X6 Games Workshop 99189951300064",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995130006+L%3A+FLASH+GITZ+YELLOW+12ML+ROW+X6+Games+Workshop+99189951300064: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995130006+L%3A+FLASH+GITZ+YELLOW+12ML+ROW+X6+Games+Workshop+99189951300064 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50e340>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T05:56:11Z"
+  },
+  "9918995130106": {
+    "manifest_version": 1,
+    "query": "9918995130106 L: TROLLSLAYER ORANGE 12ML ROW X6 Games Workshop 99189951301061",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995130106+L%3A+TROLLSLAYER+ORANGE+12ML+ROW+X6+Games+Workshop+99189951301061: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995130106+L%3A+TROLLSLAYER+ORANGE+12ML+ROW+X6+Games+Workshop+99189951301061 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50e250>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T05:56:59Z"
+  },
+  "9918995130206": {
+    "manifest_version": 1,
+    "query": "9918995130206 L: FIRE DRAGON BRIGHT 12ML ROW X6 Games Workshop 99189951302068",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:43Z"
+  },
+  "9918995130306": {
+    "manifest_version": 1,
+    "query": "9918995130306 L: EVIL SUNZ SCARLET 12ML ROW X6 Games Workshop 99189951303065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995130306+L%3A+EVIL+SUNZ+SCARLET+12ML+ROW+X6+Games+Workshop+99189951303065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995130306+L%3A+EVIL+SUNZ+SCARLET+12ML+ROW+X6+Games+Workshop+99189951303065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981eb0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T05:57:47Z"
+  },
+  "9918995130406": {
+    "manifest_version": 1,
+    "query": "9918995130406 L: WILD RIDER RED 12ML ROW X6 Games Workshop 99189951304062",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995130406+L%3A+WILD+RIDER+RED+12ML+ROW+X6+Games+Workshop+99189951304062: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995130406+L%3A+WILD+RIDER+RED+12ML+ROW+X6+Games+Workshop+99189951304062 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d6280>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T05:58:35Z"
+  },
+  "9918995130506": {
+    "manifest_version": 1,
+    "query": "9918995130506 L: WAZDAKKA RED 12ML ROW X6 Games Workshop 99189951305069",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995130506+L%3A+WAZDAKKA+RED+12ML+ROW+X6+Games+Workshop+99189951305069: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995130506+L%3A+WAZDAKKA+RED+12ML+ROW+X6+Games+Workshop+99189951305069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6d90>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T05:59:23Z"
+  },
+  "9918995130606": {
+    "manifest_version": 1,
+    "query": "9918995130606 L: SQUIG ORANGE 12ML ROW X6 Games Workshop 99189951306066",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995130606+L%3A+SQUIG+ORANGE+12ML+ROW+X6+Games+Workshop+99189951306066: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995130606+L%3A+SQUIG+ORANGE+12ML+ROW+X6+Games+Workshop+99189951306066 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d68b0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:00:11Z"
+  },
+  "9918995130706": {
+    "manifest_version": 1,
+    "query": "9918995130706 L: XEREUS PURPLE 12ML ROW X6 Games Workshop 99189951307063",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:44Z"
+  },
+  "9918995130806": {
+    "manifest_version": 1,
+    "query": "9918995130806 L: GENESTEALER PURPLE 12ML ROW X6 Games Workshop 99189951308060",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995130806+L%3A+GENESTEALER+PURPLE+12ML+ROW+X6+Games+Workshop+99189951308060: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995130806+L%3A+GENESTEALER+PURPLE+12ML+ROW+X6+Games+Workshop+99189951308060 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9817c0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:00:59Z"
+  },
+  "9918995131006": {
+    "manifest_version": 1,
+    "query": "9918995131006 L: SLAANESH GREY 12ML ROW X6 Games Workshop 99189951310063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995131006+L%3A+SLAANESH+GREY+12ML+ROW+X6+Games+Workshop+99189951310063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995131006+L%3A+SLAANESH+GREY+12ML+ROW+X6+Games+Workshop+99189951310063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6580>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:01:47Z"
+  },
+  "9918995131106": {
+    "manifest_version": 1,
+    "query": "9918995131106 L: ALAITOC BLUE 12ML ROW X6 Games Workshop 99189951311060",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:44Z"
+  },
+  "9918995131206": {
+    "manifest_version": 1,
+    "query": "9918995131206 L: HOETH BLUE 12ML ROW X6 Games Workshop 99189951312067",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995131206+L%3A+HOETH+BLUE+12ML+ROW+X6+Games+Workshop+99189951312067: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995131206+L%3A+HOETH+BLUE+12ML+ROW+X6+Games+Workshop+99189951312067 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50ed30>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:02:35Z"
+  },
+  "9918995131306": {
+    "manifest_version": 1,
+    "query": "9918995131306 L: ALTDORF GUARD BLUE 12ML ROW X6 Games Workshop 99189951313064",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995131306+L%3A+ALTDORF+GUARD+BLUE+12ML+ROW+X6+Games+Workshop+99189951313064: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995131306+L%3A+ALTDORF+GUARD+BLUE+12ML+ROW+X6+Games+Workshop+99189951313064 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981820>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:03:23Z"
+  },
+  "9918995131406": {
+    "manifest_version": 1,
+    "query": "9918995131406 L: CALGAR BLUE 12ML ROW X6 Games Workshop 99189951314061",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995131406+L%3A+CALGAR+BLUE+12ML+ROW+X6+Games+Workshop+99189951314061: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995131406+L%3A+CALGAR+BLUE+12ML+ROW+X6+Games+Workshop+99189951314061 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d6730>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:04:11Z"
+  },
+  "9918995131506": {
+    "manifest_version": 1,
+    "query": "9918995131506 L: TECLIS BLUE 12ML ROW X6 Games Workshop 99189951315068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995131506+L%3A+TECLIS+BLUE+12ML+ROW+X6+Games+Workshop+99189951315068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995131506+L%3A+TECLIS+BLUE+12ML+ROW+X6+Games+Workshop+99189951315068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dfa6850>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995131506+L%3A+TECLIS+BLUE+12ML+ROW+X6+Games+Workshop+99189951315068: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995131506+L%3A+TECLIS+BLUE+12ML+ROW+X6+Games+Workshop+99189951315068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dcc3340>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:01:16Z"
+  },
+  "9918995131606": {
+    "manifest_version": 1,
+    "query": "9918995131606 L: LOTHERN BLUE 12ML ROW X6 Games Workshop 99189951316065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995131606+L%3A+LOTHERN+BLUE+12ML+ROW+X6+Games+Workshop+99189951316065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995131606+L%3A+LOTHERN+BLUE+12ML+ROW+X6+Games+Workshop+99189951316065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879b50>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:04:59Z"
+  },
+  "9918995131706": {
+    "manifest_version": 1,
+    "query": "9918995131706 L: SOTEK GREEN 12ML ROW X6 Games Workshop 99189951317062",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:44Z"
+  },
+  "9918995131806": {
+    "manifest_version": 1,
+    "query": "9918995131806 L: TEMPLE GUARD BLUE 12ML ROW X6 Games Workshop 99189951318069",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:44Z"
+  },
+  "9918995131906": {
+    "manifest_version": 1,
+    "query": "9918995131906 L: KABALITE GREEN 12ML ROW X6 Games Workshop 99189951319066",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995131906+L%3A+KABALITE+GREEN+12ML+ROW+X6+Games+Workshop+99189951319066: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995131906+L%3A+KABALITE+GREEN+12ML+ROW+X6+Games+Workshop+99189951319066 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b879970>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:05:47Z"
+  },
+  "9918995132006": {
+    "manifest_version": 1,
+    "query": "9918995132006 L: SYBARITE GREEN 12ML ROW X6 Games Workshop 99189951320062",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:45Z"
+  },
+  "9918995132106": {
+    "manifest_version": 1,
+    "query": "9918995132106 L: WARPSTONE GLOW 12ML ROW X6 Games Workshop 99189951321069",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:45Z"
+  },
+  "9918995132206": {
+    "manifest_version": 1,
+    "query": "9918995132206 L: MOOT GREEN 12ML ROW X6 Games Workshop 99189951322066",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995132206+L%3A+MOOT+GREEN+12ML+ROW+X6+Games+Workshop+99189951322066: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995132206+L%3A+MOOT+GREEN+12ML+ROW+X6+Games+Workshop+99189951322066 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d6040>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:06:35Z"
+  },
+  "9918995132306": {
+    "manifest_version": 1,
+    "query": "9918995132306 L: WARBOSS GREEN 12ML ROW X6 Games Workshop 99189951323063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995132306+L%3A+WARBOSS+GREEN+12ML+ROW+X6+Games+Workshop+99189951323063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995132306+L%3A+WARBOSS+GREEN+12ML+ROW+X6+Games+Workshop+99189951323063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981cd0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:07:23Z"
+  },
+  "9918995132606": {
+    "manifest_version": 1,
+    "query": "9918995132606 L: STRAKEN GREEN 12ML ROW X6 Games Workshop 99189951326064",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:45Z"
+  },
+  "9918995132706": {
+    "manifest_version": 1,
+    "query": "9918995132706 L: NURGLING GREEN 12ML ROW X6 Games Workshop 99189951327061",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995132706+L%3A+NURGLING+GREEN+12ML+ROW+X6+Games+Workshop+99189951327061: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995132706+L%3A+NURGLING+GREEN+12ML+ROW+X6+Games+Workshop+99189951327061 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b99e580>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:08:11Z"
+  },
+  "9918995132806": {
+    "manifest_version": 1,
+    "query": "9918995132806 L: ELYSIAN GREEN 12ML ROW X6 Games Workshop 99189951328068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995132806+L%3A+ELYSIAN+GREEN+12ML+ROW+X6+Games+Workshop+99189951328068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995132806+L%3A+ELYSIAN+GREEN+12ML+ROW+X6+Games+Workshop+99189951328068 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995132806+L%3A+ELYSIAN+GREEN+12ML+ROW+X6+Games+Workshop+99189951328068: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995132806+L%3A+ELYSIAN+GREEN+12ML+ROW+X6+Games+Workshop+99189951328068 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:14:53Z"
+  },
+  "9918995132906": {
+    "manifest_version": 1,
+    "query": "9918995132906 L: OGRYN CAMO 12ML ROW X6 Games Workshop 99189951329065",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:45Z"
+  },
+  "9918995133006": {
+    "manifest_version": 1,
+    "query": "9918995133006 L: USHABTI BONE 12ML ROW X6 Games Workshop 99189951330061",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995133006+L%3A+USHABTI+BONE+12ML+ROW+X6+Games+Workshop+99189951330061: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995133006+L%3A+USHABTI+BONE+12ML+ROW+X6+Games+Workshop+99189951330061 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981b80>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:08:59Z"
+  },
+  "9918995133106": {
+    "manifest_version": 1,
+    "query": "9918995133106 L: SCREAMING SKULL 12ML ROW X6 Games Workshop 99189951331068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995133106+L%3A+SCREAMING+SKULL+12ML+ROW+X6+Games+Workshop+99189951331068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995133106+L%3A+SCREAMING+SKULL+12ML+ROW+X6+Games+Workshop+99189951331068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d6910>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:09:47Z"
+  },
+  "9918995133306": {
+    "manifest_version": 1,
+    "query": "9918995133306 L: KARAK STONE 12ML ROW X6 Games Workshop 99189951333062",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:45Z"
+  },
+  "9918995133406": {
+    "manifest_version": 1,
+    "query": "9918995133406 L: CADIAN FLESHTONE 12ML ROW X6 Games Workshop 99189951334069",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995133406+L%3A+CADIAN+FLESHTONE+12ML+ROW+X6+Games+Workshop+99189951334069: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995133406+L%3A+CADIAN+FLESHTONE+12ML+ROW+X6+Games+Workshop+99189951334069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b99ed00>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:10:35Z"
+  },
+  "9918995133506": {
+    "manifest_version": 1,
+    "query": "9918995133506 L: KISLEV FLESH 12ML ROW X6 Games Workshop 99189951335066",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995133506+L%3A+KISLEV+FLESH+12ML+ROW+X6+Games+Workshop+99189951335066: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995133506+L%3A+KISLEV+FLESH+12ML+ROW+X6+Games+Workshop+99189951335066 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b720550>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:11:23Z"
+  },
+  "9918995133806": {
+    "manifest_version": 1,
+    "query": "9918995133806 L: SKRAG BROWN 12ML ROW X6 Games Workshop 99189951338067",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:46Z"
+  },
+  "9918995134206": {
+    "manifest_version": 1,
+    "query": "9918995134206 L: ZAMESI DESERT 12ML ROW X6 Games Workshop 99189951342064",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995134206+L%3A+ZAMESI+DESERT+12ML+ROW+X6+Games+Workshop+99189951342064: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995134206+L%3A+ZAMESI+DESERT+12ML+ROW+X6+Games+Workshop+99189951342064 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d6220>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:12:12Z"
+  },
+  "9918995134306": {
+    "manifest_version": 1,
+    "query": "9918995134306 L: DOOMBULL BROWN 12ML ROW X6 Games Workshop 99189951343061",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995134306+L%3A+DOOMBULL+BROWN+12ML+ROW+X6+Games+Workshop+99189951343061: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995134306+L%3A+DOOMBULL+BROWN+12ML+ROW+X6+Games+Workshop+99189951343061 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981c10>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:13:00Z"
+  },
+  "9918995134406": {
+    "manifest_version": 1,
+    "query": "9918995134406 L: TUSKGOR FUR 12ML ROW X6 Games Workshop 99189951344068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995134406+L%3A+TUSKGOR+FUR+12ML+ROW+X6+Games+Workshop+99189951344068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995134406+L%3A+TUSKGOR+FUR+12ML+ROW+X6+Games+Workshop+99189951344068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dcc3970>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995134406+L%3A+TUSKGOR+FUR+12ML+ROW+X6+Games+Workshop+99189951344068: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995134406+L%3A+TUSKGOR+FUR+12ML+ROW+X6+Games+Workshop+99189951344068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dbc4fa0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:56:28Z"
+  },
+  "9918995134506": {
+    "manifest_version": 1,
+    "query": "9918995134506 L: GORTHOR BROWN 12ML ROW X6 Games Workshop 99189951345065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995134506+L%3A+GORTHOR+BROWN+12ML+ROW+X6+Games+Workshop+99189951345065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995134506+L%3A+GORTHOR+BROWN+12ML+ROW+X6+Games+Workshop+99189951345065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf8850>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:13:48Z"
+  },
+  "9918995134606": {
+    "manifest_version": 1,
+    "query": "9918995134606 L: BANEBLADE BROWN 12ML ROW X6 Games Workshop 99189951346062",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:46Z"
+  },
+  "9918995134706": {
+    "manifest_version": 1,
+    "query": "9918995134706 L: DAWNSTONE 12ML ROW X6 Games Workshop 99189951347069",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995134706+L%3A+DAWNSTONE+12ML+ROW+X6+Games+Workshop+99189951347069: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995134706+L%3A+DAWNSTONE+12ML+ROW+X6+Games+Workshop+99189951347069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b981a00>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:14:36Z"
+  },
+  "9918995134806": {
+    "manifest_version": 1,
+    "query": "9918995134806 L: ADMINISTRATUM GREY 12ML ROW X6 Games Workshop 99189951348066",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995134806+L%3A+ADMINISTRATUM+GREY+12ML+ROW+X6+Games+Workshop+99189951348066: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995134806+L%3A+ADMINISTRATUM+GREY+12ML+ROW+X6+Games+Workshop+99189951348066 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b9d67f0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:15:24Z"
+  },
+  "9918995134906": {
+    "manifest_version": 1,
+    "query": "9918995134906 L: ESHIN GREY 12ML ROW X6 Games Workshop 99189951349063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995134906+L%3A+ESHIN+GREY+12ML+ROW+X6+Games+Workshop+99189951349063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995134906+L%3A+ESHIN+GREY+12ML+ROW+X6+Games+Workshop+99189951349063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b99ed00>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:16:12Z"
+  },
+  "9918995135006": {
+    "manifest_version": 1,
+    "query": "9918995135006 L: DARK REAPER 12ML ROW X6 Games Workshop 99189951350069",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:46Z"
+  },
+  "9918995135106": {
+    "manifest_version": 1,
+    "query": "9918995135106 L: THUNDERHAWK BLUE 12ML ROW X6 Games Workshop 99189951351066",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995135106+L%3A+THUNDERHAWK+BLUE+12ML+ROW+X6+Games+Workshop+99189951351066: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995135106+L%3A+THUNDERHAWK+BLUE+12ML+ROW+X6+Games+Workshop+99189951351066 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10baf80d0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:17:00Z"
+  },
+  "9918995135206": {
+    "manifest_version": 1,
+    "query": "9918995135206 L: SKAVENBLIGHT DINGE 12ML ROW X6 Games Workshop 99189951352063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995135206+L%3A+SKAVENBLIGHT+DINGE+12ML+ROW+X6+Games+Workshop+99189951352063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995135206+L%3A+SKAVENBLIGHT+DINGE+12ML+ROW+X6+Games+Workshop+99189951352063 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995135206+L%3A+SKAVENBLIGHT+DINGE+12ML+ROW+X6+Games+Workshop+99189951352063: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995135206+L%3A+SKAVENBLIGHT+DINGE+12ML+ROW+X6+Games+Workshop+99189951352063 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:15:24Z"
+  },
+  "9918995135306": {
+    "manifest_version": 1,
+    "query": "9918995135306 L: STORMVERMIN FUR 12ML ROW X6 Games Workshop 99189951353060",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995135306+L%3A+STORMVERMIN+FUR+12ML+ROW+X6+Games+Workshop+99189951353060: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995135306+L%3A+STORMVERMIN+FUR+12ML+ROW+X6+Games+Workshop+99189951353060 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b720d30>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:17:48Z"
+  },
+  "9918995135406": {
+    "manifest_version": 1,
+    "query": "9918995135406 L: ULTHUAN GREY 12ML ROW X6 Games Workshop 99189951354067",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:46Z"
+  },
+  "9918995135506": {
+    "manifest_version": 1,
+    "query": "9918995135506 L: WHITE SCAR 12ML ROW X6 Games Workshop 99189951355064",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995135506+L%3A+WHITE+SCAR+12ML+ROW+X6+Games+Workshop+99189951355064: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995135506+L%3A+WHITE+SCAR+12ML+ROW+X6+Games+Workshop+99189951355064 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6460>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:18:36Z"
+  },
+  "9918995135606": {
+    "manifest_version": 1,
+    "query": "9918995135606 L: PALLID WYCH FLESH 12ML ROW X6 Games Workshop 99189951356061",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995135606+L%3A+PALLID+WYCH+FLESH+12ML+ROW+X6+Games+Workshop+99189951356061: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995135606+L%3A+PALLID+WYCH+FLESH+12ML+ROW+X6+Games+Workshop+99189951356061 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995135606+L%3A+PALLID+WYCH+FLESH+12ML+ROW+X6+Games+Workshop+99189951356061: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995135606+L%3A+PALLID+WYCH+FLESH+12ML+ROW+X6+Games+Workshop+99189951356061 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:15:30Z"
+  },
+  "9918995135706": {
+    "manifest_version": 1,
+    "query": "9918995135706 L: IRONBREAKER 12ML ROW X6 Games Workshop 99189951357068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995135706+L%3A+IRONBREAKER+12ML+ROW+X6+Games+Workshop+99189951357068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995135706+L%3A+IRONBREAKER+12ML+ROW+X6+Games+Workshop+99189951357068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50e310>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:19:24Z"
+  },
+  "9918995135806": {
+    "manifest_version": 1,
+    "query": "9918995135806 L: RUNEFANG STEEL 12ML ROW X6 Games Workshop 99189951358065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995135806+L%3A+RUNEFANG+STEEL+12ML+ROW+X6+Games+Workshop+99189951358065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995135806+L%3A+RUNEFANG+STEEL+12ML+ROW+X6+Games+Workshop+99189951358065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50ed30>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:20:12Z"
+  },
+  "9918995135906": {
+    "manifest_version": 1,
+    "query": "9918995135906 L: GEHENNA'S GOLD 12ML ROW X6 Games Workshop 99189951359062",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:46Z"
+  },
+  "9918995136006": {
+    "manifest_version": 1,
+    "query": "9918995136006 L: AURIC ARMOUR GOLD 12ML ROW X6 Games Workshop 99189951360068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995136006+L%3A+AURIC+ARMOUR+GOLD+12ML+ROW+X6+Games+Workshop+99189951360068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995136006+L%3A+AURIC+ARMOUR+GOLD+12ML+ROW+X6+Games+Workshop+99189951360068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e62e0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:21:00Z"
+  },
+  "9918995136106": {
+    "manifest_version": 1,
+    "query": "9918995136106 L: SYCORAX BRONZE 12ML ROW X6 Games Workshop 99189951361065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995136106+L%3A+SYCORAX+BRONZE+12ML+ROW+X6+Games+Workshop+99189951361065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995136106+L%3A+SYCORAX+BRONZE+12ML+ROW+X6+Games+Workshop+99189951361065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b649dc0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:22:36Z"
+  },
+  "9918995136206": {
+    "manifest_version": 1,
+    "query": "9918995136206 L: BRASS SCORPION 12ML ROW X6 Games Workshop 99189951362062",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:46Z"
+  },
+  "9918995136306": {
+    "manifest_version": 1,
+    "query": "9918995136306 L: RUSS GREY 12ML ROW X6 Games Workshop 99189951363069",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995136306+L%3A+RUSS+GREY+12ML+ROW+X6+Games+Workshop+99189951363069: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995136306+L%3A+RUSS+GREY+12ML+ROW+X6+Games+Workshop+99189951363069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b720f10>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:23:24Z"
+  },
+  "9918995136406": {
+    "manifest_version": 1,
+    "query": "9918995136406 L: FENRISIAN GREY 12ML ROW X6 Games Workshop 99189951364066",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995136406+L%3A+FENRISIAN+GREY+12ML+ROW+X6+Games+Workshop+99189951364066: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995136406+L%3A+FENRISIAN+GREY+12ML+ROW+X6+Games+Workshop+99189951364066 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e68e0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:24:12Z"
+  },
+  "9918995136506": {
+    "manifest_version": 1,
+    "query": "9918995136506 L: PINK HORROR 12ML ROW X6 Games Workshop 99189951365063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995136506+L%3A+PINK+HORROR+12ML+ROW+X6+Games+Workshop+99189951365063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995136506+L%3A+PINK+HORROR+12ML+ROW+X6+Games+Workshop+99189951365063 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995136506+L%3A+PINK+HORROR+12ML+ROW+X6+Games+Workshop+99189951365063: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995136506+L%3A+PINK+HORROR+12ML+ROW+X6+Games+Workshop+99189951365063 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:28:07Z"
+  },
+  "9918995136606": {
+    "manifest_version": 1,
+    "query": "9918995136606 L: EMPEROR'S CHILDREN 12ML ROW X6 Games Workshop 99189951366060",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995136606+L%3A+EMPEROR%27S+CHILDREN+12ML+ROW+X6+Games+Workshop+99189951366060: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995136606+L%3A+EMPEROR%27S+CHILDREN+12ML+ROW+X6+Games+Workshop+99189951366060 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50e0a0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:25:00Z"
+  },
+  "9918995136706": {
+    "manifest_version": 1,
+    "query": "9918995136706 L: LIBERATOR GOLD 12ML ROW X6 Games Workshop 99189951367067",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:47Z"
+  },
+  "9918995136806": {
+    "manifest_version": 1,
+    "query": "9918995136806 L: FLAYED ONE FLESH 12ML ROW X6 Games Workshop 99189951368064",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995136806+L%3A+FLAYED+ONE+FLESH+12ML+ROW+X6+Games+Workshop+99189951368064: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995136806+L%3A+FLAYED+ONE+FLESH+12ML+ROW+X6+Games+Workshop+99189951368064 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995136806+L%3A+FLAYED+ONE+FLESH+12ML+ROW+X6+Games+Workshop+99189951368064: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995136806+L%3A+FLAYED+ONE+FLESH+12ML+ROW+X6+Games+Workshop+99189951368064 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:28:13Z"
+  },
+  "9918995137106": {
+    "manifest_version": 1,
+    "query": "9918995137106 L: STORMHOST SILVER 12ML ROW X6 Games Workshop 99189951371064",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995137106+L%3A+STORMHOST+SILVER+12ML+ROW+X6+Games+Workshop+99189951371064: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995137106+L%3A+STORMHOST+SILVER+12ML+ROW+X6+Games+Workshop+99189951371064 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50eac0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:25:48Z"
+  },
+  "9918995137206": {
+    "manifest_version": 1,
+    "query": "9918995137206 L: AHRIMAN BLUE 12ML ROW X6 Games Workshop 99189951372061",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:47Z"
+  },
+  "9918995137306": {
+    "manifest_version": 1,
+    "query": "9918995137306 L: DEEPKIN FLESH 12ML ROW X6 Games Workshop 99189951373068",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995137306+L%3A+DEEPKIN+FLESH+12ML+ROW+X6+Games+Workshop+99189951373068: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995137306+L%3A+DEEPKIN+FLESH+12ML+ROW+X6+Games+Workshop+99189951373068 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6ac0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:26:36Z"
+  },
+  "9918995137406": {
+    "manifest_version": 1,
+    "query": "9918995137406 L: GAUSS BLASTER GREEN 12ML ROW X6 Games Workshop 99189951374065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995137406+L%3A+GAUSS+BLASTER+GREEN+12ML+ROW+X6+Games+Workshop+99189951374065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995137406+L%3A+GAUSS+BLASTER+GREEN+12ML+ROW+X6+Games+Workshop+99189951374065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dd0c0a0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995137406+L%3A+GAUSS+BLASTER+GREEN+12ML+ROW+X6+Games+Workshop+99189951374065: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995137406+L%3A+GAUSS+BLASTER+GREEN+12ML+ROW+X6+Games+Workshop+99189951374065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dbc41c0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T07:58:04Z"
+  },
+  "9918995137506": {
+    "manifest_version": 1,
+    "query": "9918995137506 L: BAHARROTH BLUE 12ML ROW X6 Games Workshop 99189951375062",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995137506+L%3A+BAHARROTH+BLUE+12ML+ROW+X6+Games+Workshop+99189951375062: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995137506+L%3A+BAHARROTH+BLUE+12ML+ROW+X6+Games+Workshop+99189951375062 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b720670>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:27:25Z"
+  },
+  "9918995137606": {
+    "manifest_version": 1,
+    "query": "9918995137606 L: DORN YELLOW 12ML ROW X6 Games Workshop 99189951376069",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995137606+L%3A+DORN+YELLOW+12ML+ROW+X6+Games+Workshop+99189951376069: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995137606+L%3A+DORN+YELLOW+12ML+ROW+X6+Games+Workshop+99189951376069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b08e190>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:28:13Z"
+  },
+  "9918995137706": {
+    "manifest_version": 1,
+    "query": "9918995137706 L: FULGRIM PINK 12ML ROW X6 Games Workshop 99189951377066",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995137706+L%3A+FULGRIM+PINK+12ML+ROW+X6+Games+Workshop+99189951377066: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995137706+L%3A+FULGRIM+PINK+12ML+ROW+X6+Games+Workshop+99189951377066 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995137706+L%3A+FULGRIM+PINK+12ML+ROW+X6+Games+Workshop+99189951377066: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995137706+L%3A+FULGRIM+PINK+12ML+ROW+X6+Games+Workshop+99189951377066 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:28:19Z"
+  },
+  "9918995137806": {
+    "manifest_version": 1,
+    "query": "9918995137806 L: DECHALA LILAC 12ML ROW X6 Games Workshop 99189951378063",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995137806+L%3A+DECHALA+LILAC+12ML+ROW+X6+Games+Workshop+99189951378063: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995137806+L%3A+DECHALA+LILAC+12ML+ROW+X6+Games+Workshop+99189951378063 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b720790>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:29:01Z"
+  },
+  "9918995138006": {
+    "manifest_version": 1,
+    "query": "9918995138006 L: BLUE HORROR 12ML ROW X6 Games Workshop 99189951380066",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:47Z"
+  },
+  "9918995138206": {
+    "manifest_version": 1,
+    "query": "9918995138206 L: KAKOPHONI PURPLE 12ML ROW X6 Games Workshop 99189951382060",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995138206+L%3A+KAKOPHONI+PURPLE+12ML+ROW+X6+Games+Workshop+99189951382060: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995138206+L%3A+KAKOPHONI+PURPLE+12ML+ROW+X6+Games+Workshop+99189951382060 (Caused by NameResolutionError(\"HTTPSConnection(host='html.duckduckgo.com', port=443): Failed to resolve 'html.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\")) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9918995138206+L%3A+KAKOPHONI+PURPLE+12ML+ROW+X6+Games+Workshop+99189951382060: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9918995138206+L%3A+KAKOPHONI+PURPLE+12ML+ROW+X6+Games+Workshop+99189951382060 (Caused by NameResolutionError(\"HTTPSConnection(host='lite.duckduckgo.com', port=443): Failed to resolve 'lite.duckduckgo.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:28:25Z"
+  },
+  "9918995138406": {
+    "manifest_version": 1,
+    "query": "9918995138406 L: PHALANX YELLOW 12ML ROW X6 Games Workshop 99189951384064",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:47Z"
+  },
+  "9918995138706": {
+    "manifest_version": 1,
+    "query": "9918995138706 L: WORD BEARERS RED 12ML ROW X6 Games Workshop 99189951387065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995138706+L%3A+WORD+BEARERS+RED+12ML+ROW+X6+Games+Workshop+99189951387065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995138706+L%3A+WORD+BEARERS+RED+12ML+ROW+X6+Games+Workshop+99189951387065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b6e6a90>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:29:49Z"
+  },
+  "9918995138806": {
+    "manifest_version": 1,
+    "query": "9918995138806 L: HASHUT COPPER 12ML ROW X6 Games Workshop 99189951388062",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995138806+L%3A+HASHUT+COPPER+12ML+ROW+X6+Games+Workshop+99189951388062: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995138806+L%3A+HASHUT+COPPER+12ML+ROW+X6+Games+Workshop+99189951388062 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b720730>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:21:48Z"
+  },
+  "9918995139006": {
+    "manifest_version": 1,
+    "query": "9918995139006 L: KNIGHT-QUESTOR FLESH 12ML ROW X6 Games Workshop 99189951390065",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9918995139006+L%3A+KNIGHT-QUESTOR+FLESH+12ML+ROW+X6+Games+Workshop+99189951390065: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9918995139006+L%3A+KNIGHT-QUESTOR+FLESH+12ML+ROW+X6+Games+Workshop+99189951390065 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10b50ee80>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T06:30:37Z"
+  },
+  "9918995139106": {
+    "manifest_version": 1,
+    "query": "9918995139106 L: CANOPTEK ALLOY 12ML ROW X6 Games Workshop 99189951391062",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:47Z"
+  },
+  "9919999910403": {
+    "manifest_version": 1,
+    "query": "9919999910403 WARHAMMER COLOUR: DRY BRUSH MEDIUM (X3) Games Workshop 99199999104036",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9919999910403+WARHAMMER+COLOUR%3A+DRY+BRUSH+MEDIUM+%28X3%29+Games+Workshop+99199999104036: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9919999910403+WARHAMMER+COLOUR%3A+DRY+BRUSH+MEDIUM+%28X3%29+Games+Workshop+99199999104036 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dbc4430>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9919999910403+WARHAMMER+COLOUR%3A+DRY+BRUSH+MEDIUM+%28X3%29+Games+Workshop+99199999104036: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9919999910403+WARHAMMER+COLOUR%3A+DRY+BRUSH+MEDIUM+%28X3%29+Games+Workshop+99199999104036 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dcc33a0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:04:28Z"
+  },
+  "9921999904310": {
+    "manifest_version": 1,
+    "query": "9921999904310 WH COLOUR:PLASTIC GLUE (15g) (EU/AU) X10 Games Workshop 99219999043101",
+    "reason": "no candidate reached 70",
+    "state": "missing",
+    "top_score": 0,
+    "updated_at": "2026-05-01T09:12:48Z"
+  },
+  "99229999192": {
+    "manifest_version": 1,
+    "query": "99229999192 WH COLOUR: MORDIAN CORPSEGRASS TUFTS Games Workshop 5011921248070",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=99229999192+WH+COLOUR%3A+MORDIAN+CORPSEGRASS+TUFTS+Games+Workshop+5011921248070: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=99229999192+WH+COLOUR%3A+MORDIAN+CORPSEGRASS+TUFTS+Games+Workshop+5011921248070 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dd0c490>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=99229999192+WH+COLOUR%3A+MORDIAN+CORPSEGRASS+TUFTS+Games+Workshop+5011921248070: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=99229999192+WH+COLOUR%3A+MORDIAN+CORPSEGRASS+TUFTS+Games+Workshop+5011921248070 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dfa6ca0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:06:04Z"
+  },
+  "9922999919406": {
+    "manifest_version": 1,
+    "query": "9922999919406 WARHAMMER DICE (6-PACK) Games Workshop 99229999194062",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9922999919406+WARHAMMER+DICE+%286-PACK%29+Games+Workshop+99229999194062: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9922999919406+WARHAMMER+DICE+%286-PACK%29+Games+Workshop+99229999194062 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dfa6b20>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9922999919406+WARHAMMER+DICE+%286-PACK%29+Games+Workshop+99229999194062: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9922999919406+WARHAMMER+DICE+%286-PACK%29+Games+Workshop+99229999194062 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dd0c0a0>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:07:40Z"
+  },
+  "9923999912706": {
+    "manifest_version": 1,
+    "query": "9923999912706 WARHAMMER PAINTING HANDLE (MK3) (6-PACK) Games Workshop 99239999127069",
+    "reason": "Network error while fetching https://html.duckduckgo.com/html/?q=9923999912706+WARHAMMER+PAINTING+HANDLE+%28MK3%29+%286-PACK%29+Games+Workshop+99239999127069: HTTPSConnectionPool(host='html.duckduckgo.com', port=443): Max retries exceeded with url: /html/?q=9923999912706+WARHAMMER+PAINTING+HANDLE+%28MK3%29+%286-PACK%29+Games+Workshop+99239999127069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='html.duckduckgo.com', port=443) at 0x10dcc34f0>, 'Connection to html.duckduckgo.com timed out. (connect timeout=15)')) | Network error while fetching https://lite.duckduckgo.com/lite/?q=9923999912706+WARHAMMER+PAINTING+HANDLE+%28MK3%29+%286-PACK%29+Games+Workshop+99239999127069: HTTPSConnectionPool(host='lite.duckduckgo.com', port=443): Max retries exceeded with url: /lite/?q=9923999912706+WARHAMMER+PAINTING+HANDLE+%28MK3%29+%286-PACK%29+Games+Workshop+99239999127069 (Caused by ConnectTimeoutError(<HTTPSConnection(host='lite.duckduckgo.com', port=443) at 0x10dbc4370>, 'Connection to lite.duckduckgo.com timed out. (connect timeout=15)'))",
+    "state": "failed",
+    "top_score": 0,
+    "updated_at": "2026-05-01T08:09:17Z"
+  }
+}
