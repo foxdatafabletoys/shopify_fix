@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Shopify__graphql_query",
+      "mcp__claude_ai_Shopify__get-shop-info",
+      "mcp__claude_ai_Shopify__graphql_schema"
+    ]
+  }
+}

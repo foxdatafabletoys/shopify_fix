@@ -1,0 +1,251 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1777643497293,
+  "projectRoot": "/Users/toys-data/Documents/GitHub/shopify_fix",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "react",
+        "version": "19.2.4",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "19.2.4",
+        "category": "frontend"
+      },
+      {
+        "name": "vite",
+        "version": "8.0.4",
+        "category": "build"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": null,
+    "lintCommand": "npm run lint",
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "vite",
+      "build": "vite build",
+      "lint": "eslint .",
+      "preview": "vite preview"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": "type-based"
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "public",
+      "scripts",
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "backend": {
+      "path": "backend",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1777643497287,
+      "keyFiles": [
+        "package-lock.json",
+        "package.json",
+        "server.js",
+        "telemachus-live-api.service"
+      ]
+    },
+    "deploy": {
+      "path": "deploy",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777643497288,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 2,
+      "lastAccessed": 1777643497289,
+      "keyFiles": [
+        "BACKORDERS.md",
+        "INVOICING.MD"
+      ]
+    },
+    "onboarding_wizard": {
+      "path": "onboarding_wizard",
+      "purpose": null,
+      "fileCount": 10,
+      "lastAccessed": 1777643497289,
+      "keyFiles": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "README.md",
+        "eslint.config.mjs",
+        "next.config.ts"
+      ]
+    },
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 2,
+      "lastAccessed": 1777643497289,
+      "keyFiles": [
+        "favicon.svg",
+        "icons.svg"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 1,
+      "lastAccessed": 1777643497289,
+      "keyFiles": [
+        "reseed_supabase_from_stock_xlsx.py"
+      ]
+    },
+    "shopify_sync": {
+      "path": "shopify_sync",
+      "purpose": null,
+      "fileCount": 28,
+      "lastAccessed": 1777643497289,
+      "keyFiles": [
+        "Games Workshop Store List.backup-2026-04-28.xlsx",
+        "Games Workshop Store List.xlsx",
+        "SETUP.md",
+        "collection_generation_preview.csv",
+        "collection_generation_unmatched.csv"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 4,
+      "lastAccessed": 1777643497289,
+      "keyFiles": [
+        "App.css",
+        "App.jsx",
+        "index.css",
+        "main.jsx"
+      ]
+    },
+    "supabase": {
+      "path": "supabase",
+      "purpose": null,
+      "fileCount": 7,
+      "lastAccessed": 1777643497289,
+      "keyFiles": [
+        "phase0_schema.sql",
+        "phase1_fx_schema.sql",
+        "phase2_customers_orders_schema.sql",
+        "phase2_invoice_schema.sql",
+        "phase3_backorders_schema.sql"
+      ]
+    },
+    "onboarding_wizard/public": {
+      "path": "onboarding_wizard/public",
+      "purpose": "Public files",
+      "fileCount": 5,
+      "lastAccessed": 1777643497290,
+      "keyFiles": [
+        "file.svg",
+        "globe.svg",
+        "next.svg"
+      ]
+    },
+    "src/assets": {
+      "path": "src/assets",
+      "purpose": "Static assets",
+      "fileCount": 3,
+      "lastAccessed": 1777643497290,
+      "keyFiles": [
+        "hero.png",
+        "react.svg",
+        "vite.svg"
+      ]
+    },
+    "src/components": {
+      "path": "src/components",
+      "purpose": "UI components",
+      "fileCount": 1,
+      "lastAccessed": 1777643497290,
+      "keyFiles": [
+        "TopNav.jsx"
+      ]
+    },
+    "src/pages": {
+      "path": "src/pages",
+      "purpose": "Page components",
+      "fileCount": 7,
+      "lastAccessed": 1777643497290,
+      "keyFiles": [
+        "BackordersPage.jsx",
+        "CustomersPage.jsx",
+        "InventoryPage.jsx"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "shopify_sync/gw_cache_refresh.py",
+      "accessCount": 5,
+      "lastAccessed": 1777645487689,
+      "type": "file"
+    },
+    {
+      "path": "shopify_sync/shopify_sync.py",
+      "accessCount": 4,
+      "lastAccessed": 1777645641650,
+      "type": "file"
+    },
+    {
+      "path": "shopify_sync/gw_photo_cache_status.json",
+      "accessCount": 1,
+      "lastAccessed": 1777644332761,
+      "type": "file"
+    },
+    {
+      "path": "shopify_sync/SETUP.md",
+      "accessCount": 1,
+      "lastAccessed": 1777644332850,
+      "type": "file"
+    },
+    {
+      "path": ".claude/settings.local.json",
+      "accessCount": 1,
+      "lastAccessed": 1777645378219,
+      "type": "file"
+    },
+    {
+      "path": ".claude/settings.json",
+      "accessCount": 1,
+      "lastAccessed": 1777645420528,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

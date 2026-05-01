@@ -1,0 +1,19 @@
+{
+  "detail_signals": [
+    "barcode",
+    "google_books"
+  ],
+  "image_sha256": "5f7235400235541386876ea1b2578ac8b818c25ff3cffad1d6d5f83e14c2d79b",
+  "image_url": "https://books.google.com/books/content?id=ZwstzwEACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api",
+  "page_url": "https://www.googleapis.com/books/v1/volumes/ZwstzwEACAAJ",
+  "policy_version": "psv1-6a5dec8a7f75",
+  "query": "978-1398521643 Charlie, Love and Cliches - Ella Maise Simon & Schuster 9781398521643",
+  "reasons": [
+    "barcode",
+    "google_books"
+  ],
+  "score": 95,
+  "sku": "978-1398521643",
+  "source_class": "google_books",
+  "title": "Charlie, Love and Cliches - Ella Maise"
+}

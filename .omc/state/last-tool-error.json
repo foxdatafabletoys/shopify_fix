@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cd /tmp\\nCOOKIE_JAR=/tmp/gw_cookies.txt\\necho \\\"=== Pull groups 46+47 page 1, count how many file_names contain a SKU from photo_sync_missing.tsv ===\\\"\\npython3 << 'PY'\\nimport urllib.requ...",
+  "error": "Exit code 1\n=== Pull groups 46+47 page 1, count how many file_names contain a SKU from photo_sync_missing.tsv ===\nMissing SKUs to match: 2082\nTraceback (most recent call last):\n  File \"<stdin>\", line 20, in <module>\n  File \"<stdin>\", line 13, in fetch\n  File \"/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/urllib/request.py\", line 214, in urlopen\n    return opener.open(url, data, timeout)\n  File \"/Library/Developer/CommandLineTools/Library/Fram...",
+  "timestamp": "2026-05-01T19:51:59.530Z",
+  "retry_count": 1
+}

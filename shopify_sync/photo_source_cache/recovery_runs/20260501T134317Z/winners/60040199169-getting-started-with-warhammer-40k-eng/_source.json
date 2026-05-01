@@ -1,0 +1,17 @@
+{
+  "copied_files": [
+    "TR-40-06-60040199169-Gtting-Started-With-Warhammer-40k-ENG.jpg"
+  ],
+  "match_type": "exact_best",
+  "query": "60040199169 GETTING STARTED WITH WARHAMMER 40K (ENG) Games Workshop 9781804571712",
+  "reasons": [
+    "gw_cache",
+    "exact_best"
+  ],
+  "score": 100,
+  "sku": "60040199169",
+  "source": "gw-cache",
+  "source_label": "60040199169-Gtting-Started-With-Warhammer-40k-ENG",
+  "source_root": "/Users/toys-data/Documents/GitHub/shopify_fix/shopify_sync/gw_photo_cache/current/60040199169-Gtting-Started-With-Warhammer-40k-ENG",
+  "title": "GETTING STARTED WITH WARHAMMER 40K (ENG)"
+}

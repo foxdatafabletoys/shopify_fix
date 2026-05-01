@@ -1,0 +1,19 @@
+{
+  "detail_signals": [
+    "barcode",
+    "google_books"
+  ],
+  "image_sha256": "f1ff315d465eff68bc3b8a1083b3ac2d58505fb1395f23ebfda27f99ce93e36e",
+  "image_url": "https://books.google.com/books/content?id=EimjzgEACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api",
+  "page_url": "https://www.googleapis.com/books/v1/volumes/EimjzgEACAAJ",
+  "policy_version": "psv1-6a5dec8a7f75",
+  "query": "978-1398515208 My Mother and I - Ingrid Seward Simon & Schuster 9781398515208",
+  "reasons": [
+    "barcode",
+    "google_books"
+  ],
+  "score": 95,
+  "sku": "978-1398515208",
+  "source_class": "google_books",
+  "title": "My Mother and I - Ingrid Seward"
+}

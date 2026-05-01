@@ -72,12 +72,16 @@ The GW image lane uses a repo-local cache at `shopify_sync/gw_photo_cache/curren
    ```bash
    python3 shopify_sync.py --gw-refresh-cache
    ```
-2. Run a dry run first:
+2. Prewarm the Games Workshop archive-member index used by zero-media recovery:
+   ```bash
+   python3 shopify_sync.py --gw-build-archive-index
+   ```
+3. Run a dry run first:
    ```bash
    python3 shopify_sync.py --photo-sync --dry-run
    ```
-3. Review `photo_sync_preview.csv`, plus any appended `photo_sync_missing.tsv`, `photo_sync_ambiguous.tsv`, and `photo_sync_failures.tsv`.
-4. Apply for real:
+4. Review `photo_sync_preview.csv`, plus any appended `photo_sync_missing.tsv`, `photo_sync_ambiguous.tsv`, and `photo_sync_failures.tsv`.
+5. Apply for real:
    ```bash
    python3 shopify_sync.py --photo-sync
    ```
@@ -153,15 +157,39 @@ This sourcing-first lane looks for products that currently have **no Shopify med
    python3 shopify_sync.py --photo-sync-staged-local-all --photo-root ./photo_source_cache/current
    ```
 
+Preferred end-to-end recovery flow:
+
+1. Run the conservative dry run:
+   ```bash
+   python3 shopify_sync.py --recover-zero-media-images --dry-run
+   ```
+2. Review:
+   - `photo_source_preview.csv`
+   - `photo_source_review.csv`
+   - `photo_source_missing.tsv`
+   - `photo_source_failures.tsv`
+   - `photo_source_unmapped_shopify.tsv`
+3. Apply strict winners only:
+   ```bash
+   python3 shopify_sync.py --recover-zero-media-images
+   ```
+
 MVP sourcing behavior:
 
 - If `PHOTO_SOURCE_SUPPLIER_ROOTS` is set in `.env`, the lane tries those local supplier folders first and stages exact/fallback matches without hitting the web.
+- Games Workshop products now try the repo-local `gw_photo_cache/current` first and then the official Games Workshop resource URL `https://trade.games-workshop.com/resources/`. They no longer fall back to generic Yahoo/Bing/DuckDuckGo search.
+- `--gw-build-archive-index` prewarms `gw_official_archive_index.json`, which caches SKU-addressable members found inside GW ZIP archives. This makes later GW recovery runs much cheaper after the first warm-up.
 - Book-heavy vendors such as Penguin, Simon & Schuster, Scholastic, ScribnerUK, VIZ Media, and Walker Books now try ISBN-based cover sources before generic search.
 - Non-book inventory with `ASIN: ...` tags now tries direct Amazon product pages before generic search.
+- Generic search now falls back across multiple HTML providers instead of relying only on DuckDuckGo.
 - The scan only considers products that exist in both the local catalog sheets and Shopify, and only when Shopify reports zero media for that SKU.
 - Winners stage under `photo_source_cache/current/<SKU>-<title-slug>/...`.
-- Sourcing is fail-closed: low-confidence or near-tied candidates are reported, not staged, and one blocked search provider does not abort the whole SKU if other providers still succeed.
+- `--recover-zero-media-images` stages current-run winners under `photo_source_cache/recovery_runs/<run_id>/winners/` and only applies from that isolated root.
+- Sourcing is fail-closed: low-confidence, tied, low-margin, or GW-weak-evidence candidates go to `photo_source_review.csv`, not auto-attach, and one blocked search provider does not abort the whole SKU if other providers still succeed.
+- `photo_source_ambiguous.tsv` is now only a compatibility mirror for review cases caused by tie/low-margin ambiguity.
+- `photo_source_preview.csv` and `photo_source_review.csv` are flushed during the run, so you can inspect progress before the full source pass completes.
 - The sourcing lane writes separate provenance state in `photo_source_manifest.json`; it does not reuse `photo_sync_manifest.json`.
+- `photo_source_manifest.json` includes a `policy_version`; when the scoring policy changes, old completed source decisions are re-evaluated instead of silently reused.
 - AI generation/transformation is not part of this MVP source-selection step.
 
 ## Step 4 — Install Python dependencies
@@ -316,6 +344,7 @@ After it finishes, open `https://<your-store>.myshopify.com/admin/products` and:
 | `preview.csv` | Dry-run output for `--import`: what will be sent to Shopify. |
 | `update_preview.csv` | Diff produced by `--update` (real or dry-run): per-SKU before/after for changed rows. |
 | `gw_photo_cache/current/` | Repo-local GW image cache refreshed by `--gw-refresh-cache`. Keep untracked. |
+| `gw_official_archive_index.json` | Cached GW archive-member index built by `--gw-build-archive-index` or lazily during GW recovery. Keep untracked. |
 | `photo_sync_preview.csv` | Dry-run output for `--photo-sync`: per-SKU match status and source paths. |
 | `photo_sync_manifest.json` | Resume manifest for live `--photo-sync`. Do not commit. |
 | `photo_sync_missing.tsv` | SKUs with no matching cached image set. Appended across runs. |
@@ -327,12 +356,20 @@ After it finishes, open `https://<your-store>.myshopify.com/admin/products` and:
 ## Common gotchas
 
 - **"Could not authenticate"** → token is wrong or app isn't installed. Re-do step 1.8, then rerun `--preflight`.
+- **`Shopify HTTP 401` / `Invalid API key or access token`** → the current store/token pair is being rejected by Shopify. The script now includes masked auth context in the error, for example:
+  - `store='your-store'`
+  - `endpoint='https://your-store.myshopify.com/admin/api/2025-01/graphql.json'`
+  - `token_len=...`
+  - `token_prefix='shpat_'`
+  - `token_fp=...`
+  Use that to confirm the script is targeting the expected store without exposing the full token. If the store is correct, rotate the custom-app token in Shopify Admin, update `.env`, and rerun `--preflight`.
 - **`read_locations` is missing or preflight says there are no locations** → add `read_locations` in step 1.6, save, reinstall the app, then rerun `--preflight`.
 - **`Configured SHOPIFY_LOCATION not found or inaccessible`** or **`SHOPIFY_LOCATION must be either...`** → the override is wrong. Delete `SHOPIFY_LOCATION` to use the auto-detected primary location, or replace it with a valid Shopify location GID / numeric ID.
 - **"Throttled"** in the log → fine, the script waits and retries. Just let it run.
 - **Some products fail with "Title has already been taken"** → Shopify enforces unique titles per product. Look at `failures.tsv`; usually a duplicate row in the sheet.
 - **Inventory shows 0 even though sheet has stock** → the script is probably using the wrong location. Leave `SHOPIFY_LOCATION` blank for the primary location, or set a valid override if your stock lives elsewhere.
 - **`--gw-refresh-cache` only supports direct image files from the GW Product Images area** → first pass is limited to `.jpg`, `.jpeg`, and `.png`. Ignore ZIPs, PDFs, WEBP, GIF, TIFF, and HTML pages.
+- **First GW archive index build can be slow** → `--gw-build-archive-index` is the preferred warm-up step before `--recover-zero-media-images` if you care about GW coverage. Once `gw_official_archive_index.json` exists, later runs can reuse it.
 - **`photo_sync_missing.tsv`, `photo_sync_ambiguous.tsv`, and `photo_sync_failures.tsv` keep appending** → clear or archive them before a fresh review pass if you do not want stale rows mixed in.
 - **`--photo-sync` is SKU-sensitive** → exact product-code/SKU matches are preferred; fallback title-slug matching can become ambiguous.
 - **`--photo-sync` runs separately** → do not combine it with `--delete`, `--import`, `--update`, or `--all`.

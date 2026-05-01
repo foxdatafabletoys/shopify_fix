@@ -91,6 +91,25 @@ class ShopifyGraphQLTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Shopify HTTP 401"):
             self.client.gql("query { shop { name } }")
 
+    def test_gql_http_auth_error_includes_sanitized_auth_context(self):
+        self.client.session.post = mock.Mock(
+            return_value=FakeResponse(
+                status_code=401,
+                payload={"errors": "[API] Invalid API key or access token"},
+            )
+        )
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self.client.gql("query { shop { name } }")
+
+        message = str(ctx.exception)
+        self.assertIn("store='example-store'", message)
+        self.assertIn("endpoint='https://example-store.myshopify.com/admin/api/", message)
+        self.assertIn("token_len=", message)
+        self.assertIn("token_prefix='shpat_'", message)
+        self.assertIn("token_fp=", message)
+        self.assertNotIn("shpat_test", message)
+
     def test_staged_uploads_create_uses_put_image_payload(self):
         self.client.gql = mock.Mock(return_value={
             "stagedUploadsCreate": {
@@ -307,6 +326,27 @@ class ShopifyGraphQLTests(unittest.TestCase):
                 "value": "true",
             },
         )
+
+
+class CliRuntimeHandlingTests(unittest.TestCase):
+    def test_run_cli_returns_2_and_logs_guidance_for_shopify_401(self):
+        with mock.patch("shopify_sync.main", side_effect=RuntimeError(
+            "Shopify HTTP 401: {\"errors\":\"[API] Invalid API key or access token\"} "
+            "[store='kviv0f-15' endpoint='https://kviv0f-15.myshopify.com/admin/api/2025-01/graphql.json' "
+            "token_len=38 token_prefix='shpat_' token_fp=9a2c714e5d]"
+        )), mock.patch("shopify_sync.log") as log:
+            result = shopify_sync.run_cli()
+
+        self.assertEqual(result, 2)
+        logged = "\n".join(call.args[0] for call in log.call_args_list)
+        self.assertIn("Shopify Admin API authentication failed", logged)
+        self.assertIn("rotate/reinstall the custom-app Admin API token", logged)
+        self.assertIn("store='kviv0f-15'", logged)
+
+    def test_run_cli_reraises_non_auth_runtime_errors(self):
+        with mock.patch("shopify_sync.main", side_effect=RuntimeError("local gate failed")):
+            with self.assertRaisesRegex(RuntimeError, "local gate failed"):
+                shopify_sync.run_cli()
 
 
 class LocationResolutionTests(unittest.TestCase):
@@ -1011,6 +1051,20 @@ class ProductPublicationTests(unittest.TestCase):
 
 
 class MainFlowTests(unittest.TestCase):
+    def test_help_text_explains_jobs_in_plain_english(self):
+        help_text = shopify_sync.build_parser().format_help()
+
+        self.assertIn("Run one Shopify catalog maintenance job at a time.", help_text)
+        self.assertIn("safety and setup", help_text)
+        self.assertIn("catalog import and cleanup", help_text)
+        self.assertIn("collections", help_text)
+        self.assertIn("store visibility", help_text)
+        self.assertIn("photos and media", help_text)
+        self.assertIn("Run this before any live delete, import, update, or media job.", help_text)
+        self.assertIn("Run this when prices, stock, or costs changed in the sheets.", help_text)
+        self.assertIn("Run this when you want a conservative one-command recovery for missing images.", help_text)
+        self.assertIn("Most job flags must be run by themselves.", help_text)
+
     def test_gw_refresh_cache_runs_without_shopify_credentials(self):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--gw-refresh-cache"]), \
              mock.patch("shopify_sync.refresh_gw_cache") as refresh, \
@@ -1024,6 +1078,21 @@ class MainFlowTests(unittest.TestCase):
     def test_gw_refresh_cache_rejects_invalid_combinations(self):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--gw-refresh-cache", "--preflight"]):
             with self.assertRaisesRegex(RuntimeError, "--gw-refresh-cache must run separately"):
+                shopify_sync.main()
+
+    def test_gw_build_archive_index_runs_without_shopify_credentials(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--gw-build-archive-index"]), \
+             mock.patch("shopify_sync.warm_gw_official_archive_index") as warm, \
+             mock.patch("shopify_sync.load_env") as load_env:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        warm.assert_called_once()
+        load_env.assert_not_called()
+
+    def test_gw_build_archive_index_rejects_invalid_combinations(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--gw-build-archive-index", "--preflight"]):
+            with self.assertRaisesRegex(RuntimeError, "--gw-build-archive-index must run separately"):
                 shopify_sync.main()
 
     def test_preflight_flag_does_not_call_delete_or_import(self):
@@ -1925,6 +1994,36 @@ class PhotoAssetMatchingTests(unittest.TestCase):
         self.assertIsNone(asset_set)
         self.assertIn("multiple title-slug matches", reason)
 
+    def test_resolve_photo_asset_prefers_best_exact_match_when_duplicate_codes_exist(self):
+        product = shopify_sync.Product(
+            title="GETTING STARTED WITH WARHAMMER 40K (ENG)",
+            sku="60040199169",
+            source="GW",
+        )
+        better = shopify_sync.PhotoAssetSet(
+            key="better",
+            label="60040199169-Gtting-Started-With-Warhammer-40k-ENG",
+            product_code="60040199169",
+            title_slug="gtting-started-with-warhammer-40k-eng",
+        )
+        worse = shopify_sync.PhotoAssetSet(
+            key="worse",
+            label="60040199169-EngWH40KGettingStartedWithTenthEdition",
+            product_code="60040199169",
+            title_slug="engwh40kgettingstartedwithtenthedition",
+        )
+
+        status, match_type, asset_set, reason = shopify_sync.resolve_photo_asset(
+            product,
+            {"60040199169": [worse, better]},
+            {},
+        )
+
+        self.assertEqual(status, "replace")
+        self.assertEqual(match_type, "exact_best")
+        self.assertEqual(asset_set, better)
+        self.assertEqual(reason, "")
+
     def test_discover_photo_asset_sets_skips_macosx_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2570,6 +2669,7 @@ class PhotoSourcePhaseTests(unittest.TestCase):
     @contextmanager
     def _patched_photo_source_outputs(self, root: Path):
         with mock.patch("shopify_sync.PHOTO_SOURCE_PREVIEW_CSV", new=root / "preview.csv"), \
+             mock.patch("shopify_sync.PHOTO_SOURCE_REVIEW_CSV", new=root / "review.csv"), \
              mock.patch("shopify_sync.PHOTO_SOURCE_MISSING_TSV", new=root / "missing.tsv"), \
              mock.patch("shopify_sync.PHOTO_SOURCE_AMBIGUOUS_TSV", new=root / "ambiguous.tsv"), \
              mock.patch("shopify_sync.PHOTO_SOURCE_FAILURES_TSV", new=root / "failures.tsv"), \
@@ -2628,7 +2728,7 @@ class PhotoSourcePhaseTests(unittest.TestCase):
             self.assertIn("winner", preview)
             self.assertIn("SHOP-ONLY", unmapped)
 
-    def test_photo_source_web_all_marks_equal_high_score_candidates_ambiguous(self):
+    def test_photo_source_web_all_marks_equal_high_score_candidates_for_review(self):
         self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
         search_html = """
         <html><body>
@@ -2658,11 +2758,58 @@ class PhotoSourcePhaseTests(unittest.TestCase):
                     manifest_path=root / "manifest.json",
                     cache_root=root / "cache" / "current",
                 )
+            review = (root / "review.csv").read_text(encoding="utf-8")
             ambiguous = (root / "ambiguous.tsv").read_text(encoding="utf-8")
             preview = (root / "preview.csv").read_text(encoding="utf-8")
 
-        self.assertIn("multiple candidates cleared the winner threshold", ambiguous)
-        self.assertIn("ambiguous", preview)
+        self.assertIn("winner_tie", review)
+        self.assertIn("winner_tie", ambiguous)
+        self.assertIn("review", preview)
+
+    def test_photo_source_policy_version_mismatch_invalidates_completed_entry_reuse(self):
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+        search_html = '<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'
+        candidate_html = """
+        <html><head>
+          <title>PKM-001 Pokemon Booster Box</title>
+          <meta property="og:image" content="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg">
+        </head><body>
+          <div>Pokemon Booster Box</div><div>SKU PKM-001</div><div>Add to cart</div>
+        </body></html>
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache_root = root / "cache" / "current"
+            pack_dir = cache_root / "PKM-001-pokemon-booster-box"
+            pack_dir.mkdir(parents=True)
+            (pack_dir / "01.jpg").write_bytes(b"existing")
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps({
+                self.product.sku: {
+                    "state": "completed",
+                    "query": shopify_sync.build_photo_source_query(self.product),
+                    "policy_version": "psv1-stale",
+                }
+            }), encoding="utf-8")
+            self.client.session.get.side_effect = [
+                FakeResponse(text=search_html, url="https://search"),
+                FakeResponse(text=candidate_html, url="https://example.com/pkm-001-product"),
+                FakeResponse(content=b"new-image", url="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg"),
+            ]
+            with self._patched_photo_source_outputs(root):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [self.product],
+                    dry=False,
+                    manifest_path=manifest_path,
+                    cache_root=cache_root,
+                )
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(manifest[self.product.sku]["state"], "completed")
+        self.assertEqual(manifest[self.product.sku]["policy_version"], shopify_sync.current_photo_source_policy_version())
+        self.assertEqual(self.client.session.get.call_count, 3)
 
     def test_photo_source_web_all_skips_products_with_existing_media(self):
         existing = dict(self.existing)
@@ -2683,6 +2830,49 @@ class PhotoSourcePhaseTests(unittest.TestCase):
 
         self.assertEqual(len(preview_rows), 1)
         self.client.session.get.assert_not_called()
+
+    def test_photo_source_web_all_prioritizes_non_gw_before_gw(self):
+        gw_product = shopify_sync.Product(
+            title="L: TUSKGOR FUR 12ML ROW X6",
+            sku="9918995134406",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        inv_product = shopify_sync.Product(
+            title="Attached - Book",
+            sku="978-1529032178",
+            barcode="9781529032178",
+            vendor="bluebird",
+            source="INV",
+        )
+        gw_existing = dict(self.existing)
+        gw_existing["sku"] = gw_product.sku
+        gw_existing["title"] = gw_product.title
+        gw_existing["vendor"] = gw_product.vendor
+        inv_existing = dict(self.existing)
+        inv_existing["sku"] = inv_product.sku
+        inv_existing["title"] = inv_product.title
+        inv_existing["vendor"] = inv_product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([gw_existing, inv_existing])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.fetch_book_photo_source_candidates", return_value=([], 0, [])), \
+                 mock.patch("shopify_sync.fetch_amazon_photo_source_candidates", return_value=([], 0, [])), \
+                 mock.patch("shopify_sync.fetch_search_page_photo_source_candidates", return_value=([], 0, [])):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [gw_product, inv_product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+
+            preview_rows = (root / "preview.csv").read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(preview_rows[1].split(",")[0], inv_product.sku)
+        self.assertEqual(preview_rows[2].split(",")[0], gw_product.sku)
 
     def test_photo_source_web_all_preserves_existing_session_auth_headers(self):
         session = requests.Session()
@@ -2777,6 +2967,434 @@ class PhotoSourcePhaseTests(unittest.TestCase):
 
         self.client.session.get.assert_not_called()
 
+    def test_photo_source_web_all_uses_gw_cache_before_web_search(self):
+        gw_product = shopify_sync.Product(
+            title="ARMAGEDDON BATTALION: DEATHWATCH",
+            sku="99120109017",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = gw_product.sku
+        existing["title"] = gw_product.title
+        existing["vendor"] = gw_product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gw_cache_root = root / "gw_photo_cache" / "current"
+            pack = gw_cache_root / "TR-39-13-99120109017-Armageddon-Battalion-Deathwatch"
+            pack.mkdir(parents=True)
+            (pack / "01.jpg").write_bytes(b"gw-cache-image")
+            cache_root = root / "photo_source_cache" / "current"
+            manifest_path = root / "photo_source_manifest.json"
+
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [gw_product],
+                    dry=False,
+                    manifest_path=manifest_path,
+                    cache_root=cache_root,
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            staged_dir = cache_root / "99120109017-armageddon-battalion-deathwatch"
+            self.assertIn("gw_cache", preview)
+            self.assertEqual(manifest[gw_product.sku]["state"], "completed")
+            self.assertTrue((staged_dir / "01.jpg").exists())
+
+        self.client.session.get.assert_not_called()
+
+    def test_photo_source_web_all_uses_gw_official_pack_before_generic_search(self):
+        gw_product = shopify_sync.Product(
+            title="ARMAGEDDON BATTALION: DEATHWATCH",
+            sku="99120109017",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = gw_product.sku
+        existing["title"] = gw_product.title
+        existing["vendor"] = gw_product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        packs = [
+            gw_cache_refresh.ResourcePack(
+                label="99120109017-Armageddon-Battalion-Deathwatch",
+                images=[gw_cache_refresh.ImageTarget(url="https://trade.games-workshop.com/resources/99120109017.jpg", filename="99120109017.jpg")],
+                archives=[],
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gw_cache_root = root / "gw_photo_cache" / "current"
+            gw_cache_root.mkdir(parents=True)
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(packs, "Product Images")):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [gw_product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+
+        self.assertIn("gw_official", preview)
+        self.client.session.get.assert_not_called()
+
+    def test_photo_source_web_all_stages_gw_official_direct_image_pack(self):
+        gw_product = shopify_sync.Product(
+            title="ARMAGEDDON BATTALION: DEATHWATCH",
+            sku="99120109017",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = gw_product.sku
+        existing["title"] = gw_product.title
+        existing["vendor"] = gw_product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        packs = [
+            gw_cache_refresh.ResourcePack(
+                label="99120109017-Armageddon-Battalion-Deathwatch",
+                images=[gw_cache_refresh.ImageTarget(url="https://trade.games-workshop.com/resources/99120109017.jpg", filename="99120109017.jpg")],
+                archives=[],
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gw_cache_root = root / "gw_photo_cache" / "current"
+            gw_cache_root.mkdir(parents=True)
+            cache_root = root / "photo_source_cache" / "current"
+            manifest_path = root / "photo_source_manifest.json"
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", return_value=(b"gw-official-image", "https://trade.games-workshop.com/resources/99120109017.jpg")):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [gw_product],
+                    dry=False,
+                    manifest_path=manifest_path,
+                    cache_root=cache_root,
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            staged_dir = cache_root / "99120109017-armageddon-battalion-deathwatch"
+            self.assertIn("gw_official", preview)
+            self.assertEqual(manifest[gw_product.sku]["state"], "completed")
+            self.assertTrue((staged_dir / "resources-99120109017.jpg").exists())
+            self.assertTrue((staged_dir / "_source.json").exists())
+
+    def test_photo_source_web_all_uses_gw_official_archive_member_before_missing(self):
+        gw_product = shopify_sync.Product(
+            title="L: TUSKGOR FUR 12ML ROW X6",
+            sku="9918995134406",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = gw_product.sku
+        existing["title"] = gw_product.title
+        existing["vendor"] = gw_product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        malformed_packs = [
+            gw_cache_refresh.ResourcePack(
+                label="Articles",
+                images=[],
+                archives=["https://trade.games-workshop.com/wp-content/uploads/2026/04/articles.zip"],
+            ),
+        ]
+        archive_buffer = io.BytesIO()
+        with zipfile.ZipFile(archive_buffer, "w") as zf:
+            zf.writestr("Products/9918995134406-Tuskgor-Fur.jpg", b"match")
+            zf.writestr("Products/9999999999999-Other-Product.jpg", b"other")
+        archive_bytes = archive_buffer.getvalue()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gw_cache_root = root / "gw_photo_cache" / "current"
+            gw_cache_root.mkdir(parents=True)
+            archive_cache_path = root / "gw_official_archive_index.json"
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
+                 mock.patch("shopify_sync.GW_OFFICIAL_ARCHIVE_INDEX_JSON", new=archive_cache_path), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(malformed_packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", return_value=(archive_bytes, malformed_packs[0].archives[0])), \
+                 mock.patch("shopify_sync.fetch_search_page_photo_source_candidates") as search:
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [gw_product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+
+        search.assert_not_called()
+        self.assertIn("winner", preview)
+        self.assertIn("gw_official", preview)
+
+    def test_photo_source_web_all_stages_only_matching_gw_official_archive_members(self):
+        gw_product = shopify_sync.Product(
+            title="L: TUSKGOR FUR 12ML ROW X6",
+            sku="9918995134406",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = gw_product.sku
+        existing["title"] = gw_product.title
+        existing["vendor"] = gw_product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        malformed_packs = [
+            gw_cache_refresh.ResourcePack(
+                label="Articles",
+                images=[],
+                archives=["https://trade.games-workshop.com/wp-content/uploads/2026/04/articles.zip"],
+            ),
+        ]
+        archive_buffer = io.BytesIO()
+        with zipfile.ZipFile(archive_buffer, "w") as zf:
+            zf.writestr("Products/9918995134406-Tuskgor-Fur.jpg", b"match")
+            zf.writestr("Products/9999999999999-Other-Product.jpg", b"other")
+        archive_bytes = archive_buffer.getvalue()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gw_cache_root = root / "gw_photo_cache" / "current"
+            gw_cache_root.mkdir(parents=True)
+            cache_root = root / "photo_source_cache" / "current"
+            manifest_path = root / "photo_source_manifest.json"
+            archive_cache_path = root / "gw_official_archive_index.json"
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
+                 mock.patch("shopify_sync.GW_OFFICIAL_ARCHIVE_INDEX_JSON", new=archive_cache_path), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(malformed_packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", return_value=(archive_bytes, malformed_packs[0].archives[0])):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [gw_product],
+                    dry=False,
+                    manifest_path=manifest_path,
+                    cache_root=cache_root,
+                )
+
+            staged_dir = cache_root / "9918995134406-l-tuskgor-fur-12ml-row-x6"
+            files = sorted(path.name for path in staged_dir.iterdir() if path.is_file() and path.name != "_source.json")
+
+        self.assertEqual(files, ["Products-9918995134406-Tuskgor-Fur.jpg"])
+
+    def test_build_gw_official_resource_pack_indexes_reuses_archive_index_cache(self):
+        packs = [
+            gw_cache_refresh.ResourcePack(
+                label="Articles",
+                images=[],
+                archives=["https://trade.games-workshop.com/wp-content/uploads/2026/04/articles.zip"],
+            ),
+        ]
+        archive_buffer = io.BytesIO()
+        with zipfile.ZipFile(archive_buffer, "w") as zf:
+            zf.writestr("Products/9918995134406-Tuskgor-Fur.jpg", b"match")
+        archive_bytes = archive_buffer.getvalue()
+        session = requests.Session()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "gw_official_archive_index.json"
+            with mock.patch("shopify_sync.GW_OFFICIAL_ARCHIVE_INDEX_JSON", new=cache_path), \
+                 mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", return_value=(archive_bytes, packs[0].archives[0])) as fetch_binary:
+                by_code, _ = shopify_sync.build_gw_official_resource_pack_indexes(packs, session)
+                self.assertIn("9918995134406", by_code)
+                self.assertEqual(fetch_binary.call_count, 1)
+
+                by_code_again, _ = shopify_sync.build_gw_official_resource_pack_indexes(packs, session)
+                self.assertIn("9918995134406", by_code_again)
+                self.assertEqual(fetch_binary.call_count, 1)
+
+    def test_photo_source_web_all_skips_malformed_gw_official_feed(self):
+        gw_product = shopify_sync.Product(
+            title="L: TUSKGOR FUR 12ML ROW X6",
+            sku="9918995134406",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = gw_product.sku
+        existing["title"] = gw_product.title
+        existing["vendor"] = gw_product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        malformed_packs = [
+            gw_cache_refresh.ResourcePack(
+                label="const homeUrl = 'https://trade.games-workshop.com'; window.currentLanguage = 'en';",
+                images=[],
+                archives=["https://trade.games-workshop.com/wp-content/uploads/2026/04/junk.zip"],
+            ),
+            gw_cache_refresh.ResourcePack(
+                label="Articles",
+                images=[],
+                archives=["https://trade.games-workshop.com/wp-content/uploads/2026/04/articles.zip"],
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gw_cache_root = root / "gw_photo_cache" / "current"
+            gw_cache_root.mkdir(parents=True)
+            archive_cache_path = root / "gw_official_archive_index.json"
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
+                 mock.patch("shopify_sync.GW_OFFICIAL_ARCHIVE_INDEX_JSON", new=archive_cache_path), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(malformed_packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", side_effect=RuntimeError("zip unavailable")), \
+                 mock.patch("shopify_sync.fetch_search_page_photo_source_candidates", return_value=([], 0, [])), \
+                 mock.patch("shopify_sync.log") as log:
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [gw_product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+
+        self.assertIn("missing", preview)
+        logged = "\n".join(call.args[0] for call in log.call_args_list)
+        self.assertIn("official GW resource feed did not expose product-code-labelled packs", logged)
+
+    def test_photo_source_web_all_does_not_fall_back_to_generic_search_for_gw(self):
+        gw_product = shopify_sync.Product(
+            title="L: TUSKGOR FUR 12ML ROW X6",
+            sku="9918995134406",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = gw_product.sku
+        existing["title"] = gw_product.title
+        existing["vendor"] = gw_product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        malformed_packs = [
+            gw_cache_refresh.ResourcePack(
+                label="const homeUrl = 'https://trade.games-workshop.com'; window.currentLanguage = 'en';",
+                images=[],
+                archives=["https://trade.games-workshop.com/wp-content/uploads/2026/04/junk.zip"],
+            ),
+            gw_cache_refresh.ResourcePack(
+                label="Articles",
+                images=[],
+                archives=["https://trade.games-workshop.com/wp-content/uploads/2026/04/articles.zip"],
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gw_cache_root = root / "gw_photo_cache" / "current"
+            gw_cache_root.mkdir(parents=True)
+            archive_cache_path = root / "gw_official_archive_index.json"
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
+                 mock.patch("shopify_sync.GW_OFFICIAL_ARCHIVE_INDEX_JSON", new=archive_cache_path), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(malformed_packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", side_effect=RuntimeError("zip unavailable")), \
+                 mock.patch("shopify_sync.fetch_search_page_photo_source_candidates") as search:
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [gw_product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+
+        search.assert_not_called()
+        self.assertIn("missing", preview)
+        self.assertIn("no matching Games Workshop resource pack", preview)
+
+    def test_photo_source_web_all_flushes_preview_and_review_incrementally(self):
+        first = shopify_sync.Product(
+            title="Pokemon Booster Box",
+            sku="PKM-001",
+            vendor="Pokemon",
+            source="INV",
+        )
+        second = shopify_sync.Product(
+            title="Pokemon Elite Trainer Box",
+            sku="PKM-002",
+            vendor="Pokemon",
+            source="INV",
+        )
+        self.client.iter_existing_for_photo_sync.return_value = iter([
+            {
+                "product_id": "gid://shopify/Product/2",
+                "title": first.title,
+                "vendor": first.vendor,
+                "tags": ["Pokemon"],
+                "sku": first.sku,
+                "media_ids": [],
+            },
+            {
+                "product_id": "gid://shopify/Product/3",
+                "title": second.title,
+                "vendor": second.vendor,
+                "tags": ["Pokemon"],
+                "sku": second.sku,
+                "media_ids": [],
+            },
+        ])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            first_candidate = shopify_sync._build_direct_photo_source_candidate(
+                first,
+                page_url="https://example.com/pkm-001",
+                image_url="https://cdn.example.com/pkm-001.jpg",
+                score=100,
+                reasons=["sku", "title", "detail_page"],
+            )
+
+            def fake_search(session, product, query):
+                if product.sku == first.sku:
+                    return [first_candidate], 1, []
+                preview = (root / "preview.csv").read_text(encoding="utf-8")
+                review = (root / "review.csv").read_text(encoding="utf-8")
+                self.assertIn(first.sku, preview)
+                self.assertEqual(review.strip().splitlines(), ["sku,title,outcome,top_score,runner_up_score,score_margin,top_candidate_page_url,top_candidate_image_url,runner_up_page_url,runner_up_image_url,source_class,reasons,disqualifiers,policy_version,notes"])
+                return [], 0, ["blocked"]
+
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.fetch_search_page_photo_source_candidates", side_effect=fake_search), \
+                 mock.patch("shopify_sync.fetch_amazon_photo_source_candidates", return_value=([], 0, [])), \
+                 mock.patch("shopify_sync.fetch_url_with_retries", return_value=FakeResponse(content=b"winner-image")):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [first, second],
+                    dry=False,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+            self.assertIn(first.sku, preview)
+            self.assertIn(second.sku, preview)
+
     def test_photo_source_web_all_falls_back_to_lite_search_when_html_search_is_blocked(self):
         self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
         search_html = '<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'
@@ -2808,6 +3426,130 @@ class PhotoSourcePhaseTests(unittest.TestCase):
 
         self.assertIn("winner", preview)
         self.assertEqual(self.client.session.get.call_count, 3)
+
+    def test_photo_source_web_all_falls_back_past_duckduckgo_to_next_search_provider(self):
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+        search_html = '<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'
+        candidate_html = """
+        <html><head>
+          <title>PKM-001 Pokemon Booster Box</title>
+          <meta property="og:image" content="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg">
+        </head><body>
+          <div>Pokemon Booster Box</div><div>SKU PKM-001</div><div>Add to cart</div>
+        </body></html>
+        """
+        self.client.session.get.side_effect = [
+            FakeResponse(status_code=403),
+            FakeResponse(status_code=403),
+            FakeResponse(text=search_html),
+            FakeResponse(text=candidate_html),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self._patched_photo_source_outputs(root):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [self.product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+
+        self.assertIn("winner", preview)
+        self.assertEqual(self.client.session.get.call_count, 4)
+
+    def test_fetch_photo_source_search_results_uses_provider_specific_query_params(self):
+        session = mock.Mock()
+        session.get.side_effect = [
+            FakeResponse(status_code=403),
+            FakeResponse(status_code=403),
+            FakeResponse(status_code=403),
+            FakeResponse(text='<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'),
+        ]
+
+        results, successes, errors = shopify_sync.fetch_photo_source_search_results(session, "PKM-001 Pokemon Booster Box")
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(successes, 1)
+        self.assertEqual(len(errors), 3)
+        called_urls = [call.args[0] for call in session.get.call_args_list]
+        self.assertIn("https://search.yahoo.com/search?p=PKM-001+Pokemon+Booster+Box", called_urls)
+        called_timeouts = [call.kwargs["timeout"] for call in session.get.call_args_list]
+        self.assertTrue(all(timeout == shopify_sync.PHOTO_SOURCE_SEARCH_TIMEOUT_SECONDS for timeout in called_timeouts))
+
+    def test_fetch_photo_source_search_results_disables_hard_failed_provider_for_rest_of_run(self):
+        session = mock.Mock()
+        provider_state: dict[str, dict[str, object]] = {}
+        session.get.side_effect = [
+            FakeResponse(status_code=403),
+            FakeResponse(text='<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'),
+            FakeResponse(text='<html><body><a href="https://example.com/pkm-002-product">Pokemon Elite Trainer Box</a></body></html>'),
+        ]
+
+        with mock.patch("shopify_sync.PHOTO_SOURCE_SEARCH_PROVIDERS", new=(
+            ("https://html.duckduckgo.com/html/", "q"),
+            ("https://search.yahoo.com/search", "p"),
+        )):
+            first_results, first_successes, first_errors = shopify_sync.fetch_photo_source_search_results(
+                session,
+                "PKM-001 Pokemon Booster Box",
+                provider_state=provider_state,
+            )
+            second_results, second_successes, second_errors = shopify_sync.fetch_photo_source_search_results(
+                session,
+                "PKM-002 Pokemon Elite Trainer Box",
+                provider_state=provider_state,
+            )
+
+        self.assertEqual(len(first_results), 1)
+        self.assertEqual(len(second_results), 1)
+        self.assertEqual(first_successes, 1)
+        self.assertEqual(second_successes, 1)
+        self.assertEqual(len(first_errors), 1)
+        self.assertEqual(second_errors, [])
+        called_urls = [call.args[0] for call in session.get.call_args_list]
+        self.assertEqual(called_urls, [
+            "https://html.duckduckgo.com/html/?q=PKM-001+Pokemon+Booster+Box",
+            "https://search.yahoo.com/search?p=PKM-001+Pokemon+Booster+Box",
+            "https://search.yahoo.com/search?p=PKM-002+Pokemon+Elite+Trainer+Box",
+        ])
+        self.assertTrue(provider_state["https://html.duckduckgo.com/html/"]["disabled"])
+
+    def test_fetch_photo_source_search_results_disables_timed_out_provider_without_retries(self):
+        session = mock.Mock()
+        provider_state: dict[str, dict[str, object]] = {}
+        session.get.side_effect = [
+            requests.exceptions.ConnectTimeout("timed out"),
+            FakeResponse(text='<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'),
+            FakeResponse(text='<html><body><a href="https://example.com/pkm-002-product">Pokemon Elite Trainer Box</a></body></html>'),
+        ]
+
+        with mock.patch("shopify_sync.PHOTO_SOURCE_SEARCH_PROVIDERS", new=(
+            ("https://html.duckduckgo.com/html/", "q"),
+            ("https://search.yahoo.com/search", "p"),
+        )), mock.patch("shopify_sync.time.sleep") as sleep_mock:
+            first_results, first_successes, first_errors = shopify_sync.fetch_photo_source_search_results(
+                session,
+                "PKM-001 Pokemon Booster Box",
+                provider_state=provider_state,
+            )
+            second_results, second_successes, second_errors = shopify_sync.fetch_photo_source_search_results(
+                session,
+                "PKM-002 Pokemon Elite Trainer Box",
+                provider_state=provider_state,
+            )
+
+        self.assertEqual(len(first_results), 1)
+        self.assertEqual(len(second_results), 1)
+        self.assertEqual(first_successes, 1)
+        self.assertEqual(second_successes, 1)
+        self.assertEqual(len(first_errors), 1)
+        self.assertEqual(second_errors, [])
+        self.assertEqual(session.get.call_count, 3)
+        sleep_mock.assert_not_called()
+        self.assertTrue(provider_state["https://html.duckduckgo.com/html/"]["disabled"])
 
     def test_photo_source_candidate_rejects_adjacent_sku_false_positive(self):
         candidate = shopify_sync.score_photo_source_candidate(
@@ -3043,6 +3785,110 @@ class PhotoSyncMainFlowTests(unittest.TestCase):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--photo-source-web-all", "--preflight"]):
             with self.assertRaisesRegex(RuntimeError, "--photo-source-web-all cannot be combined with --preflight"):
                 shopify_sync.main()
+
+    def test_recover_zero_media_images_routes_with_full_product_list(self):
+        client = mock.Mock()
+        products = [mock.sentinel.product]
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--recover-zero-media-images"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.build_product_list", return_value=products), \
+             mock.patch("shopify_sync.run_photo_sync_preflight"), \
+             mock.patch("shopify_sync.recover_zero_media_images") as recover_zero_media_images:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        recover_zero_media_images.assert_called_once_with(
+            client,
+            products,
+            dry=False,
+        )
+
+    def test_recover_zero_media_images_rejects_photo_root_combination(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--recover-zero-media-images", "--photo-root", tmp]):
+            with self.assertRaisesRegex(RuntimeError, "does not use --photo-root"):
+                shopify_sync.main()
+
+
+class RecoverZeroMediaImagesTests(unittest.TestCase):
+    def test_recover_zero_media_images_dry_run_writes_preview_review_and_manifest_without_apply(self):
+        client = mock.Mock()
+        products = [mock.sentinel.product]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "photo_source_cache"
+            manifest_path = Path(tmp) / "photo_source_manifest.json"
+            with mock.patch("shopify_sync.PHOTO_SOURCE_CACHE_ROOT", new=cache_root), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_RECOVERY_RUNS_ROOT", new=cache_root / "recovery_runs"), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_MANIFEST_JSON", new=manifest_path), \
+                 mock.patch("shopify_sync.phase_photo_source_web_all") as phase_photo_source_web_all, \
+                 mock.patch("shopify_sync.phase_photo_sync") as phase_photo_sync:
+                shopify_sync.recover_zero_media_images(client, products, dry=True)
+
+        phase_photo_source_web_all.assert_called_once()
+        called_kwargs = phase_photo_source_web_all.call_args.kwargs
+        self.assertEqual(called_kwargs["cache_root"].name, "winners")
+        self.assertIn("recovery_runs", str(called_kwargs["cache_root"]))
+        phase_photo_sync.assert_not_called()
+
+    def test_recover_zero_media_images_live_applies_only_current_run_winner_root(self):
+        client = mock.Mock()
+        products = [mock.sentinel.product]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "photo_source_cache"
+            current_run_root = cache_root / "recovery_runs" / "20260501T095242Z" / "winners"
+            prior_run_root = cache_root / "recovery_runs" / "20260430T095242Z" / "winners"
+            current_pack = current_run_root / "PKM-001-pokemon-booster-box"
+            prior_pack = prior_run_root / "STALE-001-old-pack"
+            current_pack.mkdir(parents=True)
+            prior_pack.mkdir(parents=True)
+            (current_pack / "01.jpg").write_bytes(b"winner")
+            (prior_pack / "01.jpg").write_bytes(b"stale")
+            with mock.patch("shopify_sync.PHOTO_SOURCE_CACHE_ROOT", new=cache_root), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_RECOVERY_RUNS_ROOT", new=cache_root / "recovery_runs"), \
+                 mock.patch("shopify_sync.create_photo_source_recovery_run_id", return_value="20260501T095242Z"), \
+                 mock.patch("shopify_sync.phase_photo_source_web_all") as phase_photo_source_web_all, \
+                 mock.patch("shopify_sync.phase_photo_sync") as phase_photo_sync:
+                shopify_sync.recover_zero_media_images(client, products, dry=False)
+
+        phase_photo_source_web_all.assert_called_once()
+        phase_photo_sync.assert_called_once_with(
+            client,
+            products,
+            current_run_root,
+            dry=False,
+            source_mode=shopify_sync.PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+            product_scope=shopify_sync.PHOTO_SYNC_SCOPE_ALL,
+            fallback_audit=True,
+        )
+
+    def test_recover_zero_media_images_creates_and_logs_run_root_before_source_phase(self):
+        client = mock.Mock()
+        products = [mock.sentinel.product]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "photo_source_cache"
+            winner_root = cache_root / "recovery_runs" / "20260501T140500Z" / "winners"
+            with mock.patch("shopify_sync.PHOTO_SOURCE_CACHE_ROOT", new=cache_root), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_RECOVERY_RUNS_ROOT", new=cache_root / "recovery_runs"), \
+                 mock.patch("shopify_sync.create_photo_source_recovery_run_id", return_value="20260501T140500Z"), \
+                 mock.patch("shopify_sync.phase_photo_source_web_all") as phase_photo_source_web_all, \
+                 mock.patch("shopify_sync.log") as log:
+                shopify_sync.recover_zero_media_images(client, products, dry=True)
+                self.assertTrue(winner_root.exists())
+                phase_photo_source_web_all.assert_called_once_with(
+                    client,
+                    products,
+                    dry=True,
+                    cache_root=winner_root,
+                )
+                self.assertTrue(any("run_id=20260501T140500Z" in str(call.args[0]) for call in log.call_args_list))
 
 
 class GWCacheRefreshTests(unittest.TestCase):

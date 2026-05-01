@@ -1,0 +1,19 @@
+{
+  "detail_signals": [
+    "barcode",
+    "google_books"
+  ],
+  "image_sha256": "768aa7a7d61af3577731e2b41ffa3bb7cba6d236eb2fe7e82accb23bed87a43b",
+  "image_url": "https://books.google.com/books/content?id=oPeGxgEACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api",
+  "page_url": "https://www.googleapis.com/books/v1/volumes/oPeGxgEACAAJ",
+  "policy_version": "psv1-6a5dec8a7f75",
+  "query": "978-1471188923 The Bone Code - Kathy Reichs Simon & Schuster 9781471188923",
+  "reasons": [
+    "barcode",
+    "google_books"
+  ],
+  "score": 95,
+  "sku": "978-1471188923",
+  "source_class": "google_books",
+  "title": "The Bone Code - Kathy Reichs"
+}

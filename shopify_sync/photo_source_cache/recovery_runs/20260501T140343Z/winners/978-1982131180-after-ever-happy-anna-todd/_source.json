@@ -1,0 +1,19 @@
+{
+  "detail_signals": [
+    "barcode",
+    "openlibrary"
+  ],
+  "image_sha256": "fab1d640c8fce85986931cd7f7037a046d3d8e8fbc093c0e7c160a4f8932c250",
+  "image_url": "https://covers.openlibrary.org/b/isbn/9781982131180-L.jpg?default=false",
+  "page_url": "https://covers.openlibrary.org/b/isbn/9781982131180-L.jpg?default=false",
+  "policy_version": "psv1-6a5dec8a7f75",
+  "query": "978-1982131180 After Ever Happy - Anna Todd Simon & Schuster 9781982131180",
+  "reasons": [
+    "barcode",
+    "openlibrary"
+  ],
+  "score": 100,
+  "sku": "978-1982131180",
+  "source_class": "openlibrary",
+  "title": "After Ever Happy - Anna Todd"
+}

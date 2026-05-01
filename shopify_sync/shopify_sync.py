@@ -38,6 +38,10 @@ What it does:
                Discovers zero-media catalog products, searches public web
                sources for likely product-specific images, and stages only
                high-confidence winners into the local source cache.
+  --recover-zero-media-images
+               Discovers zero-media catalog products, auto-stages only
+               strict winners into an isolated recovery run root, and applies
+               only those winners back to Shopify.
   --all        Runs --delete then --import.
   --preflight  Validates Shopify auth and location readiness with no write side effects.
   --dry-run    Reads sheets, builds the product list, writes preview.csv,
@@ -76,6 +80,8 @@ Usage:
   python shopify_sync.py --reconcile-online-store-image-visibility
   python shopify_sync.py --photo-source-web-all --dry-run
   python shopify_sync.py --photo-source-web-all
+  python shopify_sync.py --recover-zero-media-images --dry-run
+  python shopify_sync.py --recover-zero-media-images
   python shopify_sync.py --photo-sync-staged-local-all --photo-root ./fallback_photos --dry-run
   python shopify_sync.py --photo-sync-staged-local-all --photo-root ./fallback_photos
   python shopify_sync.py --all
@@ -105,6 +111,7 @@ from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
 import pandas as pd
 import requests
 
+import gw_cache_refresh
 from gw_cache_refresh import refresh_gw_cache
 
 API_VERSION = "2025-01"
@@ -120,6 +127,7 @@ PHOTO_SYNC_MISSING_TSV = HERE / "photo_sync_missing.tsv"
 PHOTO_SYNC_AMBIGUOUS_TSV = HERE / "photo_sync_ambiguous.tsv"
 PHOTO_SYNC_FAILURES_TSV = HERE / "photo_sync_failures.tsv"
 PHOTO_SOURCE_PREVIEW_CSV = HERE / "photo_source_preview.csv"
+PHOTO_SOURCE_REVIEW_CSV = HERE / "photo_source_review.csv"
 PHOTO_SOURCE_MANIFEST_JSON = HERE / "photo_source_manifest.json"
 PHOTO_SOURCE_MISSING_TSV = HERE / "photo_source_missing.tsv"
 PHOTO_SOURCE_AMBIGUOUS_TSV = HERE / "photo_source_ambiguous.tsv"
@@ -135,9 +143,11 @@ GW_PHOTO_CACHE_ROOT = HERE / "gw_photo_cache"
 GW_PHOTO_CACHE_CURRENT = GW_PHOTO_CACHE_ROOT / "current"
 GW_PHOTO_CACHE_STAGING = GW_PHOTO_CACHE_ROOT / "_staging"
 GW_PHOTO_CACHE_STATUS_JSON = HERE / "gw_photo_cache_status.json"
+GW_OFFICIAL_ARCHIVE_INDEX_JSON = HERE / "gw_official_archive_index.json"
 PHOTO_SOURCE_CACHE_ROOT = HERE / "photo_source_cache"
 PHOTO_SOURCE_CACHE_CURRENT = PHOTO_SOURCE_CACHE_ROOT / "current"
 PHOTO_SOURCE_CACHE_STAGING = PHOTO_SOURCE_CACHE_ROOT / "_staging"
+PHOTO_SOURCE_RECOVERY_RUNS_ROOT = PHOTO_SOURCE_CACHE_ROOT / "recovery_runs"
 LOG_FILE = HERE / "sync.log"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 PHOTO_SYNC_SOURCE_STAGED_LOCAL = "staged-local-files"
@@ -152,16 +162,20 @@ LATEST_GW_RELEASE_LIMIT = 60
 AUTO_COLLECTION_TAG_PREFIX = "AUTO_COLLECTION::"
 ONLINE_STORE_PUBLICATION_NAME = "Online Store"
 PHOTO_SOURCE_SEARCH_URL = "https://html.duckduckgo.com/html/"
-PHOTO_SOURCE_SEARCH_URLS = (
-    "https://html.duckduckgo.com/html/",
-    "https://lite.duckduckgo.com/lite/",
+PHOTO_SOURCE_SEARCH_PROVIDERS = (
+    ("https://search.yahoo.com/search", "p"),
+    ("https://www.bing.com/search", "q"),
+    ("https://lite.duckduckgo.com/lite/", "q"),
+    ("https://html.duckduckgo.com/html/", "q"),
 )
 PHOTO_SOURCE_MAX_RESULT_URLS = 8
 PHOTO_SOURCE_MAX_CANDIDATE_PAGES = 5
 PHOTO_SOURCE_MAX_IMAGE_DOWNLOADS = 3
 PHOTO_SOURCE_HTML_TIMEOUT_SECONDS = 15
+PHOTO_SOURCE_SEARCH_TIMEOUT_SECONDS = 6
 PHOTO_SOURCE_IMAGE_TIMEOUT_SECONDS = 30
 PHOTO_SOURCE_FETCH_RETRY_DELAYS_SECONDS = (1.0, 2.0)
+PHOTO_SOURCE_PROVIDER_SOFT_FAILURE_DISABLE_THRESHOLD = 1
 PHOTO_SOURCE_WINNER_THRESHOLD = 85
 PHOTO_SOURCE_AMBIGUOUS_THRESHOLD = 70
 PHOTO_SOURCE_MARGIN_THRESHOLD = 15
@@ -735,6 +749,17 @@ class PhotoAssetSet:
 
 
 @dataclass
+class GWOfficialResourcePackRef:
+    key: str
+    label: str
+    pack: gw_cache_refresh.ResourcePack
+    product_code: str = ""
+    title_slug: str = ""
+    archive_url: str = ""
+    archive_members: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ShopifyImageFile:
     id: str
     alt: str = ""
@@ -762,6 +787,17 @@ class PhotoSourceCandidate:
     score: int
     reasons: list[str]
     detail_signals: list[str] = field(default_factory=list)
+    source_class: str = "web_detail"
+
+
+@dataclass(frozen=True)
+class PhotoSourceDecision:
+    outcome: str
+    winner: PhotoSourceCandidate | None
+    reason: str
+    top: PhotoSourceCandidate | None
+    runner_up: PhotoSourceCandidate | None
+    disqualifiers: list[str] = field(default_factory=list)
 
 
 class _PhotoSourceHTMLParser(HTMLParser):
@@ -874,6 +910,12 @@ def _round_money(x: float) -> float:
 def _normalize_slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower())
     return slug.strip("-")
+
+
+def _tokenize_humanish_label(value: str) -> list[str]:
+    expanded = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", value or "")
+    expanded = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", expanded)
+    return [token.lower() for token in re.findall(r"[A-Za-z0-9]+", expanded)]
 
 
 def _normalize_search_text(value: str) -> str:
@@ -1300,14 +1342,15 @@ def fetch_url_with_retries(
     *,
     timeout: int,
     binary: bool = False,
+    retry_delays: Sequence[float] = PHOTO_SOURCE_FETCH_RETRY_DELAYS_SECONDS,
 ) -> requests.Response:
-    attempts = len(PHOTO_SOURCE_FETCH_RETRY_DELAYS_SECONDS) + 1
+    attempts = len(retry_delays) + 1
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
             response = session.get(url, timeout=timeout)
             if response.status_code in {429, 500, 502, 503, 504} and attempt < attempts - 1:
-                time.sleep(PHOTO_SOURCE_FETCH_RETRY_DELAYS_SECONDS[attempt])
+                time.sleep(retry_delays[attempt])
                 continue
             if response.status_code >= 400:
                 raise RuntimeError(f"HTTP {response.status_code} while fetching {url}")
@@ -1320,7 +1363,7 @@ def fetch_url_with_retries(
             last_error = exc
             if attempt >= attempts - 1:
                 break
-            time.sleep(PHOTO_SOURCE_FETCH_RETRY_DELAYS_SECONDS[attempt])
+            time.sleep(retry_delays[attempt])
     if last_error is not None:
         raise RuntimeError(f"Network error while fetching {url}: {last_error}") from last_error
     raise RuntimeError(f"Failed to fetch {url}")
@@ -1379,6 +1422,18 @@ def photo_source_title_tokens(product: Product) -> list[str]:
 
 def photo_source_vendor_tokens(product: Product) -> list[str]:
     return [token for token in re.findall(r"[a-z0-9]+", (product.vendor or "").lower()) if len(token) >= 3]
+
+
+def photo_source_processing_priority(product: Product) -> tuple[int, int, str, str]:
+    if product.source != "GW":
+        if photo_source_is_book_product(product):
+            return (0, 0, product.vendor.lower(), product.sku)
+        if extract_product_asin(product):
+            return (0, 1, product.vendor.lower(), product.sku)
+        return (0, 2, product.vendor.lower(), product.sku)
+    if product.barcode:
+        return (1, 0, product.vendor.lower(), product.sku)
+    return (1, 1, product.vendor.lower(), product.sku)
 
 
 def _photo_source_identifier_matches(identifier: str, raw_text: str, normalized_text: str) -> bool:
@@ -1490,6 +1545,10 @@ def score_photo_source_candidate(
         score -= 25
         reasons.append("generic_penalty")
     score = max(0, min(100, score))
+    source_class = "web_detail"
+    host = (urlparse(page_url).netloc or "").lower()
+    if "amazon." in host:
+        source_class = "amazon_detail"
     return PhotoSourceCandidate(
         page_url=page_url,
         image_url=image_url,
@@ -1498,6 +1557,7 @@ def score_photo_source_candidate(
         score=score,
         reasons=reasons,
         detail_signals=detail_signals,
+        source_class=source_class,
     )
 
 
@@ -1531,21 +1591,66 @@ def extract_photo_source_candidates(product: Product, page_url: str, html: str) 
     return candidates
 
 
-def choose_photo_source_winner(candidates: list[PhotoSourceCandidate]) -> tuple[str, PhotoSourceCandidate | None, str]:
+def current_photo_source_policy_version() -> str:
+    payload = {
+        "winner_threshold": PHOTO_SOURCE_WINNER_THRESHOLD,
+        "review_threshold": PHOTO_SOURCE_AMBIGUOUS_THRESHOLD,
+        "margin_threshold": PHOTO_SOURCE_MARGIN_THRESHOLD,
+        "providers": [
+            "supplier_local",
+            "gw_cache",
+            "books_openlibrary",
+            "books_google_books",
+            "amazon_detail",
+            "generic_web_search",
+        ],
+        "gw_requires": [
+            "detail_page",
+            "sku_or_barcode",
+            "strong_title",
+            "non_generic_page",
+        ],
+        "outcomes": ["winner", "review", "missing", "failed"],
+    }
+    digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+    return f"psv1-{digest}"
+
+
+def is_supplier_or_structured_candidate(candidate: PhotoSourceCandidate) -> bool:
+    return candidate.source_class in {"supplier-local", "openlibrary", "google_books"}
+
+
+def decide_photo_source_outcome(product: Product, candidates: list[PhotoSourceCandidate]) -> PhotoSourceDecision:
     if not candidates:
-        return "missing", None, f"no candidate reached {PHOTO_SOURCE_AMBIGUOUS_THRESHOLD}"
+        return PhotoSourceDecision("missing", None, f"no candidate reached {PHOTO_SOURCE_AMBIGUOUS_THRESHOLD}", None, None)
     top = candidates[0]
     runner_up = candidates[1] if len(candidates) > 1 else None
     if top.score < PHOTO_SOURCE_AMBIGUOUS_THRESHOLD:
-        return "missing", None, f"no candidate reached {PHOTO_SOURCE_AMBIGUOUS_THRESHOLD}"
-    if top.score >= PHOTO_SOURCE_WINNER_THRESHOLD and runner_up and runner_up.score >= PHOTO_SOURCE_WINNER_THRESHOLD:
-        return "ambiguous", None, "multiple candidates cleared the winner threshold"
+        return PhotoSourceDecision("missing", None, f"no candidate reached {PHOTO_SOURCE_AMBIGUOUS_THRESHOLD}", top, runner_up)
+
     margin = top.score - (runner_up.score if runner_up else 0)
-    if top.score >= PHOTO_SOURCE_WINNER_THRESHOLD and margin >= PHOTO_SOURCE_MARGIN_THRESHOLD:
-        return "winner", top, ""
-    if top.score >= PHOTO_SOURCE_AMBIGUOUS_THRESHOLD:
-        return "ambiguous", None, f"top-vs-runner-up margin {margin} is below {PHOTO_SOURCE_MARGIN_THRESHOLD}"
-    return "missing", None, f"no candidate reached {PHOTO_SOURCE_AMBIGUOUS_THRESHOLD}"
+    disqualifiers: list[str] = []
+    if runner_up and top.score >= PHOTO_SOURCE_WINNER_THRESHOLD and runner_up.score >= PHOTO_SOURCE_WINNER_THRESHOLD:
+        disqualifiers.append("winner_tie")
+    if top.score < PHOTO_SOURCE_WINNER_THRESHOLD:
+        disqualifiers.append("below_winner_threshold")
+    if margin < PHOTO_SOURCE_MARGIN_THRESHOLD:
+        disqualifiers.append("low_margin")
+    if "generic_penalty" in top.reasons:
+        disqualifiers.append("generic_page")
+
+    if product.source == "GW" and not is_supplier_or_structured_candidate(top):
+        if "detail_page" not in top.reasons:
+            disqualifiers.append("gw_requires_detail_page")
+        if not any(reason in {"sku", "barcode"} for reason in top.reasons):
+            disqualifiers.append("gw_requires_identifier")
+        if "title" not in top.reasons:
+            disqualifiers.append("gw_requires_strong_title")
+
+    if disqualifiers:
+        reason = ", ".join(disqualifiers)
+        return PhotoSourceDecision("review", None, reason, top, runner_up, disqualifiers)
+    return PhotoSourceDecision("winner", top, "", top, runner_up)
 
 
 def photo_source_is_book_product(product: Product) -> bool:
@@ -1562,6 +1667,7 @@ def _build_direct_photo_source_candidate(
     reasons: list[str],
     page_title: str = "",
     image_alt: str = "",
+    source_class: str = "web_detail",
 ) -> PhotoSourceCandidate:
     unique_reasons: list[str] = []
     for reason in reasons:
@@ -1575,6 +1681,7 @@ def _build_direct_photo_source_candidate(
         score=score,
         reasons=unique_reasons,
         detail_signals=unique_reasons,
+        source_class=source_class,
     )
 
 
@@ -1605,6 +1712,7 @@ def fetch_book_photo_source_candidates(
                 score=100,
                 reasons=["barcode", "openlibrary"] if isbn == product.barcode else ["sku", "openlibrary"],
                 page_title=f"Open Library ISBN {isbn}",
+                source_class="openlibrary",
             ))
         except Exception as exc:
             errors.append(str(exc))
@@ -1629,6 +1737,7 @@ def fetch_book_photo_source_candidates(
                     score=95,
                     reasons=["barcode", "google_books"] if isbn == product.barcode else ["sku", "google_books"],
                     page_title=volume_info.get("title") or product.title,
+                    source_class="google_books",
                 ))
                 break
         except Exception as exc:
@@ -1675,21 +1784,41 @@ def fetch_amazon_photo_source_candidates(
 def fetch_photo_source_search_results(
     session: requests.Session,
     query: str,
+    provider_state: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[PhotoSourceSearchResult], int, list[str]]:
     errors: list[str] = []
     successes = 0
-    for search_base in PHOTO_SOURCE_SEARCH_URLS:
-        search_url = f"{search_base}?q={quote_plus(query)}"
+    for search_base, query_param in PHOTO_SOURCE_SEARCH_PROVIDERS:
+        state = provider_state.setdefault(search_base, {}) if provider_state is not None else {}
+        if state.get("disabled"):
+            continue
+        search_url = f"{search_base}?{query_param}={quote_plus(query)}"
         try:
             search_response = fetch_url_with_retries(
                 session,
                 search_url,
-                timeout=PHOTO_SOURCE_HTML_TIMEOUT_SECONDS,
+                timeout=PHOTO_SOURCE_SEARCH_TIMEOUT_SECONDS,
+                retry_delays=(),
             )
         except Exception as exc:
-            errors.append(str(exc))
+            message = str(exc)
+            errors.append(message)
+            failure_count = int(state.get("failure_count", 0)) + 1
+            state["failure_count"] = failure_count
+            if message.startswith("HTTP 403") or message.startswith("HTTP 429"):
+                state["disabled"] = True
+                state["disabled_reason"] = message
+                log(f"Photo source search provider disabled for this run: {search_base} ({message})")
+            elif failure_count >= PHOTO_SOURCE_PROVIDER_SOFT_FAILURE_DISABLE_THRESHOLD:
+                state["disabled"] = True
+                state["disabled_reason"] = message
+                qualifier = "failure" if PHOTO_SOURCE_PROVIDER_SOFT_FAILURE_DISABLE_THRESHOLD == 1 else "repeated failures"
+                log(f"Photo source search provider disabled after {qualifier}: {search_base} ({message})")
             continue
         successes += 1
+        if state:
+            state["failure_count"] = 0
+            state["last_success_query"] = query
         results = extract_photo_source_search_results(search_response.text)
         if results:
             return results, successes, errors
@@ -1700,11 +1829,16 @@ def fetch_search_page_photo_source_candidates(
     session: requests.Session,
     product: Product,
     query: str,
+    provider_state: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[PhotoSourceCandidate], int, list[str]]:
     candidates: list[PhotoSourceCandidate] = []
     errors: list[str] = []
     successes = 0
-    result_urls, search_successes, search_errors = fetch_photo_source_search_results(session, query)
+    result_urls, search_successes, search_errors = fetch_photo_source_search_results(
+        session,
+        query,
+        provider_state=provider_state,
+    )
     successes += search_successes
     errors.extend(search_errors)
     for result in result_urls[:PHOTO_SOURCE_MAX_CANDIDATE_PAGES]:
@@ -1774,6 +1908,85 @@ def build_photo_source_preview_row(
     }
 
 
+PHOTO_SOURCE_PREVIEW_COLUMNS = [
+    "sku",
+    "title",
+    "status",
+    "query",
+    "top_score",
+    "winner_page_url",
+    "winner_image_url",
+    "winner_reasons",
+    "staged_dir",
+    "reason",
+]
+
+PHOTO_SOURCE_REVIEW_COLUMNS = [
+    "sku",
+    "title",
+    "outcome",
+    "top_score",
+    "runner_up_score",
+    "score_margin",
+    "top_candidate_page_url",
+    "top_candidate_image_url",
+    "runner_up_page_url",
+    "runner_up_image_url",
+    "source_class",
+    "reasons",
+    "disqualifiers",
+    "policy_version",
+    "notes",
+]
+
+
+def build_photo_source_review_row(
+    product: Product,
+    decision: PhotoSourceDecision,
+    *,
+    policy_version: str,
+) -> dict[str, str]:
+    top = decision.top
+    runner_up = decision.runner_up
+    margin = ""
+    if top is not None:
+        margin_value = top.score - (runner_up.score if runner_up else 0)
+        margin = str(max(0, margin_value))
+    return {
+        "sku": product.sku,
+        "title": product.title,
+        "outcome": "review",
+        "top_score": str(top.score) if top is not None else "",
+        "runner_up_score": str(runner_up.score) if runner_up is not None else "",
+        "score_margin": margin,
+        "top_candidate_page_url": top.page_url if top is not None else "",
+        "top_candidate_image_url": top.image_url if top is not None else "",
+        "runner_up_page_url": runner_up.page_url if runner_up is not None else "",
+        "runner_up_image_url": runner_up.image_url if runner_up is not None else "",
+        "source_class": top.source_class if top is not None else "",
+        "reasons": "|".join(top.reasons) if top is not None else "",
+        "disqualifiers": "|".join(decision.disqualifiers),
+        "policy_version": policy_version,
+        "notes": decision.reason,
+    }
+
+
+def write_photo_source_csv(path: Path, fieldnames: list[str], rows: list[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def flush_photo_source_outputs(
+    preview_rows: list[dict[str, Any]],
+    review_rows: list[dict[str, str]],
+) -> None:
+    write_photo_source_csv(PHOTO_SOURCE_PREVIEW_CSV, PHOTO_SOURCE_PREVIEW_COLUMNS, preview_rows)
+    write_photo_source_csv(PHOTO_SOURCE_REVIEW_CSV, PHOTO_SOURCE_REVIEW_COLUMNS, review_rows)
+
+
 def record_photo_source_non_winner(
     product: Product,
     *,
@@ -1786,6 +1999,10 @@ def record_photo_source_non_winner(
     dry: bool,
     manifest: dict[str, Any],
     manifest_path: Path,
+    policy_version: str,
+    top_candidate: PhotoSourceCandidate | None = None,
+    runner_up: PhotoSourceCandidate | None = None,
+    disqualifiers: list[str] | None = None,
 ) -> None:
     preview_rows.append(build_photo_source_preview_row(
         product,
@@ -1806,6 +2023,14 @@ def record_photo_source_non_winner(
         top_score=top_score,
         reason=reason,
         manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+        policy_version=policy_version,
+        winner_page_url=top_candidate.page_url if top_candidate is not None else "",
+        winner_image_url=top_candidate.image_url if top_candidate is not None else "",
+        winner_reasons=top_candidate.reasons if top_candidate is not None else [],
+        runner_up_page_url=runner_up.page_url if runner_up is not None else "",
+        runner_up_image_url=runner_up.image_url if runner_up is not None else "",
+        runner_up_score=runner_up.score if runner_up is not None else 0,
+        disqualifiers=disqualifiers or [],
     )
 
 
@@ -1847,6 +2072,173 @@ def build_photo_source_supplier_indexes(
     return build_photo_indexes(combined)
 
 
+def build_photo_source_gw_cache_indexes() -> tuple[dict[str, list[PhotoAssetSet]], dict[str, list[PhotoAssetSet]]]:
+    if not GW_PHOTO_CACHE_CURRENT.exists() or not GW_PHOTO_CACHE_CURRENT.is_dir():
+        return {}, {}
+    try:
+        return build_photo_indexes(discover_photo_asset_sets(GW_PHOTO_CACHE_CURRENT))
+    except RuntimeError:
+        return {}, {}
+
+
+def build_gw_official_resource_pack_indexes(
+    packs: list[gw_cache_refresh.ResourcePack],
+    session: requests.Session | None = None,
+) -> tuple[dict[str, list[GWOfficialResourcePackRef]], dict[str, list[GWOfficialResourcePackRef]]]:
+    by_code: dict[str, list[GWOfficialResourcePackRef]] = {}
+    by_slug: dict[str, list[GWOfficialResourcePackRef]] = {}
+    for index, pack in enumerate(packs):
+        ref = GWOfficialResourcePackRef(
+            key=f"gw-official:{index}",
+            label=pack.label,
+            pack=pack,
+            product_code=_extract_asset_match_code(pack.label),
+            title_slug=_extract_title_slug(pack.label),
+        )
+        if ref.product_code:
+            by_code.setdefault(ref.product_code, []).append(ref)
+        if ref.title_slug:
+            by_slug.setdefault(ref.title_slug, []).append(ref)
+    if session is None:
+        return by_code, by_slug
+
+    archive_index_cache = load_gw_official_archive_index_cache()
+    seen_archive_labels: set[tuple[str, str]] = set()
+    for pack in packs:
+        for archive_url in pack.archives:
+            archive_suffix = Path(urlparse(archive_url).path).suffix.lower()
+            if archive_suffix not in gw_cache_refresh.EXTRACTABLE_ARCHIVE_SUFFIXES:
+                continue
+            members_by_group = archive_index_cache.get(archive_url)
+            if members_by_group is None:
+                try:
+                    archive_bytes, _ = gw_cache_refresh.fetch_binary(session, archive_url)
+                    member_names = gw_cache_refresh.list_image_members_from_zip(archive_bytes)
+                except Exception:
+                    continue
+                members_by_group = {}
+                for member_name in member_names:
+                    group_label = gw_cache_refresh.derive_archive_asset_group_label(member_name, pack.label)
+                    members_by_group.setdefault(group_label, []).append(member_name)
+                archive_index_cache[archive_url] = members_by_group
+                save_gw_official_archive_index_cache(archive_index_cache)
+            for group_label, grouped_members in members_by_group.items():
+                dedupe_key = (archive_url, group_label)
+                if dedupe_key in seen_archive_labels:
+                    continue
+                seen_archive_labels.add(dedupe_key)
+                ref = GWOfficialResourcePackRef(
+                    key=f"gw-official-archive:{_normalize_slug(group_label)}",
+                    label=group_label,
+                    pack=gw_cache_refresh.ResourcePack(
+                        label=group_label,
+                        images=[],
+                        archives=[archive_url],
+                    ),
+                    product_code=_extract_asset_match_code(group_label),
+                    title_slug=_extract_title_slug(group_label),
+                    archive_url=archive_url,
+                    archive_members=sorted(grouped_members),
+                )
+                if ref.product_code:
+                    by_code.setdefault(ref.product_code, []).append(ref)
+                if ref.title_slug:
+                    by_slug.setdefault(ref.title_slug, []).append(ref)
+    return by_code, by_slug
+
+
+def load_gw_official_archive_index_cache(
+    path: Path | None = None,
+) -> dict[str, dict[str, list[str]]]:
+    path = path or GW_OFFICIAL_ARCHIVE_INDEX_JSON
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    archives = payload.get("archives") if isinstance(payload, dict) else None
+    if not isinstance(archives, dict):
+        return {}
+    normalized: dict[str, dict[str, list[str]]] = {}
+    for archive_url, grouped in archives.items():
+        if not isinstance(archive_url, str) or not isinstance(grouped, dict):
+            continue
+        normalized_groups: dict[str, list[str]] = {}
+        for group_label, member_names in grouped.items():
+            if not isinstance(group_label, str) or not isinstance(member_names, list):
+                continue
+            normalized_groups[group_label] = [name for name in member_names if isinstance(name, str)]
+        normalized[archive_url] = normalized_groups
+    return normalized
+
+
+def save_gw_official_archive_index_cache(
+    archive_index_cache: dict[str, dict[str, list[str]]],
+    path: Path | None = None,
+) -> None:
+    path = path or GW_OFFICIAL_ARCHIVE_INDEX_JSON
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "archives": archive_index_cache,
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def warm_gw_official_archive_index(
+    *,
+    resources_url: str,
+    archive_index_path: Path,
+    dry: bool,
+    logger: Callable[[str], None],
+    session: requests.Session | None = None,
+) -> dict[str, int]:
+    session = session or requests.Session()
+    packs, source_marker = gw_cache_refresh.discover_resource_packs(resources_url, session)
+    if dry:
+        by_code, _ = build_gw_official_resource_pack_indexes(packs, None)
+        archive_count = sum(
+            1
+            for pack in packs
+            for archive_url in pack.archives
+            if Path(urlparse(archive_url).path).suffix.lower() in gw_cache_refresh.EXTRACTABLE_ARCHIVE_SUFFIXES
+        )
+        logger(
+            "GW archive index dry-run: discovered "
+            f"{len(packs)} packs / {archive_count} extractable archives / "
+            f"{len(by_code)} code-labelled top-level references from {source_marker}"
+        )
+        return {
+            "pack_count": len(packs),
+            "archive_count": archive_count,
+            "indexed_sku_count": len(by_code),
+        }
+
+    build_gw_official_resource_pack_indexes(packs, session)
+    cache = load_gw_official_archive_index_cache(archive_index_path)
+    indexed_group_count = sum(len(groups) for groups in cache.values())
+    logger(
+        "GW archive index warm complete: "
+        f"{len(cache)} archives cached / {indexed_group_count} grouped archive entries"
+    )
+    return {
+        "archive_count": len(cache),
+        "indexed_group_count": indexed_group_count,
+    }
+
+
+def gw_official_resource_indexes_usable(
+    by_code: dict[str, list[GWOfficialResourcePackRef]],
+    by_slug: dict[str, list[GWOfficialResourcePackRef]],
+) -> bool:
+    if any(by_code.values()):
+        return True
+    return any(
+        slug and any(ch.isdigit() for ch in slug)
+        for slug in by_slug
+    )
+
+
 def stage_photo_source_local_asset_set(
     asset_set: PhotoAssetSet,
     current_root: Path,
@@ -1870,6 +2262,105 @@ def stage_photo_source_local_asset_set(
         publish_photo_source_pack(pack_dir, current_root, pack_name)
 
 
+def stage_gw_official_resource_pack(
+    pack_ref: GWOfficialResourcePackRef,
+    session: requests.Session,
+    current_root: Path,
+    pack_name: str,
+    metadata: dict[str, Any],
+) -> None:
+    current_root.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=current_root.parent) as tmp:
+        temp_root = Path(tmp)
+        pack_dir = temp_root / pack_name
+        pack_dir.mkdir(parents=True, exist_ok=True)
+        used_filenames: set[str] = set()
+        downloaded_files: list[str] = []
+        for image in pack_ref.pack.images[:PHOTO_SOURCE_MAX_IMAGE_DOWNLOADS]:
+            content, final_url = gw_cache_refresh.fetch_binary(session, image.url)
+            filename = gw_cache_refresh.build_flattened_filename(image.url, final_url, used_filenames)
+            (pack_dir / filename).write_bytes(content)
+            downloaded_files.append(filename)
+        if pack_ref.archive_url and pack_ref.archive_members:
+            archive_bytes, _ = gw_cache_refresh.fetch_binary(session, pack_ref.archive_url)
+            before = {path.name for path in pack_dir.iterdir() if path.is_file()}
+            gw_cache_refresh.extract_selected_images_from_zip(
+                archive_bytes,
+                archive_label=pack_ref.label,
+                member_names=pack_ref.archive_members,
+                pack_dir=pack_dir,
+                used_filenames=used_filenames,
+            )
+            after = {path.name for path in pack_dir.iterdir() if path.is_file()}
+            downloaded_files.extend(sorted(after - before))
+        for archive_url in pack_ref.pack.archives:
+            if pack_ref.archive_url and archive_url == pack_ref.archive_url and pack_ref.archive_members:
+                continue
+            archive_bytes, final_url = gw_cache_refresh.fetch_binary(session, archive_url)
+            final_suffix = Path(urlparse(final_url or archive_url).path).suffix.lower()
+            if final_suffix not in gw_cache_refresh.EXTRACTABLE_ARCHIVE_SUFFIXES:
+                continue
+            before = {path.name for path in pack_dir.iterdir() if path.is_file()}
+            gw_cache_refresh.extract_images_from_zip(
+                archive_bytes,
+                archive_label=pack_ref.label,
+                staging_root=temp_root,
+                used_pack_names={pack_name: 1},
+                pack_dirs_by_label={pack_ref.label: pack_dir},
+                used_filenames_by_dir={pack_dir: used_filenames},
+            )
+            after = {path.name for path in pack_dir.iterdir() if path.is_file()}
+            downloaded_files.extend(sorted(after - before))
+        metadata = dict(metadata)
+        metadata["downloaded_files"] = sorted(set(downloaded_files))
+        metadata["source_label"] = pack_ref.label
+        (pack_dir / "_source.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
+        publish_photo_source_pack(pack_dir, current_root, pack_name)
+
+
+def _photo_asset_title_match_score(product: Product, asset_set: PhotoAssetSet) -> int:
+    product_tokens = set(re.findall(r"[a-z0-9]+", _normalize_slug(product.title)))
+    label_tokens = set(re.findall(r"[a-z0-9]+", _normalize_slug(asset_set.label)))
+    if not product_tokens or not label_tokens:
+        return 0
+    return len(product_tokens & label_tokens)
+
+
+def _choose_best_photo_asset_set(product: Product, asset_sets: list[PhotoAssetSet]) -> PhotoAssetSet | None:
+    ranked = sorted(
+        ((_photo_asset_title_match_score(product, asset_set), asset_set.label.lower(), asset_set) for asset_set in asset_sets),
+        key=lambda item: (-item[0], item[1]),
+    )
+    if not ranked or ranked[0][0] == 0:
+        return None
+    if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
+        return None
+    return ranked[0][2]
+
+
+def _gw_official_pack_title_match_score(product: Product, pack_ref: GWOfficialResourcePackRef) -> int:
+    product_tokens = set(re.findall(r"[a-z0-9]+", _normalize_slug(product.title)))
+    label_tokens = set(re.findall(r"[a-z0-9]+", _normalize_slug(pack_ref.label)))
+    if not product_tokens or not label_tokens:
+        return 0
+    return len(product_tokens & label_tokens)
+
+
+def _choose_best_gw_official_pack(
+    product: Product,
+    pack_refs: list[GWOfficialResourcePackRef],
+) -> GWOfficialResourcePackRef | None:
+    ranked = sorted(
+        ((_gw_official_pack_title_match_score(product, pack_ref), pack_ref.label.lower(), pack_ref) for pack_ref in pack_refs),
+        key=lambda item: (-item[0], item[1]),
+    )
+    if not ranked or ranked[0][0] == 0:
+        return None
+    if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
+        return None
+    return ranked[0][2]
+
+
 def resolve_photo_asset(
     product: Product,
     by_code: dict[str, list[PhotoAssetSet]],
@@ -1879,6 +2370,9 @@ def resolve_photo_asset(
     if len(exact_matches) == 1:
         return "replace", "exact", exact_matches[0], ""
     if len(exact_matches) > 1:
+        best_exact = _choose_best_photo_asset_set(product, exact_matches)
+        if best_exact is not None:
+            return "replace", "exact_best", best_exact, ""
         return "skip", "ambiguous", None, "multiple exact code matches"
 
     slug = _normalize_slug(product.title)
@@ -1886,8 +2380,37 @@ def resolve_photo_asset(
     if len(slug_matches) == 1:
         return "replace", "fallback", slug_matches[0], ""
     if len(slug_matches) > 1:
+        best_slug = _choose_best_photo_asset_set(product, slug_matches)
+        if best_slug is not None:
+            return "replace", "fallback_best", best_slug, ""
         return "skip", "ambiguous", None, "multiple title-slug matches"
     return "skip", "missing", None, "no matching photo asset set"
+
+
+def resolve_gw_official_resource_pack(
+    product: Product,
+    by_code: dict[str, list[GWOfficialResourcePackRef]],
+    by_slug: dict[str, list[GWOfficialResourcePackRef]],
+) -> tuple[str, str, GWOfficialResourcePackRef | None, str]:
+    exact_matches = by_code.get(product.sku, [])
+    if len(exact_matches) == 1:
+        return "replace", "exact", exact_matches[0], ""
+    if len(exact_matches) > 1:
+        best_exact = _choose_best_gw_official_pack(product, exact_matches)
+        if best_exact is not None:
+            return "replace", "exact_best", best_exact, ""
+        return "skip", "ambiguous", None, "multiple official GW packs share this product code"
+
+    slug = _normalize_slug(product.title)
+    slug_matches = by_slug.get(slug, [])
+    if len(slug_matches) == 1:
+        return "replace", "fallback", slug_matches[0], ""
+    if len(slug_matches) > 1:
+        best_slug = _choose_best_gw_official_pack(product, slug_matches)
+        if best_slug is not None:
+            return "replace", "fallback_best", best_slug, ""
+        return "skip", "ambiguous", None, "multiple official GW packs share this title slug"
+    return "skip", "missing", None, "no matching official GW resource pack"
 
 
 def resolve_existing_shopify_files(
@@ -2494,6 +3017,14 @@ class Shopify:
             "Accept": "application/json",
         })
 
+    def auth_debug_context(self) -> str:
+        token = self.token or ""
+        fingerprint = hashlib.sha1(token.encode("utf-8")).hexdigest()[:10] if token else "missing"
+        return (
+            f"store={self.store!r} endpoint={self.endpoint!r} "
+            f"token_len={len(token)} token_prefix={token[:6]!r} token_fp={fingerprint}"
+        )
+
     def gql(self, query: str, variables: dict[str, Any] | None = None,
             max_retries: int = 6) -> dict[str, Any]:
         body = {"query": query, "variables": variables or {}}
@@ -2515,7 +3046,7 @@ class Shopify:
                     detail = json.dumps(err_data)[:1000]
                 except Exception:
                     detail = r.text[:1000]
-                raise RuntimeError(f"Shopify HTTP {r.status_code}: {detail}")
+                raise RuntimeError(f"Shopify HTTP {r.status_code}: {detail} [{self.auth_debug_context()}]")
             try:
                 data = r.json()
             except Exception as e:
@@ -4584,7 +5115,9 @@ def phase_photo_source_web_all(
 ) -> None:
     log("=== PHOTO SOURCE phase: discovering zero-media catalog products and staging web winners ===")
     manifest = load_photo_manifest(manifest_path)
+    policy_version = current_photo_source_policy_version()
     supplier_by_code, supplier_by_slug = build_photo_source_supplier_indexes(photo_source_supplier_roots())
+    gw_cache_by_code, gw_cache_by_slug = build_photo_source_gw_cache_indexes()
     session = getattr(client, "session", None)
     if session is None:
         session = requests.Session()
@@ -4606,12 +5139,18 @@ def phase_photo_source_web_all(
             unmapped_rows.append((rec["sku"], rec["title"], "zero-media Shopify SKU not present in local catalog"))
 
     preview_rows: list[dict[str, Any]] = []
+    review_rows: list[dict[str, str]] = []
     missing_rows: list[tuple[str, str, str]] = []
     ambiguous_rows: list[tuple[str, str, str]] = []
     failure_rows: list[tuple[str, str, str]] = []
+    search_provider_state: dict[str, dict[str, Any]] = {}
+    gw_official_indexes: tuple[dict[str, list[GWOfficialResourcePackRef]], dict[str, list[GWOfficialResourcePackRef]]] | None = None
+    gw_official_error: str = ""
     current_root = cache_root
+    flush_photo_source_outputs(preview_rows, review_rows)
 
-    for product in products:
+    ordered_products = sorted(products, key=photo_source_processing_priority)
+    for product in ordered_products:
         existing = by_sku.get(product.sku)
         if not existing:
             continue
@@ -4625,6 +5164,7 @@ def phase_photo_source_web_all(
                 reason=PHOTO_SOURCE_DUPLICATE_SKU_REASON,
             ))
             ambiguous_rows.append((product.sku, product.title, PHOTO_SOURCE_DUPLICATE_SKU_REASON))
+            flush_photo_source_outputs(preview_rows, review_rows)
             continue
 
         query = build_photo_source_query(product)
@@ -4634,6 +5174,7 @@ def phase_photo_source_web_all(
             not dry
             and prior_entry.get("state") == "completed"
             and prior_entry.get("query") == query
+            and prior_entry.get("policy_version") == policy_version
             and (current_root / pack_name).exists()
         ):
             preview_rows.append(build_photo_source_preview_row(
@@ -4644,6 +5185,7 @@ def phase_photo_source_web_all(
                 reason="existing staged winner reused",
                 staged_dir=display_path(current_root / pack_name),
             ))
+            flush_photo_source_outputs(preview_rows, review_rows)
             continue
 
         supplier_note = ""
@@ -4664,6 +5206,7 @@ def phase_photo_source_web_all(
                         winner_reasons=["supplier_local", match_type],
                         staged_dir=staged_dir_display,
                         manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                        policy_version=policy_version,
                     )
                     stage_photo_source_local_asset_set(
                         asset_set,
@@ -4692,6 +5235,7 @@ def phase_photo_source_web_all(
                         winner_reasons=["supplier_local", match_type],
                         staged_dir=staged_dir_display,
                         manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                        policy_version=policy_version,
                         reason="",
                     )
                 preview_rows.append(build_photo_source_preview_row(
@@ -4705,12 +5249,177 @@ def phase_photo_source_web_all(
                         image_url=asset_set.image_paths[0].name if asset_set.image_paths else "",
                         score=100,
                         reasons=["supplier_local", match_type],
+                        source_class="supplier-local",
                     ),
                     staged_dir=staged_dir_display if not dry else "",
                 ))
+                flush_photo_source_outputs(preview_rows, review_rows)
                 continue
             if reason:
                 supplier_note = reason
+
+        if product.source == "GW" and (gw_cache_by_code or gw_cache_by_slug):
+            action, match_type, asset_set, reason = resolve_photo_asset(product, gw_cache_by_code, gw_cache_by_slug)
+            if action == "replace" and asset_set is not None:
+                staged_dir_display = display_path(current_root / pack_name)
+                if not dry:
+                    update_and_save_photo_manifest_entry(
+                        manifest,
+                        manifest_path,
+                        sku=product.sku,
+                        state="staging_local",
+                        query=query,
+                        top_score=100,
+                        winner_page_url=f"gw-cache://{match_type}",
+                        winner_image_url=asset_set.image_paths[0].name if asset_set.image_paths else "",
+                        winner_reasons=["gw_cache", match_type],
+                        staged_dir=staged_dir_display,
+                        manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                        policy_version=policy_version,
+                    )
+                    stage_photo_source_local_asset_set(
+                        asset_set,
+                        current_root,
+                        pack_name,
+                        {
+                            "sku": product.sku,
+                            "title": product.title,
+                            "query": query,
+                            "score": 100,
+                            "source": "gw-cache",
+                            "match_type": match_type,
+                            "source_root": str(asset_set.image_paths[0].parent if asset_set.image_paths else ""),
+                            "reasons": ["gw_cache", match_type],
+                        },
+                    )
+                    update_and_save_photo_manifest_entry(
+                        manifest,
+                        manifest_path,
+                        sku=product.sku,
+                        state="completed",
+                        query=query,
+                        top_score=100,
+                        winner_page_url=f"gw-cache://{match_type}",
+                        winner_image_url=asset_set.image_paths[0].name if asset_set.image_paths else "",
+                        winner_reasons=["gw_cache", match_type],
+                        staged_dir=staged_dir_display,
+                        manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                        policy_version=policy_version,
+                        reason="",
+                    )
+                preview_rows.append(build_photo_source_preview_row(
+                    product,
+                    status="winner",
+                    query=query,
+                    top_score=100,
+                    winner=_build_direct_photo_source_candidate(
+                        product,
+                        page_url=f"gw-cache://{match_type}",
+                        image_url=asset_set.image_paths[0].name if asset_set.image_paths else "",
+                        score=100,
+                        reasons=["gw_cache", match_type],
+                        source_class="gw_cache",
+                    ),
+                    staged_dir=staged_dir_display if not dry else "",
+                ))
+                flush_photo_source_outputs(preview_rows, review_rows)
+                continue
+            if reason and not supplier_note:
+                supplier_note = f"gw cache: {reason}"
+
+        if product.source == "GW":
+            if gw_official_indexes is None and not gw_official_error:
+                try:
+                    gw_packs, _ = gw_cache_refresh.discover_resource_packs(GW_RESOURCES_URL, session)
+                    gw_official_indexes = build_gw_official_resource_pack_indexes(gw_packs, session)
+                    if not gw_official_resource_indexes_usable(*gw_official_indexes):
+                        gw_official_error = "official GW resource feed did not expose product-code-labelled packs"
+                        log(f"PHOTO SOURCE GW official resource discovery unavailable for this run: {gw_official_error}")
+                        gw_official_indexes = ({}, {})
+                except Exception as exc:
+                    gw_official_error = str(exc)
+                    log(f"PHOTO SOURCE GW official resource discovery unavailable for this run: {gw_official_error}")
+                    gw_official_indexes = ({}, {})
+            gw_official_by_code, gw_official_by_slug = gw_official_indexes or ({}, {})
+            if gw_official_by_code or gw_official_by_slug:
+                action, match_type, pack_ref, reason = resolve_gw_official_resource_pack(
+                    product,
+                    gw_official_by_code,
+                    gw_official_by_slug,
+                )
+                if action == "replace" and pack_ref is not None:
+                    staged_dir_display = display_path(current_root / pack_name)
+                    winner_page_url = pack_ref.pack.images[0].url if pack_ref.pack.images else (
+                        pack_ref.pack.archives[0] if pack_ref.pack.archives else f"gw-official://{match_type}"
+                    )
+                    winner_image_url = pack_ref.pack.images[0].url if pack_ref.pack.images else (
+                        pack_ref.pack.archives[0] if pack_ref.pack.archives else ""
+                    )
+                    if not dry:
+                        update_and_save_photo_manifest_entry(
+                            manifest,
+                            manifest_path,
+                            sku=product.sku,
+                            state="downloading",
+                            query=query,
+                            top_score=100,
+                            winner_page_url=winner_page_url,
+                            winner_image_url=winner_image_url,
+                            winner_reasons=["gw_official", match_type],
+                            staged_dir=staged_dir_display,
+                            manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                            policy_version=policy_version,
+                        )
+                        stage_gw_official_resource_pack(
+                            pack_ref,
+                            session,
+                            current_root,
+                            pack_name,
+                            {
+                                "sku": product.sku,
+                                "title": product.title,
+                                "query": query,
+                                "score": 100,
+                                "source": "gw-official-resource",
+                                "match_type": match_type,
+                                "reasons": ["gw_official", match_type],
+                                "source_url": winner_page_url,
+                            },
+                        )
+                        update_and_save_photo_manifest_entry(
+                            manifest,
+                            manifest_path,
+                            sku=product.sku,
+                            state="completed",
+                            query=query,
+                            top_score=100,
+                            winner_page_url=winner_page_url,
+                            winner_image_url=winner_image_url,
+                            winner_reasons=["gw_official", match_type],
+                            staged_dir=staged_dir_display,
+                            manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                            policy_version=policy_version,
+                            reason="",
+                        )
+                    preview_rows.append(build_photo_source_preview_row(
+                        product,
+                        status="winner",
+                        query=query,
+                        top_score=100,
+                        winner=_build_direct_photo_source_candidate(
+                            product,
+                            page_url=winner_page_url,
+                            image_url=winner_image_url,
+                            score=100,
+                            reasons=["gw_official", match_type],
+                            source_class="gw_official",
+                        ),
+                        staged_dir=staged_dir_display if not dry else "",
+                    ))
+                    flush_photo_source_outputs(preview_rows, review_rows)
+                    continue
+                if reason and not supplier_note:
+                    supplier_note = f"gw official: {reason}"
 
         try:
             candidates: list[PhotoSourceCandidate] = []
@@ -4728,8 +5437,31 @@ def phase_photo_source_web_all(
             provider_successes += successes
             provider_errors.extend(errors)
 
-            if not any(candidate.score >= PHOTO_SOURCE_WINNER_THRESHOLD for candidate in candidates):
-                search_candidates, successes, errors = fetch_search_page_photo_source_candidates(session, product, query)
+            if product.source == "GW":
+                if not candidates:
+                    detail = supplier_note or "no matching Games Workshop resource pack"
+                    record_photo_source_non_winner(
+                        product,
+                        status="missing",
+                        query=query,
+                        top_score=0,
+                        reason=detail,
+                        preview_rows=preview_rows,
+                        log_rows=missing_rows,
+                        dry=dry,
+                        manifest=manifest,
+                        manifest_path=manifest_path,
+                        policy_version=policy_version,
+                    )
+                    flush_photo_source_outputs(preview_rows, review_rows)
+                    continue
+            elif not any(candidate.score >= PHOTO_SOURCE_WINNER_THRESHOLD for candidate in candidates):
+                search_candidates, successes, errors = fetch_search_page_photo_source_candidates(
+                    session,
+                    product,
+                    query,
+                    provider_state=search_provider_state,
+                )
                 candidates.extend(search_candidates)
                 provider_successes += successes
                 provider_errors.extend(errors)
@@ -4748,12 +5480,14 @@ def phase_photo_source_web_all(
                     dry=dry,
                     manifest=manifest,
                     manifest_path=manifest_path,
+                    policy_version=policy_version,
                 )
+                flush_photo_source_outputs(preview_rows, review_rows)
                 continue
-            outcome, winner, reason = choose_photo_source_winner(candidates)
-            top_score = candidates[0].score if candidates else 0
-            if outcome == "missing":
-                detail = reason if not supplier_note else f"{reason}; supplier: {supplier_note}"
+            decision = decide_photo_source_outcome(product, candidates)
+            top_score = decision.top.score if decision.top else 0
+            if decision.outcome == "missing":
+                detail = decision.reason if not supplier_note else f"{decision.reason}; supplier: {supplier_note}"
                 record_photo_source_non_winner(
                     product,
                     status="missing",
@@ -4765,24 +5499,37 @@ def phase_photo_source_web_all(
                     dry=dry,
                     manifest=manifest,
                     manifest_path=manifest_path,
+                    policy_version=policy_version,
+                    top_candidate=decision.top,
+                    runner_up=decision.runner_up,
                 )
+                flush_photo_source_outputs(preview_rows, review_rows)
                 continue
-            if outcome == "ambiguous":
-                detail = reason if not supplier_note else f"{reason}; supplier: {supplier_note}"
+            if decision.outcome == "review":
+                detail = decision.reason if not supplier_note else f"{decision.reason}; supplier: {supplier_note}"
                 record_photo_source_non_winner(
                     product,
-                    status="ambiguous",
+                    status="review",
                     query=query,
                     top_score=top_score,
                     reason=detail,
                     preview_rows=preview_rows,
-                    log_rows=ambiguous_rows,
+                    log_rows=[],
                     dry=dry,
                     manifest=manifest,
                     manifest_path=manifest_path,
+                    policy_version=policy_version,
+                    top_candidate=decision.top,
+                    runner_up=decision.runner_up,
+                    disqualifiers=decision.disqualifiers,
                 )
+                review_rows.append(build_photo_source_review_row(product, decision, policy_version=policy_version))
+                if any(dis in {"winner_tie", "low_margin"} for dis in decision.disqualifiers):
+                    ambiguous_rows.append((product.sku, product.title, detail))
+                flush_photo_source_outputs(preview_rows, review_rows)
                 continue
 
+            winner = decision.winner
             assert winner is not None
             staged_dir_display = display_path(current_root / pack_name)
             if not dry:
@@ -4798,6 +5545,7 @@ def phase_photo_source_web_all(
                     winner_reasons=winner.reasons,
                     staged_dir=staged_dir_display,
                     manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                    policy_version=policy_version,
                 )
                 current_root.parent.mkdir(parents=True, exist_ok=True)
                 with tempfile.TemporaryDirectory(dir=current_root.parent) as tmp:
@@ -4824,6 +5572,8 @@ def phase_photo_source_web_all(
                         "image_url": winner.image_url,
                         "reasons": winner.reasons,
                         "detail_signals": winner.detail_signals,
+                        "source_class": winner.source_class,
+                        "policy_version": policy_version,
                         "image_sha256": hashlib.sha256(image_bytes).hexdigest(),
                     }
                     (pack_dir / "_source.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
@@ -4840,6 +5590,7 @@ def phase_photo_source_web_all(
                     winner_reasons=winner.reasons,
                     staged_dir=staged_dir_display,
                     manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                    policy_version=policy_version,
                     reason="",
                 )
             preview_rows.append(build_photo_source_preview_row(
@@ -4850,6 +5601,7 @@ def phase_photo_source_web_all(
                 winner=winner,
                 staged_dir=staged_dir_display if not dry else "",
             ))
+            flush_photo_source_outputs(preview_rows, review_rows)
         except Exception as exc:
             detail = str(exc)
             record_photo_source_non_winner(
@@ -4863,25 +5615,11 @@ def phase_photo_source_web_all(
                 dry=dry,
                 manifest=manifest,
                 manifest_path=manifest_path,
+                policy_version=policy_version,
             )
+            flush_photo_source_outputs(preview_rows, review_rows)
 
-    cols = [
-        "sku",
-        "title",
-        "status",
-        "query",
-        "top_score",
-        "winner_page_url",
-        "winner_image_url",
-        "winner_reasons",
-        "staged_dir",
-        "reason",
-    ]
-    with PHOTO_SOURCE_PREVIEW_CSV.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=cols)
-        writer.writeheader()
-        for row in preview_rows:
-            writer.writerow(row)
+    flush_photo_source_outputs(preview_rows, review_rows)
     if not dry:
         append_photo_log(PHOTO_SOURCE_UNMAPPED_SHOPIFY_TSV, unmapped_rows)
     append_photo_log(PHOTO_SOURCE_MISSING_TSV, missing_rows)
@@ -4889,8 +5627,58 @@ def phase_photo_source_web_all(
     append_photo_log(PHOTO_SOURCE_FAILURES_TSV, failure_rows)
     log(
         f"PHOTO SOURCE summary: candidates={len(preview_rows)} "
-        f"missing={len(missing_rows)} ambiguous={len(ambiguous_rows)} failed={len(failure_rows)} "
+        f"review={len(review_rows)} missing={len(missing_rows)} ambiguous={len(ambiguous_rows)} failed={len(failure_rows)} "
         f"unmapped={len(unmapped_rows)} dry_run={dry}"
+    )
+
+
+def create_photo_source_recovery_run_id() -> str:
+    return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+
+
+def recover_zero_media_images(
+    client: Shopify,
+    products: list[Product],
+    *,
+    dry: bool,
+) -> None:
+    run_id = create_photo_source_recovery_run_id()
+    winner_root = PHOTO_SOURCE_RECOVERY_RUNS_ROOT / run_id / "winners"
+    winner_root.mkdir(parents=True, exist_ok=True)
+    log(
+        "=== RECOVER ZERO MEDIA IMAGES phase: "
+        f"run_id={run_id} winner_root={display_path(winner_root)} "
+        f"preview={display_path(PHOTO_SOURCE_PREVIEW_CSV)} review={display_path(PHOTO_SOURCE_REVIEW_CSV)} ==="
+    )
+    phase_photo_source_web_all(
+        client,
+        products,
+        dry=dry,
+        cache_root=winner_root,
+    )
+    if dry:
+        log(
+            "Recover zero-media images dry-run complete. Review "
+            "photo_source_preview.csv and photo_source_review.csv, then re-run "
+            "with --recover-zero-media-images (no --dry-run) to stage and apply winners."
+        )
+        return
+    if not winner_root.exists():
+        log("Zero-media recovery found no winner packs to apply.")
+        return
+    try:
+        discover_photo_asset_sets(winner_root)
+    except RuntimeError:
+        log("Zero-media recovery found no winner packs to apply.")
+        return
+    phase_photo_sync(
+        client,
+        products,
+        winner_root,
+        dry=False,
+        source_mode=PHOTO_SYNC_SOURCE_STAGED_LOCAL,
+        product_scope=PHOTO_SYNC_SCOPE_ALL,
+        fallback_audit=True,
     )
 
 
@@ -5333,57 +6121,176 @@ def phase_photo_sync(
 # Main
 # ---------------------------------------------------------------------------
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run one Shopify catalog maintenance job at a time.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "How to choose a flag:\n"
+            "  --preflight            Check credentials and location setup safely.\n"
+            "  --dry-run              Preview a job before changing Shopify.\n"
+            "  --delete / --import    Clear placeholder products or create products from sheets.\n"
+            "  --update               Refresh existing Shopify products by SKU.\n"
+            "  --generate-collections Rebuild managed collections from product tags.\n"
+            "  --photo-*              Repair or attach product images.\n"
+            "  --all                  Delete placeholder products, then import fresh products.\n"
+            "\n"
+            "Important:\n"
+            "  Most job flags must be run by themselves. If a combination is unsafe,\n"
+            "  the script will stop and tell you exactly what must be run separately."
+        ),
+    )
+
+    safety = parser.add_argument_group("safety and setup")
+    safety.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview the selected job first. Use this when you want reports and checks without changing Shopify.",
+    )
+    safety.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Test Shopify credentials and location setup only. Run this before any live delete, import, update, or media job.",
+    )
+    safety.add_argument(
+        "--start-at",
+        type=int,
+        default=0,
+        help="Resume a stopped import from this product number. Only use this with --import or --all.",
+    )
+    safety.add_argument(
+        "--photo-root",
+        type=Path,
+        help="Local folder of staged images. Use this only with photo jobs that need local files, such as --photo-sync or --photo-sync-staged-local-all.",
+    )
+
+    catalog = parser.add_argument_group("catalog import and cleanup")
+    catalog.add_argument(
+        "--delete",
+        action="store_true",
+        help="Delete Shopify products that do not have a SKU yet. Run this to clear placeholder or broken products before a fresh import.",
+    )
+    catalog.add_argument(
+        "--import",
+        dest="do_import",
+        action="store_true",
+        help="Create new Shopify products from the spreadsheets. Run this for a fresh load of catalog items that are not in Shopify yet.",
+    )
+    catalog.add_argument(
+        "--update",
+        dest="do_update",
+        action="store_true",
+        help="Update products that already exist in Shopify, matched by SKU. Run this when prices, stock, or costs changed in the sheets.",
+    )
+    catalog.add_argument(
+        "--all",
+        action="store_true",
+        help="Run the normal rebuild sequence: delete placeholder products, then import the spreadsheet catalog.",
+    )
+
+    collections = parser.add_argument_group("collections")
+    collections.add_argument(
+        "--delete-collections",
+        dest="do_delete_collections",
+        action="store_true",
+        help="Delete every Shopify collection. Run this only when you want to wipe collections before rebuilding them another way.",
+    )
+    collections.add_argument(
+        "--generate-collections",
+        dest="do_generate_collections",
+        action="store_true",
+        help="Live rebuild of managed collections: retag products, recreate populated smart collections, and set collection images. Run this when the managed taxonomy needs a full reset.",
+    )
+    collections.add_argument(
+        "--update-collection-images",
+        dest="do_update_collection_images",
+        action="store_true",
+        help="Refresh collection images only, using the first matching product image in alphabetical order. Run this when collection artwork is missing or stale.",
+    )
+
+    publishing = parser.add_argument_group("store visibility")
+    publishing.add_argument(
+        "--publish-online-store-backfill",
+        dest="do_publish_online_store_backfill",
+        action="store_true",
+        help="Publish existing products to the current Online Store publication when they are missing from it. Run this to backfill storefront visibility without changing product data.",
+    )
+    publishing.add_argument(
+        "--reconcile-online-store-image-visibility",
+        dest="do_reconcile_online_store_image_visibility",
+        action="store_true",
+        help="Make Online Store visibility follow media presence: products with media are published, products with no media are unpublished. Run this after image cleanup.",
+    )
+
+    photos = parser.add_argument_group("photos and media")
+    photos.add_argument(
+        "--gw-refresh-cache",
+        dest="do_gw_refresh_cache",
+        action="store_true",
+        help="Refresh the repo-local Games Workshop image cache. Run this before GW photo sync if the local cache may be outdated.",
+    )
+    photos.add_argument(
+        "--gw-build-archive-index",
+        dest="do_gw_build_archive_index",
+        action="store_true",
+        help="Prewarm the Games Workshop archive-member index used by zero-media recovery. Run this ahead of --recover-zero-media-images when GW coverage matters.",
+    )
+    photos.add_argument(
+        "--photo-sync",
+        dest="do_photo_sync",
+        action="store_true",
+        help="Replace Games Workshop product media in Shopify from the repo cache or a local photo folder. Run this when GW products need fresh uploaded images.",
+    )
+    photos.add_argument(
+        "--photo-sync-existing-files",
+        dest="do_photo_sync_existing_files",
+        action="store_true",
+        help="Attach matching Shopify Files to Games Workshop products without uploading new files. Run this when the images already exist in Shopify Files.",
+    )
+    photos.add_argument(
+        "--photo-sync-existing-files-all",
+        dest="do_photo_sync_existing_files_all",
+        action="store_true",
+        help="Attach matching Shopify Files across the whole catalog without uploading anything new. Run this for a catalog-wide relink to existing Shopify Files.",
+    )
+    photos.add_argument(
+        "--photo-source-web-all",
+        dest="do_photo_source_web_all",
+        action="store_true",
+        help="Search public web sources for products that currently have no media and stage only high-confidence local matches. Run this to gather candidates before applying fallback images.",
+    )
+    photos.add_argument(
+        "--recover-zero-media-images",
+        dest="do_recover_zero_media_images",
+        action="store_true",
+        help="Find zero-media products, stage strict image matches into a recovery run, and apply only those winners. Run this when you want a conservative one-command recovery for missing images.",
+    )
+    photos.add_argument(
+        "--photo-sync-staged-local-all",
+        dest="do_photo_sync_staged_local_all",
+        action="store_true",
+        help="Apply already staged local fallback images across the full catalog and write the fallback audit metafield. Run this after you have prepared a reviewed local image set.",
+    )
+    return parser
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Shopify bulk delete + import")
-    parser.add_argument("--dry-run", action="store_true", help="Don't call Shopify; just preview.")
-    parser.add_argument("--gw-refresh-cache", dest="do_gw_refresh_cache", action="store_true",
-                        help="Refresh the repo-local Games Workshop photo cache.")
-    parser.add_argument("--preflight", action="store_true",
-                        help="Validate auth and location readiness without delete/import side effects.")
-    parser.add_argument("--delete", action="store_true", help="Run delete phase.")
-    parser.add_argument("--delete-collections", dest="do_delete_collections", action="store_true",
-                        help="Delete all Shopify collections.")
-    parser.add_argument("--generate-collections", dest="do_generate_collections", action="store_true",
-                        help="Delete all collections, retag products into the managed taxonomy, recreate populated smart collections, and set collection images.")
-    parser.add_argument("--update-collection-images", dest="do_update_collection_images", action="store_true",
-                        help="Set each managed collection's image to the first alphabetical product's image.")
-    parser.add_argument("--import", dest="do_import", action="store_true", help="Run import phase.")
-    parser.add_argument("--update", dest="do_update", action="store_true",
-                        help="Update existing products in place (matched by SKU).")
-    parser.add_argument("--publish-online-store-backfill", dest="do_publish_online_store_backfill", action="store_true",
-                        help="Publish existing Shopify products that are not on the current publication.")
-    parser.add_argument("--reconcile-online-store-image-visibility", dest="do_reconcile_online_store_image_visibility", action="store_true",
-                        help="Publish products with any Shopify media to Online Store and unpublish products with none.")
-    parser.add_argument("--photo-sync", dest="do_photo_sync", action="store_true",
-                        help="Replace GW product media from the repo-local cache or an explicit local photo root.")
-    parser.add_argument("--photo-sync-existing-files", dest="do_photo_sync_existing_files", action="store_true",
-                        help="Attach matching existing Shopify Files to GW products without uploading new media.")
-    parser.add_argument("--photo-sync-existing-files-all", dest="do_photo_sync_existing_files_all", action="store_true",
-                        help="Attach matching existing Shopify Files to all catalog products without uploading new media.")
-    parser.add_argument("--photo-source-web-all", dest="do_photo_source_web_all", action="store_true",
-                        help="Search public web sources for zero-media catalog products and stage high-confidence winners locally.")
-    parser.add_argument("--photo-sync-staged-local-all", dest="do_photo_sync_staged_local_all", action="store_true",
-                        help="Apply staged local fallback images to all catalog products and write the fallback audit metafield.")
-    parser.add_argument("--photo-root", type=Path,
-                        help="Root folder containing staged GW image folders/files for --photo-sync.")
-    parser.add_argument("--all", action="store_true", help="Run delete then import.")
-    parser.add_argument("--start-at", type=int, default=0,
-                        help="Resume import from this product index (after a partial run).")
+    parser = build_parser()
     args = parser.parse_args()
 
     if not (args.dry_run or args.preflight or args.delete or args.do_delete_collections
             or args.do_generate_collections or args.do_update_collection_images
-            or args.do_gw_refresh_cache or args.do_import or args.do_update or args.do_publish_online_store_backfill
+            or args.do_gw_refresh_cache or args.do_gw_build_archive_index or args.do_import or args.do_update or args.do_publish_online_store_backfill
             or args.do_reconcile_online_store_image_visibility
             or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-            or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.all):
+            or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.all):
         parser.print_help()
         return 1
 
     if args.do_gw_refresh_cache:
         invalid_refresh_combo = (
             args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-            or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.do_update or args.do_import or args.delete
+            or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.do_gw_build_archive_index or args.do_update or args.do_import or args.delete
             or args.do_delete_collections or args.do_generate_collections or args.do_update_collection_images
             or args.do_publish_online_store_backfill or args.do_reconcile_online_store_image_visibility
             or args.all or args.preflight
@@ -5392,7 +6299,7 @@ def main() -> int:
         if invalid_refresh_combo:
             raise RuntimeError(
                 "--gw-refresh-cache must run separately and cannot be combined with "
-                "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --photo-source-web-all, --photo-sync-staged-local-all, --update, --import, --delete, --delete-collections, "
+                "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --photo-source-web-all, --gw-build-archive-index, --photo-sync-staged-local-all, --update, --import, --delete, --delete-collections, "
                 "--generate-collections, --update-collection-images, --publish-online-store-backfill, "
                 "--reconcile-online-store-image-visibility, --all, --preflight, --start-at, or --photo-root."
             )
@@ -5405,6 +6312,32 @@ def main() -> int:
         )
         if args.dry_run:
             log("GW cache refresh dry-run complete. Review the discovery log, then re-run with --gw-refresh-cache to publish.")
+        return 0
+
+    if args.do_gw_build_archive_index:
+        invalid_archive_combo = (
+            args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+            or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.do_gw_refresh_cache or args.do_update or args.do_import or args.delete
+            or args.do_delete_collections or args.do_generate_collections or args.do_update_collection_images
+            or args.do_publish_online_store_backfill or args.do_reconcile_online_store_image_visibility
+            or args.all or args.preflight
+            or args.start_at != 0 or args.photo_root is not None
+        )
+        if invalid_archive_combo:
+            raise RuntimeError(
+                "--gw-build-archive-index must run separately and cannot be combined with "
+                "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --photo-source-web-all, --gw-refresh-cache, --photo-sync-staged-local-all, --update, --import, --delete, --delete-collections, "
+                "--generate-collections, --update-collection-images, --publish-online-store-backfill, "
+                "--reconcile-online-store-image-visibility, --all, --preflight, --start-at, or --photo-root."
+            )
+        warm_gw_official_archive_index(
+            resources_url=GW_RESOURCES_URL,
+            archive_index_path=GW_OFFICIAL_ARCHIVE_INDEX_JSON,
+            dry=args.dry_run,
+            logger=log,
+        )
+        if args.dry_run:
+            log("GW archive index dry-run complete. Re-run with --gw-build-archive-index to save the real cache.")
         return 0
 
     if args.do_photo_sync and (args.delete or args.do_import or args.do_update or args.all):
@@ -5465,10 +6398,28 @@ def main() -> int:
         raise RuntimeError("--photo-source-web-all and --photo-sync-existing-files-all must run separately.")
     if args.do_photo_source_web_all and args.do_photo_sync_staged_local_all:
         raise RuntimeError("--photo-source-web-all and --photo-sync-staged-local-all must run separately.")
+    if args.do_recover_zero_media_images and (args.delete or args.do_import or args.do_update or args.all):
+        raise RuntimeError("--recover-zero-media-images must run separately from delete/import/update/all phases.")
+    if args.do_recover_zero_media_images and args.preflight:
+        raise RuntimeError("--recover-zero-media-images cannot be combined with --preflight.")
+    if args.do_recover_zero_media_images and args.start_at != 0:
+        raise RuntimeError("--start-at is only valid with --import/--all, not --recover-zero-media-images.")
+    if args.do_recover_zero_media_images and args.photo_root is not None:
+        raise RuntimeError("--recover-zero-media-images does not use --photo-root.")
+    if args.do_recover_zero_media_images and args.do_photo_sync:
+        raise RuntimeError("--recover-zero-media-images and --photo-sync must run separately.")
+    if args.do_recover_zero_media_images and args.do_photo_sync_existing_files:
+        raise RuntimeError("--recover-zero-media-images and --photo-sync-existing-files must run separately.")
+    if args.do_recover_zero_media_images and args.do_photo_sync_existing_files_all:
+        raise RuntimeError("--recover-zero-media-images and --photo-sync-existing-files-all must run separately.")
+    if args.do_recover_zero_media_images and args.do_photo_source_web_all:
+        raise RuntimeError("--recover-zero-media-images and --photo-source-web-all must run separately.")
+    if args.do_recover_zero_media_images and args.do_photo_sync_staged_local_all:
+        raise RuntimeError("--recover-zero-media-images and --photo-sync-staged-local-all must run separately.")
     if args.do_delete_collections and (
         args.preflight or args.delete or args.do_import or args.do_update
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-        or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.do_generate_collections
+        or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.do_generate_collections
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
@@ -5478,7 +6429,7 @@ def main() -> int:
     if args.do_generate_collections and (
         args.preflight or args.delete or args.do_delete_collections or args.do_import
         or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-        or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.all
+        or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.all
         or args.do_update_collection_images
         or args.start_at != 0 or args.photo_root is not None
     ):
@@ -5492,7 +6443,7 @@ def main() -> int:
     if args.do_update_collection_images and (
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_import or args.do_update or args.do_photo_sync or args.do_photo_sync_existing_files
-        or args.do_photo_sync_existing_files_all or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all or args.all
+        or args.do_photo_sync_existing_files_all or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.all
         or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
@@ -5505,7 +6456,7 @@ def main() -> int:
         or args.do_update_collection_images or args.do_import or args.do_update
         or args.do_reconcile_online_store_image_visibility
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-        or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all
+        or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
@@ -5518,7 +6469,7 @@ def main() -> int:
         or args.do_update_collection_images or args.do_import or args.do_update
         or args.do_publish_online_store_backfill
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
-        or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all
+        or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
@@ -5537,6 +6488,7 @@ def main() -> int:
         and not args.do_photo_sync_existing_files
         and not args.do_photo_sync_existing_files_all
         and not args.do_photo_source_web_all
+        and not args.do_recover_zero_media_images
         and not args.do_photo_sync_staged_local_all
         and not args.do_generate_collections
         and not args.do_delete_collections
@@ -5607,12 +6559,12 @@ def main() -> int:
 
     if args.do_photo_sync or args.do_photo_sync_existing_files:
         products = build_gw_product_list(strict=True)
-    elif args.do_photo_sync_existing_files_all or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all:
+    elif args.do_photo_sync_existing_files_all or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all:
         products = build_product_list(strict=True)
     else:
         products = prepare_products_for_import()
 
-    if args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.do_photo_source_web_all or args.do_photo_sync_staged_local_all:
+    if args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all:
         run_photo_sync_preflight(client)
         location_id = ""
     else:
@@ -5683,6 +6635,12 @@ def main() -> int:
                 "Photo-source web-all dry-run complete. Review photo_source_preview.csv, then re-run "
                 "with --photo-source-web-all (no --dry-run) to stage winners locally."
             )
+    if args.do_recover_zero_media_images:
+        recover_zero_media_images(
+            client,
+            products,
+            dry=args.dry_run,
+        )
     if args.do_photo_sync_staged_local_all:
         phase_photo_sync(
             client,
@@ -5701,5 +6659,22 @@ def main() -> int:
     return 0
 
 
+def _handle_cli_runtime_error(exc: RuntimeError) -> int:
+    message = str(exc)
+    if "Shopify HTTP 401" not in message:
+        raise exc
+    log("ERROR: Shopify Admin API authentication failed.")
+    log(message)
+    log("Next step: confirm the masked store context is correct, then rotate/reinstall the custom-app Admin API token and rerun --preflight.")
+    return 2
+
+
+def run_cli() -> int:
+    try:
+        return main()
+    except RuntimeError as exc:
+        return _handle_cli_runtime_error(exc)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli())

@@ -1,0 +1,19 @@
+{
+  "detail_signals": [
+    "barcode",
+    "openlibrary"
+  ],
+  "image_sha256": "7f1473eec365d85c44d293160467e4736a79aea679d98f64f718fe300e8c6cf5",
+  "image_url": "https://covers.openlibrary.org/b/isbn/9781421536255-L.jpg?default=false",
+  "page_url": "https://covers.openlibrary.org/b/isbn/9781421536255-L.jpg?default=false",
+  "policy_version": "psv1-6a5dec8a7f75",
+  "query": "978-1421536255 One Piece Manga - Vol 1,2,3 VIZ Media 9781421536255",
+  "reasons": [
+    "barcode",
+    "openlibrary"
+  ],
+  "score": 100,
+  "sku": "978-1421536255",
+  "source_class": "openlibrary",
+  "title": "One Piece Manga - Vol 1,2,3"
+}

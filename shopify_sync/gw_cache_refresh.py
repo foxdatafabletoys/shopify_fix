@@ -442,6 +442,51 @@ def extract_images_from_zip(
     return extracted
 
 
+def list_image_members_from_zip(archive_bytes: bytes) -> list[str]:
+    members: list[str] = []
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+        for member in zf.infolist():
+            if member.is_dir():
+                continue
+            if is_ignored_archive_member(member.filename):
+                continue
+            suffix = Path(member.filename).suffix.lower()
+            if suffix not in IMAGE_SUFFIXES:
+                continue
+            members.append(member.filename)
+    return members
+
+
+def extract_selected_images_from_zip(
+    archive_bytes: bytes,
+    *,
+    archive_label: str,
+    member_names: list[str],
+    pack_dir: Path,
+    used_filenames: set[str],
+) -> int:
+    selected = set(member_names)
+    extracted = 0
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+        for member in zf.infolist():
+            if member.is_dir():
+                continue
+            if member.filename not in selected:
+                continue
+            if is_ignored_archive_member(member.filename):
+                continue
+            suffix = Path(member.filename).suffix.lower()
+            if suffix not in IMAGE_SUFFIXES:
+                continue
+            filename = build_flattened_archive_member_name(member.filename, used_filenames)
+            with zf.open(member) as source:
+                (pack_dir / filename).write_bytes(source.read())
+            extracted += 1
+    if extracted == 0:
+        raise RuntimeError(f"ZIP pack '{archive_label}' did not contain the selected JPG/JPEG/PNG files.")
+    return extracted
+
+
 def publish_staging_cache(staging_root: Path, current_root: Path) -> None:
     backup_dir: Path | None = None
     if current_root.exists():

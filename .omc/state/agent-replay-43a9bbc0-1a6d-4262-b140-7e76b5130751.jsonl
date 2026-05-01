@@ -1,0 +1,6 @@
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"oh-my-claudecode:omc-setup"}
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"oh-my-claudecode:hud"}
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"oh-my-claudecode:mcp-setup"}
+{"t":0,"agent":"a5b0b35","agent_type":"Explore","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a5b0b35","agent_type":"Explore","event":"agent_stop","success":true,"duration_ms":76662}
+{"t":0,"agent":"af73ab4","agent_type":"unknown","event":"agent_stop","success":true}
