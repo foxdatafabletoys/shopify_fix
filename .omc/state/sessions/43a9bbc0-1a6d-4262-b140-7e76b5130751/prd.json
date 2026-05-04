@@ -1,0 +1,92 @@
+{
+  "title": "GW Trade-Feed Image Fallback",
+  "plan_file": ".omc/plans/gw-trade-feed-image-fallback.md",
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "Add trade-feed constants and capture offline JSON fixture",
+      "passes": true,
+      "acceptanceCriteria": [
+        "shopify_sync/gw_cache_refresh.py defines GW_TRADE_FEED_BASE='https://trade.games-workshop.com/wp-json/gw/v2/media'",
+        "shopify_sync/gw_cache_refresh.py defines GW_TRADE_FEED_IMAGE_GROUPS=(46, 47), GW_TRADE_FEED_COUNTRY=220, GW_TRADE_FEED_LANG='en', GW_TRADE_FEED_PAGE_SIZE=24, GW_TRADE_FEED_USER_AGENT, GW_TRADE_FEED_REFERER, GW_TRADE_FEED_REQUEST_DELAY_SECONDS=0.25",
+        "shopify_sync/tests/fixtures/gw_trade_feed_page_1.json exists, contains a real captured page-1 response from group 46 with at least 24 image/jpeg assets, including SKUs 99122720012, 99122720011, and 60043005001",
+        "Module imports cleanly: 'python3 -c \"from shopify_sync import gw_cache_refresh\"' returns exit 0"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Implement discover_trade_feed_packs",
+      "passes": true,
+      "acceptanceCriteria": [
+        "shopify_sync/gw_cache_refresh.py exposes discover_trade_feed_packs(session, *, groups=GW_TRADE_FEED_IMAGE_GROUPS, country=GW_TRADE_FEED_COUNTRY, lang=GW_TRADE_FEED_LANG, page_size=GW_TRADE_FEED_PAGE_SIZE, max_pages=None) -> tuple[list[ResourcePack], str]",
+        "Function sets browser User-Agent and Referer header on the requests.Session before first call (idempotent)",
+        "Function fetches page=1 first, reads page_count, then iterates page=2..page_count (or page_count clamped to max_pages) per group",
+        "Function dedupes assets by their integer 'id' field (not file_url)",
+        "Function only emits ResourcePack entries for assets where mime_type starts with 'image/'",
+        "Each emitted ResourcePack has label=asset['file_name'] and a single ImageTarget(url=asset['file_url'], filename=asset['file_name']) with archives=[]",
+        "Returns source_marker='GW Trade Feed'",
+        "Sleeps GW_TRADE_FEED_REQUEST_DELAY_SECONDS between successive HTTP calls"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Wire trade-feed into refresh_gw_cache and extend status JSON",
+      "passes": true,
+      "acceptanceCriteria": [
+        "refresh_gw_cache (gw_cache_refresh.py:508) calls discover_trade_feed_packs(session) after discover_resource_packs and concatenates the pack lists",
+        "Status JSON object gains a 'trade_feed' sub-object with keys: url, image_count, page_count_by_group, request_count, started_at, finished_at, last_success_at, failure_reason",
+        "Dry-run path logs both legacy resource pack count and trade-feed image count separately",
+        "On failure of trade-feed discovery, the status sub-object's failure_reason is populated and the legacy /resources/ packs still publish (graceful degradation)",
+        "gw_photo_cache_status.json is preserved as valid JSON (parseable by json.load) after refresh"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Add PhotoAssetSet source_priority and tiebreaker",
+      "passes": true,
+      "acceptanceCriteria": [
+        "PhotoAssetSet dataclass in shopify_sync.py gains 'source_priority: int = 0' (default keeps existing call sites compatible)",
+        "discover_photo_asset_sets (shopify_sync.py:1229) sets source_priority=10 when an asset's directory or filename basename matches r'^\\d{8,14}_' (the trade-feed convention), else 0",
+        "_choose_best_photo_asset_set sorts candidates by (-source_priority, -title_similarity_score) so trade-feed assets win ties over legacy /resources/ packs",
+        "test_resolve_photo_asset_prefers_trade_feed_for_ambiguous passes: given two candidates for the same SKU (one trade-feed, one legacy), resolve_photo_asset returns match_type='exact_best' and the chosen asset's source_priority is 10"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Add unit tests for trade-feed discovery and integration",
+      "passes": true,
+      "acceptanceCriteria": [
+        "test_discover_trade_feed_packs_parses_real_fixture extracts SKUs 99122720012, 99122720011, 60043005001 correctly via _extract_asset_match_code and asserts on file_name preservation",
+        "test_discover_trade_feed_packs_walks_all_pages: 2-page mock with page_count=2, asserts both pages are walked and pagination terminates",
+        "test_discover_trade_feed_packs_filters_non_image_mime_types: mock with mixed mimes, only image/* assets become packs",
+        "test_discover_trade_feed_packs_dedupes_by_id: same id across two pages produces one pack",
+        "test_refresh_gw_cache_merges_resources_and_trade_feed: both discoverers mocked, merged status JSON has 'trade_feed' sub-object and pack_count == sum of both",
+        "test_resolve_photo_asset_prefers_trade_feed_for_ambiguous (dup of US-004 criterion 4 — verifies the test exists and passes here)",
+        "All existing gw_* and photo_sync_* tests in tests/test_shopify_sync.py still pass with no regressions",
+        "pytest exit code is 0 for the targeted run: pytest shopify_sync/tests/test_shopify_sync.py -k 'gw or photo_sync or trade_feed' -v"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Document trade-feed source in SETUP.md",
+      "passes": true,
+      "acceptanceCriteria": [
+        "shopify_sync/SETUP.md gains a 'Trade-feed (REST source)' subsection under the existing GW auto-download section",
+        "Subsection documents endpoint URL, image-bearing groups (46, 47), country term-id (220), expected ~14k extra files, and the source_priority tiebreaker behavior",
+        "SETUP.md still parses cleanly as markdown (no broken code fences, no unmatched headings)"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Validate end-to-end via dry-run integration",
+      "passes": true,
+      "acceptanceCriteria": [
+        "python3 shopify_sync/shopify_sync.py --gw-refresh-cache --dry-run reports both resource-pack count AND trade-feed image count >= 14000 (read from status JSON or stdout)",
+        "Module shopify_sync/shopify_sync.py and gw_cache_refresh.py have 0 lsp_diagnostics errors after all edits",
+        "Targeted pytest run exits 0",
+        "Git diff is reviewed and changes are scoped to: shopify_sync/gw_cache_refresh.py, shopify_sync/shopify_sync.py, shopify_sync/tests/test_shopify_sync.py, shopify_sync/tests/fixtures/gw_trade_feed_page_1.json, shopify_sync/SETUP.md"
+      ]
+    }
+  ],
+  "completed_at": "2026-05-01T20:15:00Z"
+}

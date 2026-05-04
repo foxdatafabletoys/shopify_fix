@@ -35,7 +35,7 @@
   },
   "build": {
     "buildCommand": "npm run build",
-    "testCommand": null,
+    "testCommand": "cd /Users/toys-data/Documents/GitHub/shopify_fix\necho \"=== PRD final state (all stories should be passes:true) ===\"\n.venv/bin/python -c \"import json; d=json.load(open('.omc/state/sessions/43a9bbc0-1a6d-4262-b140-7e76b5130751/prd.json')); print('completed_at:', d['completed_at']); [print(f'  {s[\\\"id\\\"]}: passes={s[\\\"passes\\\"]}') for s in d['stories']]\"\necho \"\"\necho \"=== final pytest ===\"\n.venv/bin/python -m pytest shopify_sync/tests/test_shopify_sync.py -q 2>&1 | tail -2",
     "lintCommand": "npm run lint",
     "devCommand": "npm run dev",
     "scripts": {
@@ -212,26 +212,32 @@
   "hotPaths": [
     {
       "path": "shopify_sync/gw_cache_refresh.py",
-      "accessCount": 5,
-      "lastAccessed": 1777645487689,
+      "accessCount": 23,
+      "lastAccessed": 1777666773187,
       "type": "file"
     },
     {
       "path": "shopify_sync/shopify_sync.py",
+      "accessCount": 16,
+      "lastAccessed": 1777666627438,
+      "type": "file"
+    },
+    {
+      "path": "shopify_sync/SETUP.md",
       "accessCount": 4,
-      "lastAccessed": 1777645641650,
+      "lastAccessed": 1777666596389,
+      "type": "file"
+    },
+    {
+      "path": "shopify_sync/tests/test_shopify_sync.py",
+      "accessCount": 4,
+      "lastAccessed": 1777666613005,
       "type": "file"
     },
     {
       "path": "shopify_sync/gw_photo_cache_status.json",
       "accessCount": 1,
       "lastAccessed": 1777644332761,
-      "type": "file"
-    },
-    {
-      "path": "shopify_sync/SETUP.md",
-      "accessCount": 1,
-      "lastAccessed": 1777644332850,
       "type": "file"
     },
     {

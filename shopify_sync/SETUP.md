@@ -86,6 +86,21 @@ The GW image lane uses a repo-local cache at `shopify_sync/gw_photo_cache/curren
    python3 shopify_sync.py --photo-sync
    ```
 
+### Trade-feed source (REST fallback for missing/ambiguous SKUs)
+
+`--gw-refresh-cache` now hydrates the cache from two sources in one pass:
+
+1. The legacy HTML scrape of `https://trade.games-workshop.com/resources/` (resource packs and ZIPs).
+2. The WordPress media-library REST endpoint `https://trade.games-workshop.com/wp-json/gw/v2/media`, which exposes the per-SKU JPEGs that the legacy HTML page never lists. Image-bearing groups are 46 (Images & Logos) and 47 (Product Images), country term-id 220 (UK). Public, no auth required, but the endpoint is fronted by Cloudflare so the scraper sets a normal browser User-Agent and a `Referer: https://trade.games-workshop.com/resources/` header (idempotently set on the `requests.Session`).
+
+Trade-feed assets land in their own per-SKU subdirectories under `gw_photo_cache/current/`. Each trade-feed pack directory carries a `.gw-source` marker file containing the literal string `trade-feed`. The matcher reads that marker and assigns `source_priority=10` to those `PhotoAssetSet` entries; legacy `/resources/` packs default to `source_priority=0`. When two candidate packs share an SKU (the previous source of the 18 ambiguous entries), the trade-feed asset wins the tiebreak.
+
+Operational notes:
+
+- The crawl walks every page across both groups (`page_count` is returned by the API), inserting a 0.25 s delay between requests. A full first refresh fetches roughly 14,500 JPEGs (~4–5 GB on disk).
+- If the trade-feed call fails (Cloudflare 403, network timeout, schema change), `gw_photo_cache_status.json.trade_feed.failure_reason` is populated and the legacy `/resources/` packs still publish — graceful degradation.
+- The status file gains a `trade_feed` sub-object with `url`, `image_count`, `page_count_by_group`, `request_count`, `started_at`, `finished_at`, `last_success_at`, and `failure_reason`.
+
 Hard prerequisites:
 
 - `write_files` must be granted on the custom app before live `--photo-sync`.
@@ -177,7 +192,7 @@ Preferred end-to-end recovery flow:
 MVP sourcing behavior:
 
 - If `PHOTO_SOURCE_SUPPLIER_ROOTS` is set in `.env`, the lane tries those local supplier folders first and stages exact/fallback matches without hitting the web.
-- Games Workshop products now try the repo-local `gw_photo_cache/current` first and then the official Games Workshop resource URL `https://trade.games-workshop.com/resources/`. They no longer fall back to generic Yahoo/Bing/DuckDuckGo search.
+- Games Workshop products now try the repo-local `gw_photo_cache/current` first and then the official Games Workshop resources backend rooted at `https://trade.games-workshop.com/resources/`. That official lane now includes both the visible `/resources/` packs/ZIPs and the underlying trade-feed API (`/wp-json/gw/v2/media`) that serves many paint-row JPEGs with shortened product codes. They no longer fall back to generic Yahoo/Bing/DuckDuckGo search.
 - `--gw-build-archive-index` prewarms `gw_official_archive_index.json`, which caches SKU-addressable members found inside GW ZIP archives. This makes later GW recovery runs much cheaper after the first warm-up.
 - Book-heavy vendors such as Penguin, Simon & Schuster, Scholastic, ScribnerUK, VIZ Media, and Walker Books now try ISBN-based cover sources before generic search.
 - Non-book inventory with `ASIN: ...` tags now tries direct Amazon product pages before generic search.

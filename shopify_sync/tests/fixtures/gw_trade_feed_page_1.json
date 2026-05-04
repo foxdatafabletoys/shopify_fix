@@ -1,0 +1,4135 @@
+{
+  "page": 1,
+  "page_count": 406,
+  "total_items": 9723,
+  "assets": [
+    {
+      "id": 253459,
+      "title": "TR-06-214-99122720012-Arhammer-The-Old-World-Grand-Cathay-Peasant-Levy",
+      "file_name": "99122720012_PeasantLevyBOX.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99122720012_PeasantLevyBOX.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99122720012_PeasantLevyBOX__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99122720012_PeasantLevyBOX__940x696.jpg",
+      "filesize": 584662,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99122720012_PeasantLevyBOX.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99122720012_PeasantLevyBOX__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99122720012_PeasantLevyBOX__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 60
+        }
+      ],
+      "races": [
+        {
+          "id": 218
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-30 12:39:46",
+      "release_date": "2026-04-30 15:00:00",
+      "release_date_formatted": "30/04/2026 03:00 PM"
+    },
+    {
+      "id": 253423,
+      "title": "TR-06-215-99122720011-Warhammer-The-Old-World-Grand-Cathay-Iron-Hail-Gunners-and-Crane-Gunner-Teams",
+      "file_name": "99122720011_IronHailCraneGunnersBOX.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99122720011_IronHailCraneGunnersBOX.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99122720011_IronHailCraneGunnersBOX__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99122720011_IronHailCraneGunnersBOX__940x696.jpg",
+      "filesize": 624814,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99122720011_IronHailCraneGunnersBOX.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99122720011_IronHailCraneGunnersBOX__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99122720011_IronHailCraneGunnersBOX__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 60
+        }
+      ],
+      "races": [
+        {
+          "id": 218
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-30 12:39:45",
+      "release_date": "2026-04-30 15:00:00",
+      "release_date_formatted": "30/04/2026 03:00 PM"
+    },
+    {
+      "id": 253391,
+      "title": "TR-31-168-60043005001-The-Horus-Heresy-Journal-Tactica-The-Battle-of-Tallarn-Part-One-ENG",
+      "file_name": "60043005001_JOURNALTACTICABATTLEOFTALLARNPartOne1.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/60043005001_JOURNALTACTICABATTLEOFTALLARNPartOne1.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/60043005001_JOURNALTACTICABATTLEOFTALLARNPartOne1__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/60043005001_JOURNALTACTICABATTLEOFTALLARNPartOne1__940x696.jpg",
+      "filesize": 428519,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/60043005001_JOURNALTACTICABATTLEOFTALLARNPartOne1.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/60043005001_JOURNALTACTICABATTLEOFTALLARNPartOne1__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/60043005001_JOURNALTACTICABATTLEOFTALLARNPartOne1__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 61
+        }
+      ],
+      "races": [
+        {
+          "id": 167
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-30 12:39:44",
+      "release_date": "2026-04-30 15:00:00",
+      "release_date_formatted": "30/04/2026 03:00 PM"
+    },
+    {
+      "id": 253455,
+      "title": "TR-31-169-99123005017-The-Horus-Heresy-Solar-Auxilia-Charonite-Ogryn-Section",
+      "file_name": "99123005017_CharoniteOgrynSectionBOX.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99123005017_CharoniteOgrynSectionBOX.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99123005017_CharoniteOgrynSectionBOX__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99123005017_CharoniteOgrynSectionBOX__940x696.jpg",
+      "filesize": 354254,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99123005017_CharoniteOgrynSectionBOX.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99123005017_CharoniteOgrynSectionBOX__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99123005017_CharoniteOgrynSectionBOX__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 61
+        }
+      ],
+      "races": [
+        {
+          "id": 167
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-30 12:39:46",
+      "release_date": "2026-04-30 15:00:00",
+      "release_date_formatted": "30/04/2026 03:00 PM"
+    },
+    {
+      "id": 253487,
+      "title": "TR-31-170-99123005018-The-Horus-Heresy-Solar-Auxilia-Rapier-Direct-Fire-Battery",
+      "file_name": "99123005018_DirectFireBatteryBOX.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99123005018_DirectFireBatteryBOX.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99123005018_DirectFireBatteryBOX__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99123005018_DirectFireBatteryBOX__940x696.jpg",
+      "filesize": 376911,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99123005018_DirectFireBatteryBOX.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99123005018_DirectFireBatteryBOX__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99123005018_DirectFireBatteryBOX__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 61
+        }
+      ],
+      "races": [
+        {
+          "id": 167
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-30 12:39:47",
+      "release_date": "2026-04-30 15:00:00",
+      "release_date_formatted": "30/04/2026 03:00 PM"
+    },
+    {
+      "id": 253500,
+      "title": "TR-31-171-99123005019-The-Horus-Heresy-Solar-Auxilia-Rapier-Fire-Support-Battery",
+      "file_name": "99123005019_RapierFireBatteryBOX.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99123005019_RapierFireBatteryBOX.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99123005019_RapierFireBatteryBOX__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99123005019_RapierFireBatteryBOX__940x696.jpg",
+      "filesize": 362025,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99123005019_RapierFireBatteryBOX.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99123005019_RapierFireBatteryBOX__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99123005019_RapierFireBatteryBOX__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 61
+        }
+      ],
+      "races": [
+        {
+          "id": 167
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-30 12:39:47",
+      "release_date": "2026-04-30 15:00:00",
+      "release_date_formatted": "30/04/2026 03:00 PM"
+    },
+    {
+      "id": 253407,
+      "title": "TR-BL3315-60040181450-Black-Library-Hive-Slipcase-Version-Part-1-and-2-ENG",
+      "file_name": "60040181450_HIVESlipcaseVersionPart1and2HB1.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/60040181450_HIVESlipcaseVersionPart1and2HB1.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/60040181450_HIVESlipcaseVersionPart1and2HB1__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/60040181450_HIVESlipcaseVersionPart1and2HB1__940x696.jpg",
+      "filesize": 526821,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/60040181450_HIVESlipcaseVersionPart1and2HB1.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/60040181450_HIVESlipcaseVersionPart1and2HB1__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/60040181450_HIVESlipcaseVersionPart1and2HB1__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 56
+        }
+      ],
+      "races": [
+        {
+          "id": 193
+        },
+        {
+          "id": 218
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-30 12:39:44",
+      "release_date": "2026-04-30 15:00:00",
+      "release_date_formatted": "30/04/2026 03:00 PM"
+    },
+    {
+      "id": 253424,
+      "title": "TR-WD05-60-60249999666-White-Dwarf-524-ENG",
+      "file_name": "60249999666_engWD52401.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/60249999666_engWD52401.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/60249999666_engWD52401__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/60249999666_engWD52401__940x696.jpg",
+      "filesize": 2065634,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/60249999666_engWD52401.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/60249999666_engWD52401__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/60249999666_engWD52401__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 57
+        }
+      ],
+      "races": [
+        {
+          "id": 218
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-30 12:39:45",
+      "release_date": "2026-04-30 15:00:00",
+      "release_date_formatted": "30/04/2026 03:00 PM"
+    },
+    {
+      "id": 252399,
+      "title": "TR_BL3311-60100181545-Black-Library-Veterans-Of-The-Fall",
+      "file_name": "60100181545_BLVeteransOfTheFall2026.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/60100181545_BLVeteransOfTheFall2026.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/60100181545_BLVeteransOfTheFall2026__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/60100181545_BLVeteransOfTheFall2026__940x696.jpg",
+      "filesize": 1724525,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/60100181545_BLVeteransOfTheFall2026.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/60100181545_BLVeteransOfTheFall2026__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/60100181545_BLVeteransOfTheFall2026__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 56
+        }
+      ],
+      "races": [
+        {
+          "id": 174
+        },
+        {
+          "id": 193
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:12",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252559,
+      "title": "TR-39-13-99120109017-Armageddon-Battalion-Deathwatch",
+      "file_name": "99120109017_ArmageddonBattalionDeathwatch13.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99120109017_ArmageddonBattalionDeathwatch13.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120109017_ArmageddonBattalionDeathwatch13__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120109017_ArmageddonBattalionDeathwatch13__940x696.jpg",
+      "filesize": 2679276,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99120109017_ArmageddonBattalionDeathwatch13.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120109017_ArmageddonBattalionDeathwatch13__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120109017_ArmageddonBattalionDeathwatch13__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 168
+        },
+        {
+          "id": 173
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:16",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252366,
+      "title": "TR-40-76-60040199190-Armageddon-Return-of-Yarrick-War-Without-End-ENG",
+      "file_name": "60040199190_engArmageddonReturnofYarrickRulebook01.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/60040199190_engArmageddonReturnofYarrickRulebook01.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/60040199190_engArmageddonReturnofYarrickRulebook01__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/60040199190_engArmageddonReturnofYarrickRulebook01__940x696.jpg",
+      "filesize": 422030,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/60040199190_engArmageddonReturnofYarrickRulebook01.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/60040199190_engArmageddonReturnofYarrickRulebook01__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/60040199190_engArmageddonReturnofYarrickRulebook01__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 193
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:11",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252495,
+      "title": "TR-47-47-99120105150-Armageddon-Battalion-Astra-Militarum",
+      "file_name": "99120105150_ArmageddonBattalionAstraMilitarum19.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99120105150_ArmageddonBattalionAstraMilitarum19.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120105150_ArmageddonBattalionAstraMilitarum19__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120105150_ArmageddonBattalionAstraMilitarum19__940x696.jpg",
+      "filesize": 1745654,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99120105150_ArmageddonBattalionAstraMilitarum19.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120105150_ArmageddonBattalionAstraMilitarum19__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120105150_ArmageddonBattalionAstraMilitarum19__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 174
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:14",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252479,
+      "title": "TR-47-58-99120105140-Astra-Militarum-Commissar-Graves",
+      "file_name": "99120105140_AstraMilitarumCommissarGraves7.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99120105140_AstraMilitarumCommissarGraves7.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120105140_AstraMilitarumCommissarGraves7__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120105140_AstraMilitarumCommissarGraves7__940x696.jpg",
+      "filesize": 489717,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99120105140_AstraMilitarumCommissarGraves7.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120105140_AstraMilitarumCommissarGraves7__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120105140_AstraMilitarumCommissarGraves7__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 174
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:14",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252591,
+      "title": "TR-47-83-99220105038-Astra-Militarum-Commissar-Yarrick-Dice",
+      "file_name": "99220105038_AstraMilitarumCommissarYarrickDice2.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99220105038_AstraMilitarumCommissarYarrickDice2.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99220105038_AstraMilitarumCommissarYarrickDice2__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99220105038_AstraMilitarumCommissarYarrickDice2__940x696.jpg",
+      "filesize": 414915,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99220105038_AstraMilitarumCommissarYarrickDice2.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99220105038_AstraMilitarumCommissarYarrickDice2__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99220105038_AstraMilitarumCommissarYarrickDice2__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 174
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:16",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252447,
+      "title": "TR-50-72-99120103128-Orks-Wazdakka-Gutsmek",
+      "file_name": "99120103128_OrksWazdakkaGutsmek7.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99120103128_OrksWazdakkaGutsmek7.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120103128_OrksWazdakkaGutsmek7__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120103128_OrksWazdakkaGutsmek7__940x696.jpg",
+      "filesize": 401836,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99120103128_OrksWazdakkaGutsmek7.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120103128_OrksWazdakkaGutsmek7__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120103128_OrksWazdakkaGutsmek7__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 184
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:13",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252575,
+      "title": "TR-50-73-99220103008-Orks-Ghazghkull-Dice",
+      "file_name": "99220103008_OrksArmageddonGhazghkullDice2.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99220103008_OrksArmageddonGhazghkullDice2.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99220103008_OrksArmageddonGhazghkullDice2__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99220103008_OrksArmageddonGhazghkullDice2__940x696.jpg",
+      "filesize": 389074,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99220103008_OrksArmageddonGhazghkullDice2.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99220103008_OrksArmageddonGhazghkullDice2__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99220103008_OrksArmageddonGhazghkullDice2__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 184
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:16",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252511,
+      "title": "TR-52-65-99120108120-Armageddon-Battalion-Adepta-Sororitas",
+      "file_name": "99120108120_ArmageddonBattalionAdeptaSororitas15.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99120108120_ArmageddonBattalionAdeptaSororitas15.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120108120_ArmageddonBattalionAdeptaSororitas15__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120108120_ArmageddonBattalionAdeptaSororitas15__940x696.jpg",
+      "filesize": 2356428,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99120108120_ArmageddonBattalionAdeptaSororitas15.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120108120_ArmageddonBattalionAdeptaSororitas15__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120108120_ArmageddonBattalionAdeptaSororitas15__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 175
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:15",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252527,
+      "title": "TR-52-66-99120108122-Adepta-Sororitas-Intranzia-Fraye-Dogmata-Superior",
+      "file_name": "99120108122_AdeptaSororitasIntranziaFrayeDogmataSuperior9.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99120108122_AdeptaSororitasIntranziaFrayeDogmataSuperior9.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120108122_AdeptaSororitasIntranziaFrayeDogmataSuperior9__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120108122_AdeptaSororitasIntranziaFrayeDogmataSuperior9__940x696.jpg",
+      "filesize": 396914,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99120108122_AdeptaSororitasIntranziaFrayeDogmataSuperior9.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120108122_AdeptaSororitasIntranziaFrayeDogmataSuperior9__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120108122_AdeptaSororitasIntranziaFrayeDogmataSuperior9__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 175
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:15",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252463,
+      "title": "TR-57-56-99120105138-Astra-Militarum-Commissar-Yarrick",
+      "file_name": "99120105138_AstraMilitarumCommissarYarrick05.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99120105138_AstraMilitarumCommissarYarrick05.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120105138_AstraMilitarumCommissarYarrick05__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120105138_AstraMilitarumCommissarYarrick05__940x696.jpg",
+      "filesize": 1749516,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99120105138_AstraMilitarumCommissarYarrick05.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120105138_AstraMilitarumCommissarYarrick05__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120105138_AstraMilitarumCommissarYarrick05__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:13",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252543,
+      "title": "TR-68-14-99120108124-Imperial-Agents-Inquisitor-Kroyle",
+      "file_name": "99120108124_ImperialAgentsInquisitorKroyle6.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99120108124_ImperialAgentsInquisitorKroyle6.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120108124_ImperialAgentsInquisitorKroyle6__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120108124_ImperialAgentsInquisitorKroyle6__940x696.jpg",
+      "filesize": 462415,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99120108124_ImperialAgentsInquisitorKroyle6.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120108124_ImperialAgentsInquisitorKroyle6__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120108124_ImperialAgentsInquisitorKroyle6__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 178
+        },
+        {
+          "id": 193
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:15",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252417,
+      "title": "TR-73-501-99120103126-Armageddon-Battalion-Orks",
+      "file_name": "99120103126_ArmageddonOrksBattalion6.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/99120103126_ArmageddonOrksBattalion6.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120103126_ArmageddonOrksBattalion6__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120103126_ArmageddonOrksBattalion6__940x696.jpg",
+      "filesize": 686458,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/99120103126_ArmageddonOrksBattalion6.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/99120103126_ArmageddonOrksBattalion6__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/99120103126_ArmageddonOrksBattalion6__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 8
+        },
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 164
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 54
+        }
+      ],
+      "races": [
+        {
+          "id": 184
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:13",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252383,
+      "title": "TR-BL3308-60100181543-Black-Library-Legends-Of-The-Waaagh",
+      "file_name": "60100181543_BLLegendsOfTheWaaagh2026.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/60100181543_BLLegendsOfTheWaaagh2026.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/60100181543_BLLegendsOfTheWaaagh2026__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/60100181543_BLLegendsOfTheWaaagh2026__940x696.jpg",
+      "filesize": 1578304,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/60100181543_BLLegendsOfTheWaaagh2026.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/60100181543_BLLegendsOfTheWaaagh2026__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/60100181543_BLLegendsOfTheWaaagh2026__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 56
+        }
+      ],
+      "races": [
+        {
+          "id": 184
+        },
+        {
+          "id": 193
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:12",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252319,
+      "title": "TR-BL3312-60040181444-Black-Library-World-Ablaze",
+      "file_name": "60040181444_BLWorldAblaze2026.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/60040181444_BLWorldAblaze2026.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/60040181444_BLWorldAblaze2026__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/60040181444_BLWorldAblaze2026__940x696.jpg",
+      "filesize": 1314657,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/60040181444_BLWorldAblaze2026.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/60040181444_BLWorldAblaze2026__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/60040181444_BLWorldAblaze2026__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 56
+        }
+      ],
+      "races": [
+        {
+          "id": 193
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:10",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    },
+    {
+      "id": 252335,
+      "title": "TR-BL3313-60040181446-Black-Library-Da-Freebooterz-Code",
+      "file_name": "60040181446_BLDaFreebooterzCode2026.jpg",
+      "file_url": "https://trade.games-workshop.com/assets/2026/04/60040181446_BLDaFreebooterzCode2026.jpg",
+      "file_small_url": "https://trade.games-workshop.com/assets/2026/04/60040181446_BLDaFreebooterzCode2026__243x180.jpg",
+      "file_large_url": "https://trade.games-workshop.com/assets/2026/04/60040181446_BLDaFreebooterzCode2026__940x696.jpg",
+      "filesize": 1530432,
+      "mime_type": "image/jpeg",
+      "file_caption": null,
+      "file_alt_text": null,
+      "author": {},
+      "cover_image_file_url": "https://trade.games-workshop.com/assets/2026/04/60040181446_BLDaFreebooterzCode2026.jpg",
+      "cover_image_file_small_url": "https://trade.games-workshop.com/assets/2026/04/60040181446_BLDaFreebooterzCode2026__243x180.jpg",
+      "cover_image_file_large_url": "https://trade.games-workshop.com/assets/2026/04/60040181446_BLDaFreebooterzCode2026__940x696.jpg",
+      "cover_image_alt_text": null,
+      "downloadable": true,
+      "countries": [
+        {
+          "id": 12
+        },
+        {
+          "id": 130
+        },
+        {
+          "id": 131
+        },
+        {
+          "id": 132
+        },
+        {
+          "id": 133
+        },
+        {
+          "id": 134
+        },
+        {
+          "id": 135
+        },
+        {
+          "id": 136
+        },
+        {
+          "id": 137
+        },
+        {
+          "id": 138
+        },
+        {
+          "id": 139
+        },
+        {
+          "id": 140
+        },
+        {
+          "id": 141
+        },
+        {
+          "id": 142
+        },
+        {
+          "id": 143
+        },
+        {
+          "id": 144
+        },
+        {
+          "id": 145
+        },
+        {
+          "id": 147
+        },
+        {
+          "id": 148
+        },
+        {
+          "id": 149
+        },
+        {
+          "id": 150
+        },
+        {
+          "id": 151
+        },
+        {
+          "id": 152
+        },
+        {
+          "id": 153
+        },
+        {
+          "id": 154
+        },
+        {
+          "id": 155
+        },
+        {
+          "id": 156
+        },
+        {
+          "id": 157
+        },
+        {
+          "id": 158
+        },
+        {
+          "id": 160
+        },
+        {
+          "id": 161
+        },
+        {
+          "id": 162
+        },
+        {
+          "id": 163
+        },
+        {
+          "id": 165
+        },
+        {
+          "id": 166
+        },
+        {
+          "id": 220
+        },
+        {
+          "id": 518
+        },
+        {
+          "id": 1390
+        }
+      ],
+      "groups": [
+        {
+          "id": 46
+        },
+        {
+          "id": 47
+        }
+      ],
+      "brands": [
+        {
+          "id": 56
+        }
+      ],
+      "races": [
+        {
+          "id": 184
+        },
+        {
+          "id": 193
+        }
+      ],
+      "types": [
+        {
+          "id": 112
+        }
+      ],
+      "date": "2026-04-23 09:55:10",
+      "release_date": "2026-04-23 23:00:00",
+      "release_date_formatted": "23/04/2026 11:00 PM"
+    }
+  ],
+  "nonce": "93d85dfac6"
+}

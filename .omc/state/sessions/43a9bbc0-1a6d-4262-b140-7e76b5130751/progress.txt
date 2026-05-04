@@ -1,0 +1,73 @@
+Ralph session: GW Trade-Feed Image Fallback
+Plan: .omc/plans/gw-trade-feed-image-fallback.md
+
+US-001 Constants + JSON fixture
+- Added GW_TRADE_FEED_BASE, GW_TRADE_FEED_IMAGE_GROUPS=(46,47), GW_TRADE_FEED_COUNTRY=220,
+  GW_TRADE_FEED_LANG="en", GW_TRADE_FEED_PAGE_SIZE=24, GW_TRADE_FEED_USER_AGENT,
+  GW_TRADE_FEED_REFERER, GW_TRADE_FEED_REQUEST_DELAY_SECONDS=0.25,
+  GW_TRADE_FEED_SOURCE_LABEL="trade-feed", GW_PACK_SOURCE_MARKER_FILENAME=".gw-source"
+- Captured shopify_sync/tests/fixtures/gw_trade_feed_page_1.json via live probe
+  (page 1 of group 46, 24 image/jpeg assets, includes target SKUs 99122720012,
+  99122720011, 60043005001).
+
+US-002 discover_trade_feed_packs
+- gw_cache_refresh.py: added discover_trade_feed_packs, fetch_trade_feed_page,
+  _build_trade_feed_url, _ensure_trade_feed_session_headers.
+- Function returns (packs, "GW Trade Feed", stats). One ResourcePack per asset
+  with source_label="trade-feed". Filters non-image mime types. Dedupes by id.
+  Walks page=1..page_count for each group with optional max_pages cap.
+
+US-003 refresh_gw_cache integration
+- Added enable_trade_feed=True, trade_feed_max_pages=None kwargs to refresh_gw_cache.
+- Calls discover_trade_feed_packs after discover_resource_packs and concatenates
+  packs. Wraps the call in try/except → graceful degradation; legacy /resources/
+  packs still publish on trade-feed failure (failure_reason captured in status).
+- Status JSON now includes "trade_feed" sub-object with url/groups/country/lang/
+  page_size/page_count_by_group/request_count/image_count/started_at/finished_at/
+  last_success_at/failure_reason.
+- Publish loop writes .gw-source marker file in each pack directory whose pack
+  has source_label set. published_image_count excludes marker files.
+
+US-004 PhotoAssetSet source_priority
+- shopify_sync.py: PhotoAssetSet gains source_priority: int = 0.
+- discover_photo_asset_sets reads .gw-source marker via _read_pack_source_priority
+  helper; trade-feed packs get PHOTO_ASSET_TRADE_FEED_PRIORITY (10).
+- _choose_best_photo_asset_set sorts by (-source_priority, -title_score, label).
+  Returns None only when top two share BOTH priority and score.
+
+US-005 New tests (8 added)
+- TradeFeedDiscoveryTests:
+  * test_discover_trade_feed_packs_parses_real_fixture (uses real captured JSON)
+  * test_discover_trade_feed_packs_walks_all_pages
+  * test_discover_trade_feed_packs_filters_non_image_mime_types
+  * test_discover_trade_feed_packs_dedupes_by_id
+  * test_refresh_gw_cache_merges_resources_and_trade_feed
+  * test_refresh_gw_cache_records_trade_feed_failure_gracefully
+- PhotoAssetSourcePriorityTests:
+  * test_discover_photo_asset_sets_marks_trade_feed_dirs
+  * test_resolve_photo_asset_prefers_trade_feed_for_ambiguous
+- All 164 tests pass (156 existing + 8 new). 0 regressions.
+
+US-006 Docs
+- shopify_sync/SETUP.md: added "Trade-feed source (REST fallback for missing/
+  ambiguous SKUs)" subsection in the "GW auto-download + photo sync" section,
+  documenting the REST endpoint, image-bearing groups, country term-id, marker-file
+  protocol, source-priority tiebreaker, expected ~14k extra images, graceful
+  degradation behavior, and the new status JSON sub-object.
+
+US-007 End-to-end validation
+- py_compile clean for both edited modules.
+- pytest 164/164 pass.
+- Live discover_trade_feed_packs crawl in progress (~3 min) to confirm
+  trade-feed image_count >= 14000 against real endpoint.
+
+Learnings:
+- /resources/ static HTML has empty media-library__results div; tiles load
+  client-side from /wp-json/gw/v2/media. The legacy scraper sees only the
+  hard-coded ZIPs in static HTML.
+- Cloudflare blocks bare urllib User-Agents. Browser UA + Referer header
+  works for unauthenticated GETs.
+- file_name format: "<SKU>_<slug>.jpg". Existing _extract_asset_match_code
+  picks longest 8-14 digit run, so the SKU is matched even after
+  build_flattened_filename prepends the URL parent (year/month).
+- gw_country_id cookie returns 220 (UK) when fetching /resources/ as new visitor.

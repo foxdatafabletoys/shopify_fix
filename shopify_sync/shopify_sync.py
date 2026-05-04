@@ -737,6 +737,7 @@ class PhotoAssetSet:
     product_code: str = ""
     title_slug: str = ""
     image_paths: list[Path] = field(default_factory=list)
+    source_priority: int = 0
 
     def fingerprint(self) -> str:
         digest = hashlib.sha1()
@@ -757,6 +758,7 @@ class GWOfficialResourcePackRef:
     title_slug: str = ""
     archive_url: str = ""
     archive_members: list[str] = field(default_factory=list)
+    source_label: str = ""
 
 
 @dataclass
@@ -1232,6 +1234,21 @@ def require_explicit_photo_root(photo_root: Path | None, flag_name: str) -> Path
     return photo_root
 
 
+PHOTO_ASSET_TRADE_FEED_PRIORITY = 10
+_PHOTO_ASSET_SOURCE_PRIORITY_BY_LABEL: dict[str, int] = {
+    gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL: PHOTO_ASSET_TRADE_FEED_PRIORITY,
+}
+
+
+def _read_pack_source_priority(pack_dir: Path) -> int:
+    marker = pack_dir / gw_cache_refresh.GW_PACK_SOURCE_MARKER_FILENAME
+    try:
+        label = marker.read_text(encoding="utf-8").strip()
+    except (FileNotFoundError, NotADirectoryError, OSError):
+        return 0
+    return _PHOTO_ASSET_SOURCE_PRIORITY_BY_LABEL.get(label, 0)
+
+
 def discover_photo_asset_sets(root: Path) -> list[PhotoAssetSet]:
     if not root.exists():
         raise RuntimeError(f"Photo root not found: {root}")
@@ -1253,16 +1270,21 @@ def discover_photo_asset_sets(root: Path) -> list[PhotoAssetSet]:
             label = rel_parent.as_posix()
         grouped.setdefault((group_key, label), []).append(path)
 
+    priority_by_dir: dict[Path, int] = {}
     asset_sets: list[PhotoAssetSet] = []
     for (group_key, label), paths in sorted(grouped.items(), key=lambda item: item[0][1]):
         sorted_paths = sorted(paths)
         name_seed = label if group_key.startswith("dir:") else sorted_paths[0].stem
+        pack_dir = sorted_paths[0].parent
+        if pack_dir not in priority_by_dir:
+            priority_by_dir[pack_dir] = _read_pack_source_priority(pack_dir)
         asset_sets.append(PhotoAssetSet(
             key=group_key,
             label=label,
             product_code=_extract_asset_match_code(name_seed),
             title_slug=_extract_title_slug(name_seed),
             image_paths=sorted_paths,
+            source_priority=priority_by_dir[pack_dir],
         ))
     if not asset_sets:
         raise RuntimeError(f"No image files found under photo root: {root}")
@@ -2094,6 +2116,7 @@ def build_gw_official_resource_pack_indexes(
             pack=pack,
             product_code=_extract_asset_match_code(pack.label),
             title_slug=_extract_title_slug(pack.label),
+            source_label=pack.source_label,
         )
         if ref.product_code:
             by_code.setdefault(ref.product_code, []).append(ref)
@@ -2134,11 +2157,13 @@ def build_gw_official_resource_pack_indexes(
                         label=group_label,
                         images=[],
                         archives=[archive_url],
+                        source_label=pack.source_label,
                     ),
                     product_code=_extract_asset_match_code(group_label),
                     title_slug=_extract_title_slug(group_label),
                     archive_url=archive_url,
                     archive_members=sorted(grouped_members),
+                    source_label=pack.source_label,
                 )
                 if ref.product_code:
                     by_code.setdefault(ref.product_code, []).append(ref)
@@ -2328,37 +2353,87 @@ def _photo_asset_title_match_score(product: Product, asset_set: PhotoAssetSet) -
 
 def _choose_best_photo_asset_set(product: Product, asset_sets: list[PhotoAssetSet]) -> PhotoAssetSet | None:
     ranked = sorted(
-        ((_photo_asset_title_match_score(product, asset_set), asset_set.label.lower(), asset_set) for asset_set in asset_sets),
-        key=lambda item: (-item[0], item[1]),
+        (
+            (
+                asset_set.source_priority,
+                _photo_asset_title_match_score(product, asset_set),
+                asset_set.label.lower(),
+                asset_set,
+            )
+            for asset_set in asset_sets
+        ),
+        key=lambda item: (-item[0], -item[1], item[2]),
     )
-    if not ranked or ranked[0][0] == 0:
+    if not ranked:
         return None
-    if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
+    top = ranked[0]
+    if top[0] == 0 and top[1] == 0:
         return None
-    return ranked[0][2]
+    if len(ranked) > 1:
+        runner_up = ranked[1]
+        if top[0] == runner_up[0] and top[1] == runner_up[1]:
+            return None
+    return top[3]
 
 
 def _gw_official_pack_title_match_score(product: Product, pack_ref: GWOfficialResourcePackRef) -> int:
-    product_tokens = set(re.findall(r"[a-z0-9]+", _normalize_slug(product.title)))
-    label_tokens = set(re.findall(r"[a-z0-9]+", _normalize_slug(pack_ref.label)))
+    product_token_list = _tokenize_humanish_label(product.title)
+    product_tokens = {token for token in product_token_list if token}
+    label_tokens = set(_tokenize_humanish_label(pack_ref.label))
     if not product_tokens or not label_tokens:
         return 0
-    return len(product_tokens & label_tokens)
+    score = len(product_tokens & label_tokens)
+    initials = "".join(token[0] for token in product_token_list if len(token) >= 3)
+    if initials and initials.lower() in label_tokens:
+        score += 1
+    return score
+
+
+def _gw_official_pack_variant_penalty(pack_ref: GWOfficialResourcePackRef) -> tuple[int, int]:
+    label = (pack_ref.label or "").lower()
+    duplicate_penalty = 1 if re.search(r"(?:^|[-_ ])\d+(?:[-_ ]\d+)?$", label) else 0
+    duplicate_penalty += 1 if any("(1)" in member or "(2)" in member for member in pack_ref.archive_members) else 0
+    box_penalty = 1 if "box" in label else 0
+    return duplicate_penalty, box_penalty
 
 
 def _choose_best_gw_official_pack(
     product: Product,
     pack_refs: list[GWOfficialResourcePackRef],
 ) -> GWOfficialResourcePackRef | None:
+    deduped_refs: list[GWOfficialResourcePackRef] = []
+    seen_ref_keys: set[tuple[str, tuple[str, ...], str]] = set()
+    for pack_ref in pack_refs:
+        ref_key = (
+            pack_ref.label.lower(),
+            tuple(pack_ref.archive_members),
+        )
+        if ref_key in seen_ref_keys:
+            continue
+        seen_ref_keys.add(ref_key)
+        deduped_refs.append(pack_ref)
     ranked = sorted(
-        ((_gw_official_pack_title_match_score(product, pack_ref), pack_ref.label.lower(), pack_ref) for pack_ref in pack_refs),
-        key=lambda item: (-item[0], item[1]),
+        (
+            (
+                _gw_official_pack_title_match_score(product, pack_ref),
+                *_gw_official_pack_variant_penalty(pack_ref),
+                len(pack_ref.label),
+                pack_ref.label.lower(),
+                pack_ref,
+            )
+            for pack_ref in deduped_refs
+        ),
+        key=lambda item: (-item[0], item[1], item[2], item[3], item[4]),
     )
     if not ranked or ranked[0][0] == 0:
+        if len(ranked) == 1:
+            return ranked[0][5]
+        if ranked[0][1:5] != ranked[1][1:5]:
+            return ranked[0][5]
         return None
-    if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
+    if len(ranked) > 1 and ranked[0][0:5] == ranked[1][0:5]:
         return None
-    return ranked[0][2]
+    return ranked[0][5]
 
 
 def resolve_photo_asset(
@@ -2400,6 +2475,24 @@ def resolve_gw_official_resource_pack(
         if best_exact is not None:
             return "replace", "exact_best", best_exact, ""
         return "skip", "ambiguous", None, "multiple official GW packs share this product code"
+
+    trade_feed_prefix_matches = [
+        ref
+        for code, refs in by_code.items()
+        if code
+        and code != product.sku
+        and product.sku.startswith(code)
+        and len(product.sku) - len(code) <= 2
+        for ref in refs
+        if ref.source_label == gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL
+    ]
+    if len(trade_feed_prefix_matches) == 1:
+        return "replace", "trade_feed_prefix", trade_feed_prefix_matches[0], ""
+    if len(trade_feed_prefix_matches) > 1:
+        best_prefix = _choose_best_gw_official_pack(product, trade_feed_prefix_matches)
+        if best_prefix is not None:
+            return "replace", "trade_feed_prefix_best", best_prefix, ""
+        return "skip", "ambiguous", None, "multiple official GW trade-feed packs share this shortened product code"
 
     slug = _normalize_slug(product.title)
     slug_matches = by_slug.get(slug, [])
@@ -5331,6 +5424,13 @@ def phase_photo_source_web_all(
             if gw_official_indexes is None and not gw_official_error:
                 try:
                     gw_packs, _ = gw_cache_refresh.discover_resource_packs(GW_RESOURCES_URL, session)
+                    trade_feed_packs, _, trade_feed_stats = gw_cache_refresh.discover_trade_feed_packs(session, logger=log)
+                    gw_packs.extend(trade_feed_packs)
+                    log(
+                        "PHOTO SOURCE GW official trade feed discovered "
+                        f"{int(trade_feed_stats.get('image_count') or 0)} images "
+                        f"across {int(trade_feed_stats.get('request_count') or 0)} requests"
+                    )
                     gw_official_indexes = build_gw_official_resource_pack_indexes(gw_packs, session)
                     if not gw_official_resource_indexes_usable(*gw_official_indexes):
                         gw_official_error = "official GW resource feed did not expose product-code-labelled packs"

@@ -3035,7 +3035,8 @@ class PhotoSourcePhaseTests(unittest.TestCase):
             gw_cache_root.mkdir(parents=True)
             with self._patched_photo_source_outputs(root), \
                  mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
-                 mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(packs, "Product Images")):
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_trade_feed_packs", return_value=([], "GW Trade Feed", {"image_count": 0, "request_count": 0})):
                 shopify_sync.phase_photo_source_web_all(
                     self.client,
                     [gw_product],
@@ -3079,6 +3080,7 @@ class PhotoSourcePhaseTests(unittest.TestCase):
             with self._patched_photo_source_outputs(root), \
                  mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
                  mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_trade_feed_packs", return_value=([], "GW Trade Feed", {"image_count": 0, "request_count": 0})), \
                  mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", return_value=(b"gw-official-image", "https://trade.games-workshop.com/resources/99120109017.jpg")):
                 shopify_sync.phase_photo_source_web_all(
                     self.client,
@@ -3131,6 +3133,7 @@ class PhotoSourcePhaseTests(unittest.TestCase):
                  mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
                  mock.patch("shopify_sync.GW_OFFICIAL_ARCHIVE_INDEX_JSON", new=archive_cache_path), \
                  mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(malformed_packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_trade_feed_packs", return_value=([], "GW Trade Feed", {"image_count": 0, "request_count": 0})), \
                  mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", return_value=(archive_bytes, malformed_packs[0].archives[0])), \
                  mock.patch("shopify_sync.fetch_search_page_photo_source_candidates") as search:
                 shopify_sync.phase_photo_source_web_all(
@@ -3184,6 +3187,7 @@ class PhotoSourcePhaseTests(unittest.TestCase):
                  mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
                  mock.patch("shopify_sync.GW_OFFICIAL_ARCHIVE_INDEX_JSON", new=archive_cache_path), \
                  mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(malformed_packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_trade_feed_packs", return_value=([], "GW Trade Feed", {"image_count": 0, "request_count": 0})), \
                  mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", return_value=(archive_bytes, malformed_packs[0].archives[0])):
                 shopify_sync.phase_photo_source_web_all(
                     self.client,
@@ -3224,6 +3228,207 @@ class PhotoSourcePhaseTests(unittest.TestCase):
                 self.assertIn("9918995134406", by_code_again)
                 self.assertEqual(fetch_binary.call_count, 1)
 
+    def test_resolve_gw_official_resource_pack_uses_trade_feed_prefix_code(self):
+        product = shopify_sync.Product(
+            title="B: MEPHISTON RED 12ML ROW X6",
+            sku="9918995026706",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        packs = [
+            gw_cache_refresh.ResourcePack(
+                label="BSF-21-03-99189950267-MEPHISTON RED 12ML ROW__1.jpg",
+                images=[gw_cache_refresh.ImageTarget(url="https://trade.games-workshop.com/resources/mephiston.jpg", filename="mephiston.jpg")],
+                archives=[],
+                source_label=gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL,
+            )
+        ]
+
+        by_code, by_slug = shopify_sync.build_gw_official_resource_pack_indexes(packs, None)
+        action, match_type, ref, reason = shopify_sync.resolve_gw_official_resource_pack(product, by_code, by_slug)
+
+        self.assertEqual(action, "replace")
+        self.assertEqual(match_type, "trade_feed_prefix")
+        self.assertIsNotNone(ref)
+        self.assertEqual(ref.label, packs[0].label)
+        self.assertEqual(reason, "")
+
+    def test_photo_source_web_all_uses_trade_feed_prefix_match_for_gw(self):
+        gw_product = shopify_sync.Product(
+            title="B: MEPHISTON RED 12ML ROW X6",
+            sku="9918995026706",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = gw_product.sku
+        existing["title"] = gw_product.title
+        existing["vendor"] = gw_product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        trade_feed_packs = [
+            gw_cache_refresh.ResourcePack(
+                label="BSF-21-03-99189950267-MEPHISTON RED 12ML ROW__1.jpg",
+                images=[gw_cache_refresh.ImageTarget(url="https://trade.games-workshop.com/resources/mephiston.jpg", filename="mephiston.jpg")],
+                archives=[],
+                source_label=gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL,
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gw_cache_root = root / "gw_photo_cache" / "current"
+            gw_cache_root.mkdir(parents=True)
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=([], "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_trade_feed_packs", return_value=(trade_feed_packs, "GW Trade Feed", {"image_count": 1, "request_count": 1})):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [gw_product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+
+        self.assertIn("winner", preview)
+        self.assertIn("gw_official", preview)
+        self.assertIn("trade_feed_prefix", preview)
+
+    def test_choose_best_gw_official_pack_prefers_non_box_variant(self):
+        product = shopify_sync.Product(
+            title="WARHAMMER QUEST: DARKWATER (ENGLISH)",
+            sku="60010799029",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        refs = [
+            shopify_sync.GWOfficialResourcePackRef(
+                key="a",
+                label="60010799029-ENGWHQuestCoreGame",
+                pack=gw_cache_refresh.ResourcePack(label="a", images=[], archives=["x.zip"]),
+                product_code="60010799029",
+                archive_url="x.zip",
+                archive_members=["60010799029_ENGWHQuestCoreGame1.jpg"],
+            ),
+            shopify_sync.GWOfficialResourcePackRef(
+                key="b",
+                label="60010799029-ENGWHQuestCoreGameBOX",
+                pack=gw_cache_refresh.ResourcePack(label="b", images=[], archives=["x.zip"]),
+                product_code="60010799029",
+                archive_url="x.zip",
+                archive_members=["60010799029_ENGWHQuestCoreGameBOX.jpg"],
+            ),
+        ]
+
+        best = shopify_sync._choose_best_gw_official_pack(product, refs)
+
+        self.assertIsNotNone(best)
+        self.assertEqual(best.label, "60010799029-ENGWHQuestCoreGame")
+
+    def test_choose_best_gw_official_pack_prefers_duplicate_free_variant(self):
+        product = shopify_sync.Product(
+            title="SPEARHEAD: SERAPHON SUNBLOODED PROWLERS",
+            sku="99120208046",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        refs = [
+            shopify_sync.GWOfficialResourcePackRef(
+                key="a",
+                label="99120208046-SeraphonSunbloodedProwlersSpearhead",
+                pack=gw_cache_refresh.ResourcePack(label="a", images=[], archives=["x.zip"]),
+                product_code="99120208046",
+                archive_url="x.zip",
+                archive_members=["99120208046_SeraphonSunbloodedProwlersSpearhead17.jpg"],
+            ),
+            shopify_sync.GWOfficialResourcePackRef(
+                key="b",
+                label="99120208046-SeraphonSunbloodedProwlersSpearhead17-1",
+                pack=gw_cache_refresh.ResourcePack(label="b", images=[], archives=["x.zip"]),
+                product_code="99120208046",
+                archive_url="x.zip",
+                archive_members=["99120208046_SeraphonSunbloodedProwlersSpearhead17 (1).jpg"],
+            ),
+        ]
+
+        best = shopify_sync._choose_best_gw_official_pack(product, refs)
+
+        self.assertIsNotNone(best)
+        self.assertEqual(best.label, "99120208046-SeraphonSunbloodedProwlersSpearhead")
+
+    def test_choose_best_gw_official_pack_uses_title_initials_and_tokens(self):
+        product = shopify_sync.Product(
+            title="COMBAT PATROL: ADEPTA SORORITAS",
+            sku="99120108100",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        refs = [
+            shopify_sync.GWOfficialResourcePackRef(
+                key="a",
+                label="99120108100-ASCombatPatrol",
+                pack=gw_cache_refresh.ResourcePack(label="a", images=[], archives=["x.zip"]),
+                product_code="99120108100",
+                archive_url="x.zip",
+                archive_members=["99120108100_ASCombatPatrol05.jpg"],
+            ),
+            shopify_sync.GWOfficialResourcePackRef(
+                key="b",
+                label="99120108100-GSCCP",
+                pack=gw_cache_refresh.ResourcePack(label="b", images=[], archives=["x.zip"]),
+                product_code="99120108100",
+                archive_url="x.zip",
+                archive_members=["99120108100_GSCCP6.jpg"],
+            ),
+        ]
+
+        best = shopify_sync._choose_best_gw_official_pack(product, refs)
+
+        self.assertIsNotNone(best)
+        self.assertEqual(best.label, "99120108100-ASCombatPatrol")
+
+    def test_choose_best_gw_official_pack_dedupes_identical_refs(self):
+        product = shopify_sync.Product(
+            title="NECROMUNDA: SQUAT PROSPECTORS EXO-KYN",
+            sku="99120599073",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        refs = [
+            shopify_sync.GWOfficialResourcePackRef(
+                key="a",
+                label="99120599073-NECIronheadProspectorsExoKyn",
+                pack=gw_cache_refresh.ResourcePack(label="a", images=[], archives=["x.zip"]),
+                product_code="99120599073",
+                archive_url="x.zip",
+                archive_members=["99120599073_NECIronheadProspectorsExoKyn03.jpg"],
+            ),
+            shopify_sync.GWOfficialResourcePackRef(
+                key="b",
+                label="99120599073-NECIronheadProspectorsExoKyn",
+                pack=gw_cache_refresh.ResourcePack(label="b", images=[], archives=["x.zip"]),
+                product_code="99120599073",
+                archive_url="x.zip",
+                archive_members=["99120599073_NECIronheadProspectorsExoKyn03.jpg"],
+            ),
+            shopify_sync.GWOfficialResourcePackRef(
+                key="c",
+                label="99120599073-NECIronheadProspectorsExoKyn03-1",
+                pack=gw_cache_refresh.ResourcePack(label="c", images=[], archives=["x.zip"]),
+                product_code="99120599073",
+                archive_url="x.zip",
+                archive_members=["99120599073_NECIronheadProspectorsExoKyn03 (1).jpg"],
+            ),
+        ]
+
+        best = shopify_sync._choose_best_gw_official_pack(product, refs)
+
+        self.assertIsNotNone(best)
+        self.assertEqual(best.label, "99120599073-NECIronheadProspectorsExoKyn")
+
     def test_photo_source_web_all_skips_malformed_gw_official_feed(self):
         gw_product = shopify_sync.Product(
             title="L: TUSKGOR FUR 12ML ROW X6",
@@ -3259,6 +3464,7 @@ class PhotoSourcePhaseTests(unittest.TestCase):
                  mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
                  mock.patch("shopify_sync.GW_OFFICIAL_ARCHIVE_INDEX_JSON", new=archive_cache_path), \
                  mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(malformed_packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_trade_feed_packs", return_value=([], "GW Trade Feed", {"image_count": 0, "request_count": 0})), \
                  mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", side_effect=RuntimeError("zip unavailable")), \
                  mock.patch("shopify_sync.fetch_search_page_photo_source_candidates", return_value=([], 0, [])), \
                  mock.patch("shopify_sync.log") as log:
@@ -3311,6 +3517,7 @@ class PhotoSourcePhaseTests(unittest.TestCase):
                  mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
                  mock.patch("shopify_sync.GW_OFFICIAL_ARCHIVE_INDEX_JSON", new=archive_cache_path), \
                  mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=(malformed_packs, "Product Images")), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_trade_feed_packs", return_value=([], "GW Trade Feed", {"image_count": 0, "request_count": 0})), \
                  mock.patch("shopify_sync.gw_cache_refresh.fetch_binary", side_effect=RuntimeError("zip unavailable")), \
                  mock.patch("shopify_sync.fetch_search_page_photo_source_candidates") as search:
                 shopify_sync.phase_photo_source_web_all(
@@ -4286,6 +4493,337 @@ class GWCacheRefreshTests(unittest.TestCase):
         self.assertTrue(published["last_success_at"])
         self.assertTrue(published["finished_at"])
         self.assertTrue(published["published_fingerprint"])
+
+class TradeFeedDiscoveryTests(unittest.TestCase):
+    FIXTURE_PATH = (
+        Path(__file__).resolve().parent / "fixtures" / "gw_trade_feed_page_1.json"
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        if not cls.FIXTURE_PATH.exists():
+            raise unittest.SkipTest(f"Missing fixture: {cls.FIXTURE_PATH}")
+        cls.real_page1 = json.loads(cls.FIXTURE_PATH.read_text(encoding="utf-8"))
+
+    class StubSession:
+        def __init__(self, payload_by_url):
+            self.payload_by_url = dict(payload_by_url)
+            self.headers: dict[str, str] = {}
+            self.calls: list[str] = []
+
+        def get(self, url, timeout=60):
+            self.calls.append(url)
+            payload = self.payload_by_url.get(url)
+            if payload is None:
+                raise AssertionError(f"Unexpected URL requested: {url}")
+            return FakeResponse(status_code=200, payload=payload, url=url)
+
+    def _build_url(self, group, page):
+        return gw_cache_refresh._build_trade_feed_url(
+            group=group,
+            page=page,
+            page_size=gw_cache_refresh.GW_TRADE_FEED_PAGE_SIZE,
+            lang=gw_cache_refresh.GW_TRADE_FEED_LANG,
+            country=gw_cache_refresh.GW_TRADE_FEED_COUNTRY,
+        )
+
+    def test_discover_trade_feed_packs_parses_real_fixture(self):
+        single_group = (46,)
+        single_page_payload = {
+            "page": 1,
+            "page_count": 1,
+            "total_items": len(self.real_page1.get("assets", [])),
+            "assets": self.real_page1["assets"],
+            "nonce": self.real_page1.get("nonce", ""),
+        }
+        url = self._build_url(46, 1)
+        session = self.StubSession({url: single_page_payload})
+
+        packs, marker, stats = gw_cache_refresh.discover_trade_feed_packs(
+            session,
+            groups=single_group,
+            request_delay_seconds=0,
+        )
+
+        self.assertEqual(marker, "GW Trade Feed")
+        # Every pack must be tagged as trade-feed
+        for pack in packs:
+            self.assertEqual(pack.source_label, "trade-feed")
+            self.assertEqual(len(pack.images), 1)
+            self.assertEqual(pack.archives, [])
+
+        # Each of the captured target SKUs must appear with the expected file_name
+        labels = {pack.label: pack for pack in packs}
+        target_skus = {
+            "99122720012": "99122720012_PeasantLevyBOX.jpg",
+            "99122720011": "99122720011_IronHailCraneGunnersBOX.jpg",
+            "60043005001": "60043005001_JOURNALTACTICABATTLEOFTALLARNPartOne1.jpg",
+        }
+        for sku, expected_filename in target_skus.items():
+            self.assertIn(expected_filename, labels, f"missing {sku} in fixture-derived packs")
+            pack = labels[expected_filename]
+            extracted_sku = shopify_sync._extract_asset_match_code(pack.label)
+            self.assertEqual(extracted_sku, sku)
+            # file_url and file_name preserved verbatim
+            self.assertTrue(pack.images[0].url.endswith(expected_filename))
+            self.assertEqual(pack.images[0].filename, expected_filename)
+
+        # Stats reflect the page count
+        self.assertEqual(stats["page_count_by_group"], {"46": 1})
+        self.assertEqual(stats["request_count"], 1)
+        self.assertEqual(stats["image_count"], len(packs))
+        # Session headers were set
+        self.assertEqual(session.headers.get("User-Agent"), gw_cache_refresh.GW_TRADE_FEED_USER_AGENT)
+        self.assertEqual(session.headers.get("Referer"), gw_cache_refresh.GW_TRADE_FEED_REFERER)
+
+    def test_discover_trade_feed_packs_walks_all_pages(self):
+        page1 = {
+            "page": 1,
+            "page_count": 2,
+            "total_items": 2,
+            "assets": [
+                {
+                    "id": 100,
+                    "title": "T-1",
+                    "file_name": "11111111_a.jpg",
+                    "file_url": "https://example.test/a.jpg",
+                    "mime_type": "image/jpeg",
+                }
+            ],
+        }
+        page2 = {
+            "page": 2,
+            "page_count": 2,
+            "total_items": 2,
+            "assets": [
+                {
+                    "id": 101,
+                    "title": "T-2",
+                    "file_name": "22222222_b.jpg",
+                    "file_url": "https://example.test/b.jpg",
+                    "mime_type": "image/jpeg",
+                }
+            ],
+        }
+        u1 = self._build_url(46, 1)
+        u2 = self._build_url(46, 2)
+        session = self.StubSession({u1: page1, u2: page2})
+
+        packs, _, stats = gw_cache_refresh.discover_trade_feed_packs(
+            session,
+            groups=(46,),
+            request_delay_seconds=0,
+        )
+
+        self.assertEqual(stats["page_count_by_group"], {"46": 2})
+        self.assertEqual(stats["request_count"], 2)
+        self.assertEqual(len(packs), 2)
+        self.assertEqual(session.calls, [u1, u2])
+
+    def test_discover_trade_feed_packs_filters_non_image_mime_types(self):
+        page1 = {
+            "page": 1,
+            "page_count": 1,
+            "total_items": 3,
+            "assets": [
+                {
+                    "id": 1,
+                    "file_name": "11111111_x.jpg",
+                    "file_url": "https://example.test/x.jpg",
+                    "mime_type": "image/jpeg",
+                },
+                {
+                    "id": 2,
+                    "file_name": "22222222_y.pdf",
+                    "file_url": "https://example.test/y.pdf",
+                    "mime_type": "application/pdf",
+                },
+                {
+                    "id": 3,
+                    "file_name": "33333333_z.zip",
+                    "file_url": "https://example.test/z.zip",
+                    "mime_type": "application/x-zip-compressed",
+                },
+            ],
+        }
+        u1 = self._build_url(46, 1)
+        session = self.StubSession({u1: page1})
+        packs, _, stats = gw_cache_refresh.discover_trade_feed_packs(
+            session,
+            groups=(46,),
+            request_delay_seconds=0,
+        )
+        self.assertEqual(len(packs), 1)
+        self.assertEqual(packs[0].label, "11111111_x.jpg")
+        self.assertEqual(stats["image_count"], 1)
+
+    def test_discover_trade_feed_packs_dedupes_by_id(self):
+        same_asset = {
+            "id": 555,
+            "file_name": "99999999_repeat.jpg",
+            "file_url": "https://example.test/repeat.jpg",
+            "mime_type": "image/jpeg",
+        }
+        page1 = {"page": 1, "page_count": 2, "total_items": 2, "assets": [same_asset]}
+        page2 = {"page": 2, "page_count": 2, "total_items": 2, "assets": [dict(same_asset)]}
+        u1 = self._build_url(46, 1)
+        u2 = self._build_url(46, 2)
+        session = self.StubSession({u1: page1, u2: page2})
+        packs, _, stats = gw_cache_refresh.discover_trade_feed_packs(
+            session,
+            groups=(46,),
+            request_delay_seconds=0,
+        )
+        self.assertEqual(len(packs), 1)
+        self.assertEqual(stats["image_count"], 1)
+
+    def test_refresh_gw_cache_merges_resources_and_trade_feed(self):
+        # Patch discover_resource_packs to return a synthetic pack
+        legacy_pack = gw_cache_refresh.ResourcePack(
+            label="legacy-pack",
+            images=[gw_cache_refresh.ImageTarget(url="https://example.test/legacy.jpg", filename="legacy.jpg")],
+            archives=[],
+        )
+        feed_pack = gw_cache_refresh.ResourcePack(
+            label="99122720012_PeasantLevyBOX.jpg",
+            images=[gw_cache_refresh.ImageTarget(
+                url="https://example.test/feed.jpg",
+                filename="99122720012_PeasantLevyBOX.jpg",
+            )],
+            archives=[],
+            source_label=gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL,
+        )
+
+        def fake_discover_resources(url, session):
+            return [legacy_pack], "Product Images"
+
+        def fake_discover_feed(session, **kwargs):
+            return (
+                [feed_pack],
+                "GW Trade Feed",
+                {
+                    "url": gw_cache_refresh.GW_TRADE_FEED_BASE,
+                    "groups": [46, 47],
+                    "country": 220,
+                    "lang": "en",
+                    "page_size": 24,
+                    "page_count_by_group": {"46": 1, "47": 1},
+                    "request_count": 2,
+                    "image_count": 1,
+                },
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "status.json"
+            with mock.patch.object(gw_cache_refresh, "discover_resource_packs", fake_discover_resources):
+                with mock.patch.object(gw_cache_refresh, "discover_trade_feed_packs", fake_discover_feed):
+                    result = gw_cache_refresh.refresh_gw_cache(
+                        resources_url="https://trade.games-workshop.com/resources/",
+                        cache_root=cache_root,
+                        status_path=status_path,
+                        dry=True,
+                        logger=lambda msg: None,
+                    )
+
+        self.assertEqual(result["status"], "dry_run")
+        self.assertEqual(result["pack_count"], 2)
+        self.assertEqual(result["image_count"], 2)
+        self.assertIn("trade_feed", result)
+        self.assertEqual(result["trade_feed"]["image_count"], 1)
+        self.assertEqual(result["trade_feed"]["page_count_by_group"], {"46": 1, "47": 1})
+
+    def test_refresh_gw_cache_records_trade_feed_failure_gracefully(self):
+        legacy_pack = gw_cache_refresh.ResourcePack(
+            label="legacy-pack",
+            images=[gw_cache_refresh.ImageTarget(url="https://example.test/legacy.jpg", filename="legacy.jpg")],
+            archives=[],
+        )
+
+        def fake_discover_resources(url, session):
+            return [legacy_pack], "Product Images"
+
+        def failing_discover_feed(session, **kwargs):
+            raise RuntimeError("simulated cloudflare 403")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_root = Path(tmp) / "gw_photo_cache"
+            status_path = Path(tmp) / "status.json"
+            with mock.patch.object(gw_cache_refresh, "discover_resource_packs", fake_discover_resources):
+                with mock.patch.object(gw_cache_refresh, "discover_trade_feed_packs", failing_discover_feed):
+                    result = gw_cache_refresh.refresh_gw_cache(
+                        resources_url="https://trade.games-workshop.com/resources/",
+                        cache_root=cache_root,
+                        status_path=status_path,
+                        dry=True,
+                        logger=lambda msg: None,
+                    )
+        self.assertEqual(result["status"], "dry_run")
+        self.assertEqual(result["pack_count"], 1)  # legacy only
+        self.assertIn("simulated cloudflare 403", result["trade_feed"]["failure_reason"])
+
+
+class PhotoAssetSourcePriorityTests(unittest.TestCase):
+    def _write_image(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\xff\xd8\xff\xd9")  # tiny JPEG header/footer
+
+    def test_discover_photo_asset_sets_marks_trade_feed_dirs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # legacy pack: no marker file
+            legacy_dir = root / "legacy-pack"
+            self._write_image(legacy_dir / "99122720012_legacy.jpg")
+            # trade-feed pack: marker present
+            tf_dir = root / "99122720012-PeasantLevyBOX-jpg"
+            self._write_image(tf_dir / "99122720012_PeasantLevyBOX.jpg")
+            (tf_dir / gw_cache_refresh.GW_PACK_SOURCE_MARKER_FILENAME).write_text(
+                gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL, encoding="utf-8"
+            )
+
+            sets = shopify_sync.discover_photo_asset_sets(root)
+            by_label = {s.label: s for s in sets}
+            self.assertEqual(by_label["legacy-pack"].source_priority, 0)
+            self.assertEqual(
+                by_label["99122720012-PeasantLevyBOX-jpg"].source_priority,
+                shopify_sync.PHOTO_ASSET_TRADE_FEED_PRIORITY,
+            )
+
+    def test_resolve_photo_asset_prefers_trade_feed_for_ambiguous(self):
+        product = shopify_sync.Product(
+            title="Warhammer The Old World Grand Cathay Peasant Levy",
+            sku="99122720012",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        legacy_set = shopify_sync.PhotoAssetSet(
+            key="dir:legacy",
+            label="99122720012-Legacy-Title",
+            product_code="99122720012",
+            title_slug="legacy-title",
+            image_paths=[Path("/tmp/legacy/legacy.jpg")],
+            source_priority=0,
+        )
+        feed_set = shopify_sync.PhotoAssetSet(
+            key="dir:trade-feed",
+            label="99122720012-PeasantLevyBOX-jpg",
+            product_code="99122720012",
+            title_slug="peasantlevybox",
+            image_paths=[Path("/tmp/trade-feed/99122720012_PeasantLevyBOX.jpg")],
+            source_priority=shopify_sync.PHOTO_ASSET_TRADE_FEED_PRIORITY,
+        )
+        by_code = {"99122720012": [legacy_set, feed_set]}
+        by_slug: dict = {}
+
+        action, match_type, chosen, reason = shopify_sync.resolve_photo_asset(
+            product, by_code, by_slug
+        )
+
+        self.assertEqual(action, "replace")
+        self.assertEqual(match_type, "exact_best")
+        self.assertIs(chosen, feed_set)
+        self.assertEqual(chosen.source_priority, shopify_sync.PHOTO_ASSET_TRADE_FEED_PRIORITY)
+
 
 if __name__ == "__main__":
     unittest.main()

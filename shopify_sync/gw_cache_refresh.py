@@ -34,6 +34,20 @@ GENERIC_LABELS = {
     "open",
 }
 
+GW_TRADE_FEED_BASE = "https://trade.games-workshop.com/wp-json/gw/v2/media"
+GW_TRADE_FEED_IMAGE_GROUPS: tuple[int, ...] = (46, 47)
+GW_TRADE_FEED_COUNTRY = 220
+GW_TRADE_FEED_LANG = "en"
+GW_TRADE_FEED_PAGE_SIZE = 24
+GW_TRADE_FEED_USER_AGENT = (
+    "Mozilla/5.0 (compatible; FoxAndFableShopifySync/1.0; "
+    "+https://github.com/foxdatafabletoys/shopify_fix)"
+)
+GW_TRADE_FEED_REFERER = "https://trade.games-workshop.com/resources/"
+GW_TRADE_FEED_REQUEST_DELAY_SECONDS = 0.25
+GW_TRADE_FEED_SOURCE_LABEL = "trade-feed"
+GW_PACK_SOURCE_MARKER_FILENAME = ".gw-source"
+
 
 @dataclass
 class AnchorRecord:
@@ -54,6 +68,7 @@ class ResourcePack:
     label: str
     images: list[ImageTarget]
     archives: list[str]
+    source_label: str = ""
 
 
 class AnchorParser(HTMLParser):
@@ -407,6 +422,160 @@ def discover_resource_packs(
     return packs, "Product Images"
 
 
+def _ensure_trade_feed_session_headers(session: requests.Session) -> None:
+    headers = session.headers
+    if headers.get("User-Agent", "") != GW_TRADE_FEED_USER_AGENT:
+        headers["User-Agent"] = GW_TRADE_FEED_USER_AGENT
+    if headers.get("Referer", "") != GW_TRADE_FEED_REFERER:
+        headers["Referer"] = GW_TRADE_FEED_REFERER
+    headers.setdefault("Accept", "application/json, text/javascript, */*; q=0.01")
+    headers.setdefault("X-Requested-With", "XMLHttpRequest")
+
+
+def _build_trade_feed_url(
+    *,
+    group: int,
+    page: int,
+    page_size: int,
+    lang: str,
+    country: int,
+) -> str:
+    return (
+        f"{GW_TRADE_FEED_BASE}"
+        f"?fe=1&group={group}"
+        f"&per_page={page_size}"
+        f"&page={page}"
+        f"&lang={lang}"
+        f"&country={country}"
+    )
+
+
+def fetch_trade_feed_page(
+    session: requests.Session,
+    *,
+    group: int,
+    page: int,
+    page_size: int = GW_TRADE_FEED_PAGE_SIZE,
+    lang: str = GW_TRADE_FEED_LANG,
+    country: int = GW_TRADE_FEED_COUNTRY,
+) -> dict:
+    _ensure_trade_feed_session_headers(session)
+    url = _build_trade_feed_url(
+        group=group, page=page, page_size=page_size, lang=lang, country=country
+    )
+    response = _get_with_retries(session, url, timeout=60, action="fetching trade feed")
+    status_code = getattr(response, "status_code", 200)
+    if status_code >= 400:
+        raise RuntimeError(f"HTTP {status_code} while fetching trade feed page {page} (group {group})")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Trade feed returned non-JSON response for group {group} page {page}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Trade feed page payload is not an object: type={type(payload).__name__}")
+    return payload
+
+
+def discover_trade_feed_packs(
+    session: requests.Session,
+    *,
+    groups: tuple[int, ...] = GW_TRADE_FEED_IMAGE_GROUPS,
+    country: int = GW_TRADE_FEED_COUNTRY,
+    lang: str = GW_TRADE_FEED_LANG,
+    page_size: int = GW_TRADE_FEED_PAGE_SIZE,
+    max_pages: int | None = None,
+    request_delay_seconds: float = GW_TRADE_FEED_REQUEST_DELAY_SECONDS,
+    logger: Callable[[str], None] | None = None,
+) -> tuple[list[ResourcePack], str, dict[str, object]]:
+    """Discover GW trade-feed image assets via the wp-json/gw/v2/media REST endpoint.
+
+    Returns (packs, source_marker, stats). One pack is emitted per asset; each pack has
+    label=asset.file_name and a single ImageTarget bound to asset.file_url. Only assets
+    with mime_type starting with 'image/' are returned. Assets are deduped by their
+    integer 'id' field.
+
+    The session is mutated to include the browser User-Agent and Referer headers required
+    by the upstream Cloudflare layer; this is idempotent.
+    """
+    _ensure_trade_feed_session_headers(session)
+    log = logger or (lambda _msg: None)
+    packs: list[ResourcePack] = []
+    seen_ids: set[int] = set()
+    page_count_by_group: dict[str, int] = {}
+    request_count = 0
+    image_count = 0
+
+    for group in groups:
+        page = 1
+        first = fetch_trade_feed_page(
+            session, group=group, page=page, page_size=page_size, lang=lang, country=country
+        )
+        request_count += 1
+        total_page_count = int(first.get("page_count") or 0)
+        if max_pages is not None:
+            total_page_count = min(total_page_count, max_pages)
+        page_count_by_group[str(group)] = total_page_count
+        log(f"GW trade feed group {group}: page_count={total_page_count}")
+
+        def _ingest(payload: dict) -> int:
+            ingested = 0
+            for asset in payload.get("assets", []) or []:
+                if not isinstance(asset, dict):
+                    continue
+                asset_id = asset.get("id")
+                if isinstance(asset_id, int):
+                    if asset_id in seen_ids:
+                        continue
+                    seen_ids.add(asset_id)
+                mime = (asset.get("mime_type") or "").lower()
+                if not mime.startswith("image/"):
+                    continue
+                file_url = asset.get("file_url") or ""
+                file_name = asset.get("file_name") or ""
+                if not file_url or not file_name:
+                    continue
+                packs.append(
+                    ResourcePack(
+                        label=file_name,
+                        images=[ImageTarget(url=file_url, filename=file_name)],
+                        archives=[],
+                        source_label=GW_TRADE_FEED_SOURCE_LABEL,
+                    )
+                )
+                ingested += 1
+            return ingested
+
+        image_count += _ingest(first)
+
+        for page in range(2, total_page_count + 1):
+            if request_delay_seconds > 0:
+                time.sleep(request_delay_seconds)
+            try:
+                payload = fetch_trade_feed_page(
+                    session, group=group, page=page, page_size=page_size, lang=lang, country=country
+                )
+            except RuntimeError as exc:
+                log(f"GW trade feed group {group} page {page} failed: {exc}")
+                raise
+            request_count += 1
+            ingested = _ingest(payload)
+            image_count += ingested
+            if (page % 50) == 0:
+                log(f"GW trade feed group {group}: ingested {image_count} images so far (page {page}/{total_page_count})")
+
+    stats: dict[str, object] = {
+        "url": GW_TRADE_FEED_BASE,
+        "groups": list(groups),
+        "country": country,
+        "lang": lang,
+        "page_size": page_size,
+        "page_count_by_group": page_count_by_group,
+        "request_count": request_count,
+        "image_count": image_count,
+    }
+    return packs, "GW Trade Feed", stats
+
+
 def extract_images_from_zip(
     archive_bytes: bytes,
     *,
@@ -513,21 +682,61 @@ def refresh_gw_cache(
     dry: bool,
     logger: Callable[[str], None],
     session: requests.Session | None = None,
+    enable_trade_feed: bool = True,
+    trade_feed_max_pages: int | None = None,
 ) -> dict[str, object]:
     session = session or requests.Session()
     current_root = cache_root / "current"
     staging_root = cache_root / "_staging"
 
     packs, source_marker = discover_resource_packs(resources_url, session)
-    pack_count = len(packs)
-    image_target_count = sum(len(pack.images) for pack in packs)
+    legacy_pack_count = len(packs)
+    legacy_image_count = sum(len(pack.images) for pack in packs)
     archive_target_count = sum(len(pack.archives) for pack in packs)
+
+    trade_feed_started_at = timestamp_now() if enable_trade_feed else None
+    trade_feed_packs: list[ResourcePack] = []
+    trade_feed_stats: dict[str, object] = {
+        "url": GW_TRADE_FEED_BASE,
+        "groups": list(GW_TRADE_FEED_IMAGE_GROUPS),
+        "country": GW_TRADE_FEED_COUNTRY,
+        "lang": GW_TRADE_FEED_LANG,
+        "page_size": GW_TRADE_FEED_PAGE_SIZE,
+        "page_count_by_group": {},
+        "request_count": 0,
+        "image_count": 0,
+        "started_at": trade_feed_started_at,
+        "finished_at": None,
+        "last_success_at": None,
+        "failure_reason": "",
+    }
+    if enable_trade_feed:
+        try:
+            trade_feed_packs, _, discovered_stats = discover_trade_feed_packs(
+                session,
+                max_pages=trade_feed_max_pages,
+                logger=logger,
+            )
+        except Exception as exc:  # graceful degradation
+            trade_feed_stats["failure_reason"] = str(exc)
+            trade_feed_stats["finished_at"] = timestamp_now()
+            logger(f"GW trade feed discovery failed (legacy /resources/ packs will still publish): {exc}")
+        else:
+            trade_feed_stats.update(discovered_stats)
+            trade_feed_stats["finished_at"] = timestamp_now()
+            trade_feed_stats["last_success_at"] = trade_feed_stats["finished_at"]
+            packs.extend(trade_feed_packs)
+
+    trade_feed_image_count = int(trade_feed_stats.get("image_count") or 0)
+    pack_count = len(packs)
+    image_target_count = legacy_image_count + trade_feed_image_count
 
     if dry:
         logger(
             "GW cache refresh dry-run: discovered "
-            f"{pack_count} packs / {image_target_count} direct images / {archive_target_count} archives "
-            f"from {resources_url}"
+            f"{legacy_pack_count} legacy packs / {legacy_image_count} direct images / {archive_target_count} archives "
+            f"from {resources_url} + {trade_feed_image_count} trade-feed images "
+            f"({trade_feed_stats.get('failure_reason') or 'ok'})"
         )
         return {
             "status": "dry_run",
@@ -536,6 +745,7 @@ def refresh_gw_cache(
             "archive_count": archive_target_count,
             "source_url": resources_url,
             "source_marker": source_marker,
+            "trade_feed": trade_feed_stats,
         }
 
     cache_root.mkdir(parents=True, exist_ok=True)
@@ -554,6 +764,7 @@ def refresh_gw_cache(
         "archive_count": archive_target_count,
         "published_cache_path": str(current_root),
         "staging_cache_path": str(staging_root),
+        "trade_feed": trade_feed_stats,
     }
     save_status(status_path, status)
 
@@ -573,6 +784,10 @@ def refresh_gw_cache(
                     pack_dir = staging_root / unique_pack_dirname(pack.label, used_pack_names)
                     pack_dir.mkdir(parents=True, exist_ok=True)
                     pack_dirs_by_label[pack.label] = pack_dir
+                    if pack.source_label:
+                        (pack_dir / GW_PACK_SOURCE_MARKER_FILENAME).write_text(
+                            pack.source_label, encoding="utf-8"
+                        )
                 if used_filenames is None:
                     used_filenames = used_filenames_by_dir.setdefault(pack_dir, set())
                 content, final_url = fetch_binary(session, image.url)
@@ -597,7 +812,11 @@ def refresh_gw_cache(
 
         publish_staging_cache(staging_root, current_root)
         finished_at = timestamp_now()
-        published_image_count = sum(1 for path in current_root.rglob("*") if path.is_file())
+        published_image_count = sum(
+            1
+            for path in current_root.rglob("*")
+            if path.is_file() and path.name != GW_PACK_SOURCE_MARKER_FILENAME
+        )
         status.update(
             {
                 "status": "published",
