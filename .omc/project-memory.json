@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1777643497293,
+  "lastScanned": 1777995957746,
   "projectRoot": "/Users/toys-data/Documents/GitHub/shopify_fix",
   "techStack": {
     "languages": [
@@ -35,7 +35,7 @@
   },
   "build": {
     "buildCommand": "npm run build",
-    "testCommand": "cd /Users/toys-data/Documents/GitHub/shopify_fix\necho \"=== PRD final state (all stories should be passes:true) ===\"\n.venv/bin/python -c \"import json; d=json.load(open('.omc/state/sessions/43a9bbc0-1a6d-4262-b140-7e76b5130751/prd.json')); print('completed_at:', d['completed_at']); [print(f'  {s[\\\"id\\\"]}: passes={s[\\\"passes\\\"]}') for s in d['stories']]\"\necho \"\"\necho \"=== final pytest ===\"\n.venv/bin/python -m pytest shopify_sync/tests/test_shopify_sync.py -q 2>&1 | tail -2",
+    "testCommand": null,
     "lintCommand": "npm run lint",
     "devCommand": "npm run dev",
     "scripts": {
@@ -71,7 +71,7 @@
       "path": "backend",
       "purpose": null,
       "fileCount": 4,
-      "lastAccessed": 1777643497287,
+      "lastAccessed": 1777995957739,
       "keyFiles": [
         "package-lock.json",
         "package.json",
@@ -83,14 +83,14 @@
       "path": "deploy",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1777643497288,
+      "lastAccessed": 1777995957739,
       "keyFiles": []
     },
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 2,
-      "lastAccessed": 1777643497289,
+      "lastAccessed": 1777995957741,
       "keyFiles": [
         "BACKORDERS.md",
         "INVOICING.MD"
@@ -100,7 +100,7 @@
       "path": "onboarding_wizard",
       "purpose": null,
       "fileCount": 10,
-      "lastAccessed": 1777643497289,
+      "lastAccessed": 1777995957742,
       "keyFiles": [
         "AGENTS.md",
         "CLAUDE.md",
@@ -113,7 +113,7 @@
       "path": "public",
       "purpose": "Public files",
       "fileCount": 2,
-      "lastAccessed": 1777643497289,
+      "lastAccessed": 1777995957742,
       "keyFiles": [
         "favicon.svg",
         "icons.svg"
@@ -123,7 +123,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 1,
-      "lastAccessed": 1777643497289,
+      "lastAccessed": 1777995957742,
       "keyFiles": [
         "reseed_supabase_from_stock_xlsx.py"
       ]
@@ -131,21 +131,21 @@
     "shopify_sync": {
       "path": "shopify_sync",
       "purpose": null,
-      "fileCount": 28,
-      "lastAccessed": 1777643497289,
+      "fileCount": 31,
+      "lastAccessed": 1777995957742,
       "keyFiles": [
         "Games Workshop Store List.backup-2026-04-28.xlsx",
         "Games Workshop Store List.xlsx",
-        "SETUP.md",
-        "collection_generation_preview.csv",
-        "collection_generation_unmatched.csv"
+        "README.md",
+        "_tmp_run_tests.py",
+        "collection_generation_preview.csv"
       ]
     },
     "src": {
       "path": "src",
       "purpose": "Source code",
       "fileCount": 4,
-      "lastAccessed": 1777643497289,
+      "lastAccessed": 1777995957742,
       "keyFiles": [
         "App.css",
         "App.jsx",
@@ -157,7 +157,7 @@
       "path": "supabase",
       "purpose": null,
       "fileCount": 7,
-      "lastAccessed": 1777643497289,
+      "lastAccessed": 1777995957742,
       "keyFiles": [
         "phase0_schema.sql",
         "phase1_fx_schema.sql",
@@ -170,7 +170,7 @@
       "path": "onboarding_wizard/public",
       "purpose": "Public files",
       "fileCount": 5,
-      "lastAccessed": 1777643497290,
+      "lastAccessed": 1777995957743,
       "keyFiles": [
         "file.svg",
         "globe.svg",
@@ -181,7 +181,7 @@
       "path": "src/assets",
       "purpose": "Static assets",
       "fileCount": 3,
-      "lastAccessed": 1777643497290,
+      "lastAccessed": 1777995957743,
       "keyFiles": [
         "hero.png",
         "react.svg",
@@ -192,7 +192,7 @@
       "path": "src/components",
       "purpose": "UI components",
       "fileCount": 1,
-      "lastAccessed": 1777643497290,
+      "lastAccessed": 1777995957743,
       "keyFiles": [
         "TopNav.jsx"
       ]
@@ -201,7 +201,7 @@
       "path": "src/pages",
       "purpose": "Page components",
       "fileCount": 7,
-      "lastAccessed": 1777643497290,
+      "lastAccessed": 1777995957744,
       "keyFiles": [
         "BackordersPage.jsx",
         "CustomersPage.jsx",
