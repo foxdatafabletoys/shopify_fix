@@ -252,12 +252,50 @@ def save_manifest(path: Any, manifest: dict[str, dict[str, Any]]) -> None:
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+_WAYLAND_QUERY_STOPWORDS: frozenset[str] = frozenset({
+    "the", "a", "an", "of", "and", "with", "to", "for",
+    "pb", "hb", "eng", "english",
+})
+
+
+def _normalise_wayland_query(*parts: str) -> str:
+    """Wayland's search is case-sensitive and treats punctuation literally, so
+    `STORMCAST ETERNALS: DRACOTHIAN GUARD` returns zero hits while
+    `stormcast eternals dracothian guard` returns the real product.
+    Drop punctuation, lowercase, and prune common stopwords.
+    """
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        if not part:
+            continue
+        for token in re.findall(r"[a-z0-9]+", part.lower()):
+            if token in _WAYLAND_QUERY_STOPWORDS:
+                continue
+            if token in seen:
+                continue
+            seen.add(token)
+            cleaned.append(token)
+    return " ".join(cleaned)
+
+
 def build_search_url(title: str, sku: str) -> str:
-    # Wayland's Next.js search reads `?query=...` from the URL (the older `?s=`
-    # parameter is silently ignored, which yields the empty "No results found"
-    # SPA page for every lookup). Send the SKU + title joined by a space, just
-    # as the on-site search box would.
-    query = " ".join(part for part in (sku, title) if part).strip()
+    """Build the SKU+title search URL.
+
+    Wayland's Next.js search reads `?query=...` (the older `?s=` is silently
+    ignored, yielding an empty results page). The query is treated literally:
+    case-sensitive and not punctuation-tolerant, so we normalise to lowercase
+    alphanumeric tokens before sending.
+    """
+    query = _normalise_wayland_query(sku, title)
+    return f"{WAYLAND_SEARCH_URL}?query={quote_plus(query)}"
+
+
+def build_title_only_search_url(title: str) -> str:
+    """Same normalisation as build_search_url, without the SKU. Used as a
+    fallback when the SKU-prefixed query returns zero hits because the F&F
+    SKU doesn't exist in Wayland's index (GW catalogue-code drift)."""
+    query = _normalise_wayland_query(title)
     return f"{WAYLAND_SEARCH_URL}?query={quote_plus(query)}"
 
 
@@ -555,7 +593,7 @@ def _search_wayland_candidates(
     seen = {guessed_url}
     queries = [primary_url]
     if sku:
-        title_only_url = f"{WAYLAND_SEARCH_URL}?query={quote_plus(title)}"
+        title_only_url = build_title_only_search_url(title)
         if title_only_url != primary_url:
             queries.append(title_only_url)
     for query_url in queries:
