@@ -486,6 +486,7 @@ def discover_trade_feed_packs(
     max_pages: int | None = None,
     request_delay_seconds: float = GW_TRADE_FEED_REQUEST_DELAY_SECONDS,
     logger: Callable[[str], None] | None = None,
+    on_progress: Callable[[list[ResourcePack], dict[str, object]], None] | None = None,
 ) -> tuple[list[ResourcePack], str, dict[str, object]]:
     """Discover GW trade-feed image assets via the wp-json/gw/v2/media REST endpoint.
 
@@ -499,11 +500,24 @@ def discover_trade_feed_packs(
     """
     _ensure_trade_feed_session_headers(session)
     log = logger or (lambda _msg: None)
+    progress = on_progress or (lambda _packs, _stats: None)
     packs: list[ResourcePack] = []
     seen_ids: set[int] = set()
     page_count_by_group: dict[str, int] = {}
     request_count = 0
     image_count = 0
+
+    def _snapshot_stats() -> dict[str, object]:
+        return {
+            "url": GW_TRADE_FEED_BASE,
+            "groups": list(groups),
+            "country": country,
+            "lang": lang,
+            "page_size": page_size,
+            "page_count_by_group": dict(page_count_by_group),
+            "request_count": request_count,
+            "image_count": image_count,
+        }
 
     for group in groups:
         page = 1
@@ -546,6 +560,7 @@ def discover_trade_feed_packs(
             return ingested
 
         image_count += _ingest(first)
+        progress(packs, _snapshot_stats())
 
         for page in range(2, total_page_count + 1):
             if request_delay_seconds > 0:
@@ -560,19 +575,11 @@ def discover_trade_feed_packs(
             request_count += 1
             ingested = _ingest(payload)
             image_count += ingested
+            progress(packs, _snapshot_stats())
             if (page % 50) == 0:
                 log(f"GW trade feed group {group}: ingested {image_count} images so far (page {page}/{total_page_count})")
 
-    stats: dict[str, object] = {
-        "url": GW_TRADE_FEED_BASE,
-        "groups": list(groups),
-        "country": country,
-        "lang": lang,
-        "page_size": page_size,
-        "page_count_by_group": page_count_by_group,
-        "request_count": request_count,
-        "image_count": image_count,
-    }
+    stats = _snapshot_stats()
     return packs, "GW Trade Feed", stats
 
 

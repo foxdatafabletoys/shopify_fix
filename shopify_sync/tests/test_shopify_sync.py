@@ -1,3 +1,4 @@
+import csv
 from contextlib import contextmanager
 import io
 import json
@@ -29,6 +30,23 @@ class FakeResponse:
         if isinstance(self._payload, Exception):
             raise self._payload
         return self._payload
+
+
+class FakeWaylandScraper:
+    def __init__(self, pages=None, error=None):
+        self.pages = pages or {}
+        self.error = error
+        self.fetches = []
+        self.closed = False
+
+    def fetch_html(self, url):
+        self.fetches.append(url)
+        if self.error is not None:
+            raise self.error
+        return self.pages.get(url, "")
+
+    def close(self):
+        self.closed = True
 
 
 class ShopifyGraphQLTests(unittest.TestCase):
@@ -262,6 +280,379 @@ class ShopifyGraphQLTests(unittest.TestCase):
             },
         )
         self.assertEqual(definition["namespace"], "app--123456")
+
+
+class ShopifyDescriptionBackfillTests(unittest.TestCase):
+    def setUp(self):
+        self.client = shopify_sync.Shopify("example-store", "shpat_test")
+
+    def test_iter_existing_for_description_backfill_returns_flattened_catalog_records(self):
+        self.client.gql = mock.Mock(return_value={
+            "products": {
+                "edges": [
+                    {
+                        "cursor": "cursor-1",
+                        "node": {
+                            "id": "gid://shopify/Product/1",
+                            "title": "Space Marines Captain",
+                            "vendor": "Games Workshop",
+                            "productType": "Warhammer 40,000",
+                            "description": "Lead the charge.",
+                            "descriptionHtml": "<p>Lead the charge.</p>",
+                            "variants": {
+                                "edges": [
+                                    {"node": {"sku": "SKU-1"}},
+                                    {"node": {"sku": " "}},
+                                    {"node": {"sku": "SKU-2"}},
+                                ]
+                            },
+                        },
+                    }
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        })
+
+        records = list(self.client.iter_existing_for_description_backfill())
+
+        self.assertEqual(
+            records,
+            [
+                {
+                    "id": "gid://shopify/Product/1",
+                    "title": "Space Marines Captain",
+                    "vendor": "Games Workshop",
+                    "product_type": "Warhammer 40,000",
+                    "description": "Lead the charge.",
+                    "description_html": "<p>Lead the charge.</p>",
+                    "skus": ["SKU-1", "SKU-2"],
+                }
+            ],
+        )
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("descriptionHtml", query)
+        self.assertEqual(variables, {"cursor": None})
+
+    def test_update_product_description_sends_only_id_and_description_html(self):
+        self.client.gql = mock.Mock(return_value={
+            "productUpdate": {
+                "product": {"id": "gid://shopify/Product/1"},
+                "userErrors": [],
+            }
+        })
+
+        self.client.update_product_description("gid://shopify/Product/1", "<p>Fresh copy</p>")
+
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("productUpdate(product: $product)", query)
+        self.assertEqual(
+            variables,
+            {
+                "product": {
+                    "id": "gid://shopify/Product/1",
+                    "descriptionHtml": "<p>Fresh copy</p>",
+                }
+            },
+        )
+
+    def test_update_product_description_raises_user_errors(self):
+        self.client.gql = mock.Mock(return_value={
+            "productUpdate": {
+                "product": None,
+                "userErrors": [{"field": ["descriptionHtml"], "message": "Too long"}],
+            }
+        })
+
+        with self.assertRaisesRegex(RuntimeError, "productUpdate errors for gid://shopify/Product/1"):
+            self.client.update_product_description("gid://shopify/Product/1", "<p>Fresh copy</p>")
+
+
+class DescriptionBackfillHelperTests(unittest.TestCase):
+    def test_require_openrouter_config_rejects_missing_api_key(self):
+        with self.assertRaisesRegex(RuntimeError, "OPENROUTER_API_KEY must be set"):
+            shopify_sync.description_backfill.require_openrouter_config({})
+
+    def test_require_openrouter_config_uses_default_model_when_env_is_unset(self):
+        config = shopify_sync.description_backfill.require_openrouter_config(
+            {"OPENROUTER_API_KEY": "test-key"}
+        )
+
+        self.assertEqual(
+            config,
+            {
+                "api_key": "test-key",
+                "model": shopify_sync.description_backfill.OPENROUTER_DEFAULT_MODEL,
+            },
+        )
+
+    def test_current_description_backfill_policy_version_changes_when_preview_columns_change(self):
+        baseline = shopify_sync.description_backfill.current_description_backfill_policy_version(
+            preview_columns=["sku", "title"],
+            review_columns=["sku", "title", "reason"],
+        )
+
+        changed = shopify_sync.description_backfill.current_description_backfill_policy_version(
+            preview_columns=["sku", "title", "scope_reason"],
+            review_columns=["sku", "title", "reason"],
+        )
+
+        self.assertNotEqual(changed, baseline)
+
+    def test_resolve_wayland_source_accepts_unique_title_and_sku_match(self):
+        session = requests.Session()
+        search_url = "https://www.waylandgames.co.uk/search?s=SKU-1+Space+Marines+Captain"
+        guessed_url = "https://www.waylandgames.co.uk/space-marines-captain-sku-1"
+        search_html = '<html><body><a href="/space-marines-captain">Space Marines Captain</a></body></html>'
+        product_html = """
+        <html>
+          <head><title>Space Marines Captain</title></head>
+          <body>
+            <div>SKU SKU-1</div>
+            <p>Lead a veteran strike force into battle with this heavily armoured commander.</p>
+          </body>
+        </html>
+        """
+
+        scraper = FakeWaylandScraper({
+            search_url: search_html,
+            guessed_url: product_html,
+            "https://www.waylandgames.co.uk/space-marines-captain": "<html><body>listing page</body></html>",
+        })
+        with mock.patch.object(shopify_sync.description_backfill, "_get_wayland_scraper", return_value=scraper):
+            result = shopify_sync.description_backfill.resolve_wayland_source(
+                session,
+                title="Space Marines Captain",
+                sku="SKU-1",
+            )
+
+        self.assertEqual(result.status, "accepted")
+        self.assertEqual(result.reason, "unique_title_sku_match")
+        self.assertEqual(result.candidate.page_url, guessed_url)
+
+    def test_resolve_wayland_source_accepts_direct_slug_guess_when_search_results_are_weak(self):
+        session = requests.Session()
+        search_url = "https://www.waylandgames.co.uk/search?s=99120109017+ARMAGEDDON+BATTALION%3A+DEATHWATCH"
+        guessed_url = "https://www.waylandgames.co.uk/armageddon-battalion-deathwatch-99120109017"
+        search_html = '<html><body><a href="/gift-card">Gift Card</a></body></html>'
+        product_html = """
+        <html>
+          <head><title>ARMAGEDDON BATTALION: DEATHWATCH</title></head>
+          <body>
+            <div>SKU 99120109017</div>
+            <p>Assemble an elite Deathwatch strike force for Armageddon with veteran operatives and specialist wargear.</p>
+          </body>
+        </html>
+        """
+
+        scraper = FakeWaylandScraper({
+            search_url: search_html,
+            guessed_url: product_html,
+            "https://www.waylandgames.co.uk/gift-card": "<html><body>Gift Card</body></html>",
+        })
+        with mock.patch.object(shopify_sync.description_backfill, "_get_wayland_scraper", return_value=scraper):
+            result = shopify_sync.description_backfill.resolve_wayland_source(
+                session,
+                title="ARMAGEDDON BATTALION: DEATHWATCH",
+                sku="99120109017",
+            )
+
+        self.assertEqual(result.status, "accepted")
+        self.assertEqual(result.candidate.page_url, guessed_url)
+
+    def test_resolve_wayland_source_reviews_when_no_confident_match_is_found(self):
+        session = requests.Session()
+        search_url = "https://www.waylandgames.co.uk/search?s=SKU-1+Space+Marines+Captain"
+        search_html = '<html><body><a href="/gift-card">Gift Card</a></body></html>'
+        product_html = """
+        <html>
+          <head><title>Gift Card</title></head>
+          <body>
+            <p>This is a very generic product page without the requested SKU anywhere in the content.</p>
+          </body>
+        </html>
+        """
+
+        scraper = FakeWaylandScraper({
+            search_url: search_html,
+            "https://www.waylandgames.co.uk/gift-card": product_html,
+        })
+        with mock.patch.object(shopify_sync.description_backfill, "_get_wayland_scraper", return_value=scraper):
+            result = shopify_sync.description_backfill.resolve_wayland_source(
+                session,
+                title="Space Marines Captain",
+                sku="SKU-1",
+            )
+
+        self.assertEqual(result.status, "review")
+        self.assertEqual(result.reason, "no_confident_wayland_match")
+
+    def test_resolve_wayland_source_raises_when_playwright_lookup_fails(self):
+        session = requests.Session()
+        scraper = FakeWaylandScraper(error=RuntimeError("browser challenge"))
+
+        with mock.patch.object(shopify_sync.description_backfill, "_get_wayland_scraper", return_value=scraper):
+            with self.assertRaisesRegex(RuntimeError, "browser challenge"):
+                shopify_sync.description_backfill.resolve_wayland_source(
+                    session,
+                    title="Space Marines Captain",
+                    sku="SKU-1",
+                )
+
+    def test_close_wayland_scraper_closes_and_detaches_session_scraper(self):
+        session = requests.Session()
+        scraper = FakeWaylandScraper()
+        setattr(session, shopify_sync.description_backfill.WAYLAND_PLAYWRIGHT_SESSION_ATTR, scraper)
+
+        shopify_sync.description_backfill.close_wayland_scraper(session)
+
+        self.assertTrue(scraper.closed)
+        self.assertFalse(hasattr(session, shopify_sync.description_backfill.WAYLAND_PLAYWRIGHT_SESSION_ATTR))
+
+    def test_require_playwright_raises_clear_runtime_error_when_missing(self):
+        session = requests.Session()
+        with mock.patch.object(
+            shopify_sync.description_backfill,
+            "WaylandPlaywrightScraper",
+            side_effect=RuntimeError("Playwright is required for Wayland description scraping."),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Playwright is required"):
+                shopify_sync.description_backfill.resolve_wayland_source(
+                    session,
+                    title="Space Marines Captain",
+                    sku="SKU-1",
+                )
+
+    def test_challenge_page_detector_flags_cloudflare_interstitial(self):
+        html_text = """
+        <html><head><title>Just a moment...</title></head>
+        <body><script>window._cf_chl_opt = {};</script></body></html>
+        """
+
+        self.assertTrue(
+            shopify_sync.description_backfill.WaylandPlaywrightScraper._looks_like_challenge_page(html_text)
+        )
+
+    def test_phase_description_backfill_closes_wayland_scraper_session(self):
+        client = mock.Mock()
+        client.iter_existing_for_description_backfill.return_value = iter([])
+        env = {"OPENROUTER_API_KEY": "test-key"}
+        session_scraper = FakeWaylandScraper()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest_path = Path(tmp) / "description_backfill_manifest.json"
+            with mock.patch.object(shopify_sync.description_backfill, "close_wayland_scraper") as close_scraper, \
+                 mock.patch.object(shopify_sync.description_backfill, "load_manifest", return_value={}), \
+                 mock.patch.object(shopify_sync.description_backfill, "save_manifest"):
+                shopify_sync.phase_backfill_descriptions(
+                    client,
+                    env,
+                    dry=True,
+                    target_skus=[],
+                    limit=None,
+                    manifest_path=manifest_path,
+                )
+
+        close_scraper.assert_called_once()
+
+    def test_rewrite_with_openrouter_retries_transient_http_errors(self):
+        session = requests.Session()
+        session.post = mock.Mock(side_effect=[
+            FakeResponse(status_code=503, text="temporary"),
+            FakeResponse(payload={"choices": [{"message": {"content": "Fresh copy SKU: SKU-1."}}]}),
+        ])
+
+        with mock.patch("shopify_sync.description_backfill.time.sleep") as sleep:
+            rewritten = shopify_sync.description_backfill.rewrite_with_openrouter(
+                session,
+                {"OPENROUTER_API_KEY": "test-key"},
+                source_text="Lead a veteran strike force into battle.",
+                sku="SKU-1",
+            )
+
+        self.assertEqual(rewritten, "Fresh copy SKU: SKU-1.")
+        sleep.assert_called_once_with(shopify_sync.description_backfill.OPENROUTER_RETRY_DELAYS_SECONDS[0])
+        self.assertEqual(session.post.call_count, 2)
+
+    def test_evaluate_rewrite_rejects_exact_copy(self):
+        result = shopify_sync.description_backfill.evaluate_rewrite(
+            "Lead a veteran strike force into battle with this armoured commander. SKU: SKU-1.",
+            "Lead a veteran strike force into battle with this armoured commander. SKU: SKU-1.",
+            "SKU-1",
+        )
+
+        self.assertEqual(result.status, "review")
+        self.assertEqual(result.reason, "rewrite_equals_source")
+
+    def test_evaluate_rewrite_repairs_missing_sku_and_accepts_distinct_copy(self):
+        result = shopify_sync.description_backfill.evaluate_rewrite(
+            "Lead a veteran strike force into battle with this armoured commander.",
+            "Command the battlefield with a decorated hero who anchors elite assaults.",
+            "SKU-1",
+        )
+
+        self.assertEqual(result.status, "accepted")
+        self.assertTrue(result.repaired_for_sku)
+        self.assertIn("SKU: SKU-1.", result.rewritten_text)
+
+    def test_sanitize_description_html_wraps_single_safe_paragraph(self):
+        html_output = shopify_sync.description_backfill.sanitize_description_html(
+            'Commander <strong>ready</strong> & "armed"'
+        )
+
+        self.assertEqual(
+            html_output,
+            '<p>Commander &lt;strong&gt;ready&lt;/strong&gt; &amp; "armed"</p>',
+        )
+
+
+class DescriptionBackfillUtilityTests(unittest.TestCase):
+    def setUp(self):
+        self.client = shopify_sync.Shopify("example-store", "shpat_test")
+
+    def test_select_description_backfill_sku_returns_unique_product_sku(self):
+        sku, reason = shopify_sync._select_description_backfill_sku({"skus": ["SKU-1", "SKU-1", " SKU-1 "]})
+
+        self.assertEqual(sku, "SKU-1")
+        self.assertEqual(reason, "unique_product_sku")
+
+    def test_select_description_backfill_sku_rejects_multi_variant_records(self):
+        sku, reason = shopify_sync._select_description_backfill_sku({"skus": ["SKU-1", "SKU-2"]})
+
+        self.assertIsNone(sku)
+        self.assertEqual(reason, "ambiguous_multi_variant_skus")
+
+    def test_scope_description_backfill_records_applies_sku_filter_before_limit(self):
+        records = [
+            {"id": "1", "skus": ["SKU-1"]},
+            {"id": "2", "skus": ["SKU-2"]},
+            {"id": "3", "skus": ["SKU-3"]},
+        ]
+
+        scoped = shopify_sync._scope_description_backfill_records(
+            records,
+            target_skus={"SKU-2", "SKU-3"},
+            limit=1,
+        )
+
+        self.assertEqual([record["id"] for record in scoped], ["2"])
+        self.assertEqual(scoped[0]["scope_reason"], "sku_filter:limit")
+
+    def test_append_description_backfill_failure_sanitizes_formula_like_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            failures_path = Path(tmp) / "description_backfill_failures.tsv"
+            with mock.patch("shopify_sync.DESCRIPTION_BACKFILL_FAILURES_TSV", new=failures_path):
+                shopify_sync._append_description_backfill_failure(
+                    "gid://shopify/Product/1",
+                    "@SKU-1",
+                    "=Danger Title",
+                    "-boom",
+                )
+
+            failure_row = failures_path.read_text(encoding="utf-8")
+
+        self.assertIn("'@SKU-1", failure_row)
+        self.assertIn("'=Danger Title", failure_row)
+        self.assertIn("'-boom", failure_row)
 
     def test_create_product_metafield_definition_uses_documented_app_owned_admin_access(self):
         self.client.gql = mock.Mock(return_value={
@@ -1191,6 +1582,130 @@ class MainFlowTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "--generate-collections always applies live"):
                 shopify_sync.main()
 
+    def test_help_text_includes_description_backfill_flags(self):
+        help_text = shopify_sync.build_parser().format_help()
+
+        self.assertIn("--backfill-descriptions", help_text)
+        self.assertIn("--backfill-descriptions-sku", help_text)
+        self.assertIn("--backfill-descriptions-limit", help_text)
+        self.assertIn("Rewrite existing Shopify product descriptions", help_text)
+
+    def test_backfill_descriptions_runs_without_prepare_or_location_lookup(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--backfill-descriptions"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+                 "OPENROUTER_API_KEY": "test-key",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_backfill_descriptions") as phase_backfill, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_backfill.assert_called_once_with(
+            client,
+            {
+                "SHOPIFY_STORE": "example-store",
+                "SHOPIFY_TOKEN": "shpat_test",
+                "OPENROUTER_API_KEY": "test-key",
+            },
+            dry=False,
+            target_skus=[],
+            limit=None,
+        )
+        run_preflight.assert_not_called()
+        prepare_products.assert_not_called()
+
+    def test_backfill_descriptions_dry_run_bypasses_plain_preview_flow(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--backfill-descriptions", "--dry-run"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+                 "OPENROUTER_API_KEY": "test-key",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_backfill_descriptions") as phase_backfill, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_backfill.assert_called_once_with(
+            client,
+            {
+                "SHOPIFY_STORE": "example-store",
+                "SHOPIFY_TOKEN": "shpat_test",
+                "OPENROUTER_API_KEY": "test-key",
+            },
+            dry=True,
+            target_skus=[],
+            limit=None,
+        )
+        prepare_products.assert_not_called()
+        run_preflight.assert_not_called()
+
+    def test_backfill_descriptions_passes_scope_flags_to_phase(self):
+        client = mock.Mock()
+
+        with mock.patch(
+            "shopify_sync.sys.argv",
+            [
+                "shopify_sync.py",
+                "--backfill-descriptions",
+                "--backfill-descriptions-sku",
+                "SKU-1",
+                "--backfill-descriptions-sku",
+                "SKU-2",
+                "--backfill-descriptions-limit",
+                "3",
+            ],
+        ), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+                 "OPENROUTER_API_KEY": "test-key",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_backfill_descriptions") as phase_backfill:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_backfill.assert_called_once_with(
+            client,
+            {
+                "SHOPIFY_STORE": "example-store",
+                "SHOPIFY_TOKEN": "shpat_test",
+                "OPENROUTER_API_KEY": "test-key",
+            },
+            dry=False,
+            target_skus=["SKU-1", "SKU-2"],
+            limit=3,
+        )
+
+    def test_backfill_descriptions_rejects_update_combination(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--backfill-descriptions", "--update"]):
+            with self.assertRaisesRegex(RuntimeError, "--backfill-descriptions must run separately"):
+                shopify_sync.main()
+
+    def test_backfill_descriptions_scope_flag_without_job_prints_help(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--backfill-descriptions-sku", "SKU-1"]), \
+             mock.patch("shopify_sync.load_env") as load_env:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 1)
+        load_env.assert_not_called()
+
+    def test_backfill_descriptions_limit_must_be_positive(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--backfill-descriptions", "--backfill-descriptions-limit", "0"]):
+            with self.assertRaisesRegex(RuntimeError, "--backfill-descriptions-limit must be greater than zero"):
+                shopify_sync.main()
+
     def test_publish_online_store_backfill_runs_without_prepare_or_location_lookup(self):
         client = mock.Mock()
 
@@ -1359,6 +1874,14 @@ class PhaseUpdateTests(unittest.TestCase):
     def setUp(self):
         self.client = shopify_sync.Shopify("example-store", "shpat_test")
         self.location = "gid://shopify/Location/9"
+        self.failures_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.failures_dir.cleanup)
+        self.failures_patcher = mock.patch(
+            "shopify_sync.GENERAL_FAILURES_TSV",
+            new=Path(self.failures_dir.name) / "failures.tsv",
+        )
+        self.failures_patcher.start()
+        self.addCleanup(self.failures_patcher.stop)
 
     def _make_product(self, sku, price, compare, cost, qty, title="t"):
         return shopify_sync.Product(
@@ -1469,6 +1992,14 @@ class PhaseImportTests(unittest.TestCase):
     def setUp(self):
         self.client = mock.Mock()
         self.location = "gid://shopify/Location/9"
+        self.failures_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.failures_dir.cleanup)
+        self.failures_patcher = mock.patch(
+            "shopify_sync.GENERAL_FAILURES_TSV",
+            new=Path(self.failures_dir.name) / "failures.tsv",
+        )
+        self.failures_patcher.start()
+        self.addCleanup(self.failures_patcher.stop)
 
     def _make_product(self, sku="SKU-1", title="Title 1"):
         return shopify_sync.Product(title=title, sku=sku, price=9.99, source="GW")
@@ -1495,6 +2026,14 @@ class PhaseOnlineStoreBackfillTests(unittest.TestCase):
     def setUp(self):
         self.client = mock.Mock()
         self.preview_path = Path(tempfile.gettempdir()) / "_tmp_online_store_backfill_preview.csv"
+        self.failures_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.failures_dir.cleanup)
+        self.failures_patcher = mock.patch(
+            "shopify_sync.GENERAL_FAILURES_TSV",
+            new=Path(self.failures_dir.name) / "failures.tsv",
+        )
+        self.failures_patcher.start()
+        self.addCleanup(self.failures_patcher.stop)
 
     def test_dry_run_queries_candidates_without_publishing(self):
         self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"
@@ -1540,10 +2079,346 @@ class PhaseOnlineStoreBackfillTests(unittest.TestCase):
         self.assertIn("published", preview)
 
 
+class PhaseDescriptionBackfillTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+        self.env = {
+            "SHOPIFY_STORE": "example-store",
+            "SHOPIFY_TOKEN": "shpat_test",
+            "OPENROUTER_API_KEY": "test-key",
+        }
+        self.outputs_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.outputs_dir.cleanup)
+        root = Path(self.outputs_dir.name)
+        self.preview_path = root / "description_backfill_preview.csv"
+        self.review_path = root / "description_backfill_review.csv"
+        self.failures_path = root / "description_backfill_failures.tsv"
+        self.manifest_path = root / "description_backfill_manifest.json"
+        self.output_patchers = [
+            mock.patch("shopify_sync.DESCRIPTION_BACKFILL_PREVIEW_CSV", new=self.preview_path),
+            mock.patch("shopify_sync.DESCRIPTION_BACKFILL_REVIEW_CSV", new=self.review_path),
+            mock.patch("shopify_sync.DESCRIPTION_BACKFILL_FAILURES_TSV", new=self.failures_path),
+        ]
+        for patcher in self.output_patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _record(self, product_id="gid://shopify/Product/1", title="Captain", skus=None):
+        return {
+            "id": product_id,
+            "title": title,
+            "vendor": "Games Workshop",
+            "product_type": "Warhammer 40,000",
+            "description": "Old description",
+            "description_html": "<p>Old description</p>",
+            "skus": skus or ["SKU-1"],
+        }
+
+    def _candidate(self, url="https://www.waylandgames.co.uk/captain"):
+        return shopify_sync.description_backfill.WaylandCandidate(
+            page_url=url,
+            title="Captain",
+            description_text="Lead a veteran strike force into battle with this armoured commander.",
+            sku_text="SKU-1",
+            title_score=1.0,
+        )
+
+    def test_dry_run_scopes_records_before_network_work_and_writes_preview_only(self):
+        self.client.iter_existing_for_description_backfill.return_value = iter([
+            self._record(product_id="gid://shopify/Product/1", title="Captain", skus=["SKU-1"]),
+            self._record(product_id="gid://shopify/Product/2", title="Chaplain", skus=["SKU-2"]),
+        ])
+
+        with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
+             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", return_value=shopify_sync.description_backfill.SourceResolution(
+                 status="accepted",
+                 reason="unique_title_sku_match",
+                 search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
+                 candidate=self._candidate(),
+             )) as resolve_source, \
+             mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter", return_value="Fresh copy for collectors."), \
+             mock.patch("shopify_sync.description_backfill.evaluate_rewrite", return_value=shopify_sync.description_backfill.RewriteResult(
+                 status="accepted",
+                 reason="rewrite_passed",
+                 source_text="source",
+                 rewritten_text="Fresh copy for collectors. SKU: SKU-1.",
+                 similarity=0.22,
+                 repaired_for_sku=True,
+             )):
+            shopify_sync.phase_backfill_descriptions(
+                self.client,
+                self.env,
+                dry=True,
+                target_skus=["SKU-1"],
+                limit=1,
+                manifest_path=self.manifest_path,
+            )
+
+        self.client.update_product_description.assert_not_called()
+        self.assertEqual(resolve_source.call_count, 1)
+        preview = self.preview_path.read_text(encoding="utf-8")
+        review = self.review_path.read_text(encoding="utf-8")
+        self.assertIn("dry_run_candidate", preview)
+        self.assertIn("sku_filter:limit", preview)
+        self.assertIn("Captain", preview)
+        self.assertNotIn("Chaplain", preview)
+        self.assertEqual(review.strip().splitlines(), [",".join(shopify_sync.DESCRIPTION_BACKFILL_REVIEW_COLUMNS)])
+
+    def test_live_run_updates_description_for_accepted_record(self):
+        self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
+
+        with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
+             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", return_value=shopify_sync.description_backfill.SourceResolution(
+                 status="accepted",
+                 reason="unique_title_sku_match",
+                 search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
+                 candidate=self._candidate(),
+             )), \
+             mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter", return_value="Fresh copy for collectors."), \
+             mock.patch("shopify_sync.description_backfill.evaluate_rewrite", return_value=shopify_sync.description_backfill.RewriteResult(
+                 status="accepted",
+                 reason="rewrite_passed",
+                 source_text="source",
+                 rewritten_text="Fresh copy for collectors. SKU: SKU-1.",
+                 similarity=0.22,
+                 repaired_for_sku=True,
+             )):
+            shopify_sync.phase_backfill_descriptions(
+                self.client,
+                self.env,
+                dry=False,
+                target_skus=[],
+                limit=None,
+                manifest_path=self.manifest_path,
+            )
+
+        self.client.update_product_description.assert_called_once_with(
+            "gid://shopify/Product/1",
+            "<p>Fresh copy for collectors. SKU: SKU-1.</p>",
+        )
+        preview = self.preview_path.read_text(encoding="utf-8")
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertIn("updated", preview)
+        self.assertEqual(manifest["gid://shopify/Product/1"]["state"], "completed")
+        self.client.update_product_tags.assert_not_called()
+
+    def test_missing_source_routes_record_to_review_without_shopify_write(self):
+        self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
+
+        with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
+             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", return_value=shopify_sync.description_backfill.SourceResolution(
+                 status="review",
+                 reason="no_confident_wayland_match",
+                 search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
+                 candidate=None,
+             )):
+            shopify_sync.phase_backfill_descriptions(
+                self.client,
+                self.env,
+                dry=True,
+                target_skus=[],
+                limit=None,
+                manifest_path=self.manifest_path,
+            )
+
+        self.client.update_product_description.assert_not_called()
+        review = self.review_path.read_text(encoding="utf-8")
+        self.assertIn("no_confident_wayland_match", review)
+
+    def test_rewrite_rejection_routes_record_to_review_without_shopify_write(self):
+        self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
+
+        with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
+             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", return_value=shopify_sync.description_backfill.SourceResolution(
+                 status="accepted",
+                 reason="unique_title_sku_match",
+                 search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
+                 candidate=self._candidate(),
+             )), \
+             mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter", return_value="Copied text"), \
+             mock.patch("shopify_sync.description_backfill.evaluate_rewrite", return_value=shopify_sync.description_backfill.RewriteResult(
+                 status="review",
+                 reason="rewrite_similarity_too_high",
+                 source_text="source",
+                 rewritten_text="Copied text SKU: SKU-1.",
+                 similarity=0.98,
+                 repaired_for_sku=True,
+             )):
+            shopify_sync.phase_backfill_descriptions(
+                self.client,
+                self.env,
+                dry=False,
+                target_skus=[],
+                limit=None,
+                manifest_path=self.manifest_path,
+            )
+
+        self.client.update_product_description.assert_not_called()
+        review = self.review_path.read_text(encoding="utf-8")
+        self.assertIn("rewrite_similarity_too_high", review)
+
+    def test_live_run_logs_update_failure_and_continues_to_next_record(self):
+        self.client.iter_existing_for_description_backfill.return_value = iter([
+            self._record(product_id="gid://shopify/Product/1", title="Captain", skus=["SKU-1"]),
+            self._record(product_id="gid://shopify/Product/2", title="Chaplain", skus=["SKU-2"]),
+        ])
+        self.client.update_product_description.side_effect = [RuntimeError("write broke"), None]
+
+        source_resolutions = [
+            shopify_sync.description_backfill.SourceResolution(
+                status="accepted",
+                reason="unique_title_sku_match",
+                search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
+                candidate=self._candidate("https://www.waylandgames.co.uk/captain"),
+            ),
+            shopify_sync.description_backfill.SourceResolution(
+                status="accepted",
+                reason="unique_title_sku_match",
+                search_url="https://www.waylandgames.co.uk/search?s=SKU-2",
+                candidate=shopify_sync.description_backfill.WaylandCandidate(
+                    page_url="https://www.waylandgames.co.uk/chaplain",
+                    title="Chaplain",
+                    description_text="Inspire the faithful with a veteran zealot who leads from the front line.",
+                    sku_text="SKU-2",
+                    title_score=1.0,
+                ),
+            ),
+        ]
+        rewrite_results = [
+            shopify_sync.description_backfill.RewriteResult(
+                status="accepted",
+                reason="rewrite_passed",
+                source_text="source",
+                rewritten_text="Fresh copy one. SKU: SKU-1.",
+                similarity=0.21,
+                repaired_for_sku=False,
+            ),
+            shopify_sync.description_backfill.RewriteResult(
+                status="accepted",
+                reason="rewrite_passed",
+                source_text="source",
+                rewritten_text="Fresh copy two. SKU: SKU-2.",
+                similarity=0.18,
+                repaired_for_sku=False,
+            ),
+        ]
+
+        with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
+             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", side_effect=source_resolutions), \
+             mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter", side_effect=["Fresh copy one.", "Fresh copy two."]), \
+             mock.patch("shopify_sync.description_backfill.evaluate_rewrite", side_effect=rewrite_results):
+            shopify_sync.phase_backfill_descriptions(
+                self.client,
+                self.env,
+                dry=False,
+                target_skus=[],
+                limit=None,
+                manifest_path=self.manifest_path,
+            )
+
+        self.assertEqual(self.client.update_product_description.call_count, 2)
+        failures = self.failures_path.read_text(encoding="utf-8")
+        review = self.review_path.read_text(encoding="utf-8")
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertIn("description_backfill\tgid://shopify/Product/1\tSKU-1\tCaptain\twrite broke", failures)
+        self.assertIn("shopify_update_failed", review)
+        self.assertEqual(manifest["gid://shopify/Product/1"]["state"], "failed")
+        self.assertEqual(manifest["gid://shopify/Product/2"]["state"], "completed")
+
+    def test_resume_completed_manifest_entry_skips_rewrite_and_shopify_update(self):
+        policy_version = shopify_sync.description_backfill.current_description_backfill_policy_version(
+            preview_columns=shopify_sync.DESCRIPTION_BACKFILL_PREVIEW_COLUMNS,
+            review_columns=shopify_sync.DESCRIPTION_BACKFILL_REVIEW_COLUMNS,
+        )
+        self.manifest_path.write_text(json.dumps({
+            "gid://shopify/Product/1": {
+                "state": "completed",
+                "policy_version": policy_version,
+                "sku": "SKU-1",
+                "source_url": "https://www.waylandgames.co.uk/captain",
+                "source_reason": "unique_title_sku_match",
+                "rewrite_reason": "rewrite_passed",
+                "similarity": 0.22,
+                "repaired_for_sku": False,
+                "description_html": "<p>Fresh copy for collectors. SKU: SKU-1.</p>",
+            }
+        }), encoding="utf-8")
+        self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
+
+        with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
+             mock.patch("shopify_sync.description_backfill.resolve_wayland_source") as resolve_source, \
+             mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter") as rewrite:
+            shopify_sync.phase_backfill_descriptions(
+                self.client,
+                self.env,
+                dry=False,
+                target_skus=[],
+                limit=None,
+                manifest_path=self.manifest_path,
+            )
+
+        resolve_source.assert_not_called()
+        rewrite.assert_not_called()
+        self.client.update_product_description.assert_not_called()
+        preview = self.preview_path.read_text(encoding="utf-8")
+        self.assertIn("resume_completed", preview)
+
+    def test_policy_version_mismatch_recomputes_stale_manifest_entry(self):
+        self.manifest_path.write_text(json.dumps({
+            "gid://shopify/Product/1": {
+                "state": "completed",
+                "policy_version": "dbv1-stale",
+                "sku": "SKU-1",
+                "source_url": "https://www.waylandgames.co.uk/captain",
+            }
+        }), encoding="utf-8")
+        self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
+
+        with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
+             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", return_value=shopify_sync.description_backfill.SourceResolution(
+                 status="accepted",
+                 reason="unique_title_sku_match",
+                 search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
+                 candidate=self._candidate(),
+             )) as resolve_source, \
+             mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter", return_value="Fresh copy for collectors."), \
+             mock.patch("shopify_sync.description_backfill.evaluate_rewrite", return_value=shopify_sync.description_backfill.RewriteResult(
+                 status="accepted",
+                 reason="rewrite_passed",
+                 source_text="source",
+                 rewritten_text="Fresh copy for collectors. SKU: SKU-1.",
+                 similarity=0.22,
+                 repaired_for_sku=True,
+             )):
+            shopify_sync.phase_backfill_descriptions(
+                self.client,
+                self.env,
+                dry=True,
+                target_skus=[],
+                limit=None,
+                manifest_path=self.manifest_path,
+            )
+
+        self.assertEqual(resolve_source.call_count, 1)
+        preview = self.preview_path.read_text(encoding="utf-8")
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertIn("dry_run_candidate", preview)
+        self.assertNotIn("resume_completed", preview)
+        self.assertNotEqual(manifest["gid://shopify/Product/1"]["policy_version"], "dbv1-stale")
+
+
 class PhaseOnlineStoreImageVisibilityTests(unittest.TestCase):
     def setUp(self):
         self.client = mock.Mock()
         self.preview_path = Path(tempfile.gettempdir()) / "_tmp_online_store_image_visibility_preview.csv"
+        self.failures_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.failures_dir.cleanup)
+        self.failures_patcher = mock.patch(
+            "shopify_sync.GENERAL_FAILURES_TSV",
+            new=Path(self.failures_dir.name) / "failures.tsv",
+        )
+        self.failures_patcher.start()
+        self.addCleanup(self.failures_patcher.stop)
 
     def test_dry_run_reports_publish_and_unpublish_candidates_only(self):
         self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"
@@ -1647,7 +2522,7 @@ class PhaseOnlineStoreImageVisibilityTests(unittest.TestCase):
             preview_path = Path(tmp) / "preview.csv"
             failures_path = Path(tmp) / "failures.tsv"
             with mock.patch("shopify_sync.ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV", new=preview_path), \
-                 mock.patch("shopify_sync.HERE", new=Path(tmp)):
+                 mock.patch("shopify_sync.GENERAL_FAILURES_TSV", new=failures_path):
                 shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=False)
 
             preview = preview_path.read_text(encoding="utf-8")
@@ -1676,7 +2551,7 @@ class PhaseOnlineStoreImageVisibilityTests(unittest.TestCase):
             preview_path = Path(tmp) / "preview.csv"
             failures_path = Path(tmp) / "failures.tsv"
             with mock.patch("shopify_sync.ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV", new=preview_path), \
-                 mock.patch("shopify_sync.HERE", new=Path(tmp)):
+                 mock.patch("shopify_sync.GENERAL_FAILURES_TSV", new=failures_path):
                 shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=False)
 
             preview = preview_path.read_text(encoding="utf-8")
@@ -1946,6 +2821,47 @@ class PhaseGenerateCollectionsTests(unittest.TestCase):
 
 
 class PhotoAssetMatchingTests(unittest.TestCase):
+    def test_extract_asset_match_code_handles_split_leading_codes(self):
+        self.assertEqual(
+            shopify_sync._extract_asset_match_code("985-47709-Pop-Vinyl-Batman-1989-Joker-w-Hat-w-Chase"),
+            "985 47709",
+        )
+        self.assertEqual(
+            shopify_sync._extract_asset_match_code("SMX 220 My First Safari Animals"),
+            "SMX 220",
+        )
+        self.assertEqual(
+            shopify_sync._extract_asset_match_code("77771115TQ2-robo-alive-dino-fossil-find-egg"),
+            "77771115TQ2",
+        )
+
+    def test_photo_source_is_book_product_uses_expanded_vendor_allowlist(self):
+        self.assertTrue(
+            shopify_sync.photo_source_is_book_product(
+                shopify_sync.Product(title="Demon Slayer #1", sku="978-1974700523", vendor="VIZ Media LLC")
+            )
+        )
+        self.assertTrue(
+            shopify_sync.photo_source_is_book_product(
+                shopify_sync.Product(title="Dog Man", sku="978-1-338-23064-2", vendor="Scholastic Inc.")
+            )
+        )
+        self.assertTrue(
+            shopify_sync.photo_source_is_book_product(
+                shopify_sync.Product(title="Neuromancer", sku="978-1473217386", vendor="Orion Books")
+            )
+        )
+        self.assertTrue(
+            shopify_sync.photo_source_is_book_product(
+                shopify_sync.Product(title="Never Lie", sku="978-1464221361", vendor="Poisoned Pen Press")
+            )
+        )
+        self.assertFalse(
+            shopify_sync.photo_source_is_book_product(
+                shopify_sync.Product(title="Plus-Plus BIG Basic / 100 pcs", sku="5710410000000", vendor="PlusPlus")
+            )
+        )
+
     def test_resolve_photo_asset_prefers_exact_code_then_slug_fallback(self):
         exact = shopify_sync.PhotoAssetSet(
             key="dir:exact",
@@ -2024,6 +2940,27 @@ class PhotoAssetMatchingTests(unittest.TestCase):
         self.assertEqual(asset_set, better)
         self.assertEqual(reason, "")
 
+    def test_resolve_photo_asset_matches_split_code_variants(self):
+        product = shopify_sync.Product(
+            title="Pop! Vinyl - Batman 1989 - Joker w/Hat w/Chase",
+            sku="985 47709",
+            source="INV",
+        )
+        asset_set = shopify_sync.PhotoAssetSet(
+            key="dir:funko",
+            label="985-47709-Pop-Vinyl-Batman-1989-Joker-w-Hat-w-Chase",
+            product_code="985 47709",
+            title_slug="pop-vinyl-batman-1989-joker-w-hat-w-chase",
+        )
+
+        status, match_type, matched, reason = shopify_sync.resolve_photo_asset(
+            product,
+            shopify_sync.build_photo_indexes([asset_set])[0],
+            {},
+        )
+
+        self.assertEqual((status, match_type, matched, reason), ("replace", "exact", asset_set, ""))
+
     def test_discover_photo_asset_sets_skips_macosx_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2049,7 +2986,10 @@ class PhotoAssetMatchingTests(unittest.TestCase):
 
             asset_set = shopify_sync.discover_photo_asset_sets(root)[0]
 
-        self.assertEqual(asset_set.product_code, "PKM-001")
+        self.assertEqual(
+            shopify_sync._canonical_match_code(asset_set.product_code),
+            shopify_sync._canonical_match_code("PKM-001"),
+        )
         self.assertEqual(asset_set.title_slug, "pokemon-booster-box")
 
     def test_photo_asset_fingerprint_ignores_mtime_for_same_bytes(self):
@@ -2673,7 +3613,8 @@ class PhotoSourcePhaseTests(unittest.TestCase):
              mock.patch("shopify_sync.PHOTO_SOURCE_MISSING_TSV", new=root / "missing.tsv"), \
              mock.patch("shopify_sync.PHOTO_SOURCE_AMBIGUOUS_TSV", new=root / "ambiguous.tsv"), \
              mock.patch("shopify_sync.PHOTO_SOURCE_FAILURES_TSV", new=root / "failures.tsv"), \
-             mock.patch("shopify_sync.PHOTO_SOURCE_UNMAPPED_SHOPIFY_TSV", new=root / "unmapped.tsv"):
+             mock.patch("shopify_sync.PHOTO_SOURCE_UNMAPPED_SHOPIFY_TSV", new=root / "unmapped.tsv"), \
+             mock.patch("shopify_sync.GW_TRADE_FEED_INDEX_JSON", new=root / "gw_trade_feed_index.json"):
             yield
 
     def test_photo_source_web_all_live_run_stages_high_confidence_winner(self):
@@ -2727,6 +3668,48 @@ class PhotoSourcePhaseTests(unittest.TestCase):
             self.assertTrue((staged_dir / "_source.json").exists())
             self.assertIn("winner", preview)
             self.assertIn("SHOP-ONLY", unmapped)
+
+    def test_photo_source_outputs_include_product_metadata_columns(self):
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+        self.product.barcode = "5012345678901"
+        self.product.product_type = "Trading Cards"
+        self.product.tags = ["Pokemon", "Distributor: ABGee", "ASIN: B08B3XP7DZ"]
+        search_html = '<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'
+        candidate_html = """
+        <html><head>
+          <title>PKM-001 Pokemon Booster Box</title>
+          <meta property="og:image" content="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg">
+        </head><body>
+          <div>Pokemon Booster Box</div><div>SKU PKM-001</div><div>Add to cart</div>
+        </body></html>
+        """
+        self.client.session.get.side_effect = [
+            FakeResponse(text=search_html, url=f"{shopify_sync.PHOTO_SOURCE_SEARCH_URL}?q=PKM"),
+            FakeResponse(text=candidate_html, url="https://example.com/pkm-001-product"),
+            FakeResponse(content=b"winner-image", url="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg"),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache_root = root / "photo_source_cache" / "current"
+            manifest_path = root / "photo_source_manifest.json"
+            with self._patched_photo_source_outputs(root):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [self.product],
+                    dry=False,
+                    manifest_path=manifest_path,
+                    cache_root=cache_root,
+                )
+
+            with (root / "preview.csv").open(encoding="utf-8") as fh:
+                preview_rows = list(csv.DictReader(fh))
+
+        self.assertEqual(preview_rows[0]["source"], "INV")
+        self.assertEqual(preview_rows[0]["barcode"], "5012345678901")
+        self.assertEqual(preview_rows[0]["vendor"], "Pokemon")
+        self.assertEqual(preview_rows[0]["product_type"], "Trading Cards")
+        self.assertIn("Distributor: ABGee", preview_rows[0]["tags"])
 
     def test_photo_source_web_all_marks_equal_high_score_candidates_for_review(self):
         self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
@@ -2811,6 +3794,74 @@ class PhotoSourcePhaseTests(unittest.TestCase):
         self.assertEqual(manifest[self.product.sku]["policy_version"], shopify_sync.current_photo_source_policy_version())
         self.assertEqual(self.client.session.get.call_count, 3)
 
+    def test_photo_source_policy_version_changes_when_book_vendor_policy_changes(self):
+        baseline = shopify_sync.current_photo_source_policy_version()
+
+        with mock.patch.object(
+            shopify_sync,
+            "BOOK_PHOTO_SOURCE_VENDORS",
+            set(shopify_sync.BOOK_PHOTO_SOURCE_VENDORS) | {"new vendor imprint"},
+        ):
+            changed = shopify_sync.current_photo_source_policy_version()
+
+        self.assertNotEqual(changed, baseline)
+
+    def test_photo_source_policy_version_changes_when_output_schema_changes(self):
+        baseline = shopify_sync.current_photo_source_policy_version()
+
+        with mock.patch.object(
+            shopify_sync,
+            "PHOTO_SOURCE_PREVIEW_COLUMNS",
+            list(shopify_sync.PHOTO_SOURCE_PREVIEW_COLUMNS) + ["debug_column"],
+        ):
+            changed = shopify_sync.current_photo_source_policy_version()
+
+        self.assertNotEqual(changed, baseline)
+
+    def test_photo_source_web_all_dry_run_recomputes_preview_without_mutating_stale_manifest(self):
+        self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
+        search_html = '<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'
+        candidate_html = """
+        <html><head>
+          <title>PKM-001 Pokemon Booster Box</title>
+          <meta property="og:image" content="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg">
+        </head><body>
+          <div>Pokemon Booster Box</div><div>SKU PKM-001</div><div>Add to cart</div>
+        </body></html>
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps({
+                self.product.sku: {
+                    "state": "missing",
+                    "query": shopify_sync.build_photo_source_query(self.product),
+                    "policy_version": "psv1-stale",
+                    "reason": "old missing result",
+                }
+            }), encoding="utf-8")
+            before = manifest_path.read_text(encoding="utf-8")
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.fetch_url_with_retries", side_effect=[
+                     FakeResponse(text=search_html, url="https://search"),
+                     FakeResponse(text=candidate_html, url="https://example.com/pkm-001-product"),
+                 ]):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [self.product],
+                    dry=True,
+                    manifest_path=manifest_path,
+                    cache_root=root / "cache" / "current",
+                )
+
+            after = manifest_path.read_text(encoding="utf-8")
+            with (root / "preview.csv").open(encoding="utf-8") as fh:
+                preview_rows = list(csv.DictReader(fh))
+
+        self.assertEqual(preview_rows[0]["status"], "winner")
+        self.assertEqual(before, after)
+
     def test_photo_source_web_all_skips_products_with_existing_media(self):
         existing = dict(self.existing)
         existing["media_ids"] = ["gid://shopify/MediaImage/1"]
@@ -2869,10 +3920,11 @@ class PhotoSourcePhaseTests(unittest.TestCase):
                     cache_root=root / "cache" / "current",
                 )
 
-            preview_rows = (root / "preview.csv").read_text(encoding="utf-8").splitlines()
+            with (root / "preview.csv").open(encoding="utf-8") as fh:
+                preview_rows = list(csv.DictReader(fh))
 
-        self.assertEqual(preview_rows[1].split(",")[0], inv_product.sku)
-        self.assertEqual(preview_rows[2].split(",")[0], gw_product.sku)
+        self.assertEqual(preview_rows[0]["sku"], inv_product.sku)
+        self.assertEqual(preview_rows[1]["sku"], gw_product.sku)
 
     def test_photo_source_web_all_preserves_existing_session_auth_headers(self):
         session = requests.Session()
@@ -2936,6 +3988,49 @@ class PhotoSourcePhaseTests(unittest.TestCase):
 
         self.assertEqual(self.client.session.get.call_count, 3)
 
+    def test_photo_source_web_all_treats_viz_media_llc_as_book_vendor(self):
+        book = shopify_sync.Product(
+            title="Demon Slayer #1",
+            sku="9781974700523",
+            barcode="9781974700523",
+            vendor="VIZ Media LLC",
+            source="INV",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = book.sku
+        existing["title"] = book.title
+        existing["vendor"] = book.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+        self.client.session.get.side_effect = [
+            FakeResponse(content=b"cover-bytes", headers={"Content-Type": "image/jpeg"}),
+            FakeResponse(payload={"items": []}),
+            FakeResponse(content=b"cover-bytes", headers={"Content-Type": "image/jpeg"}),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache_root = root / "photo_source_cache" / "current"
+            manifest_path = root / "photo_source_manifest.json"
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.fetch_search_page_photo_source_candidates") as search_mock:
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [book],
+                    dry=False,
+                    manifest_path=manifest_path,
+                    cache_root=cache_root,
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            staged_dir = cache_root / "9781974700523-demon-slayer-1"
+            self.assertIn("openlibrary", preview)
+            self.assertEqual(manifest[book.sku]["state"], "completed")
+            self.assertTrue(staged_dir.exists())
+
+        search_mock.assert_not_called()
+        self.assertEqual(self.client.session.get.call_count, 3)
+
     def test_photo_source_web_all_stages_supplier_folder_matches_without_network(self):
         self.client.iter_existing_for_photo_sync.return_value = iter([self.existing])
 
@@ -2963,6 +4058,48 @@ class PhotoSourcePhaseTests(unittest.TestCase):
             staged_dir = cache_root / "PKM-001-pokemon-booster-box"
             self.assertIn("supplier_local", preview)
             self.assertEqual(manifest[self.product.sku]["state"], "completed")
+            self.assertTrue((staged_dir / "01.jpg").exists())
+
+        self.client.session.get.assert_not_called()
+
+    def test_photo_source_web_all_stages_split_code_supplier_folder_without_network(self):
+        product = shopify_sync.Product(
+            title="Pop! Vinyl - Batman 1989 - Joker w/Hat w/Chase",
+            sku="985 47709",
+            vendor="FUNKO",
+            product_type="FUNKO",
+            source="INV",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = product.sku
+        existing["title"] = product.title
+        existing["vendor"] = product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            supplier_root = root / "supplier"
+            pack = supplier_root / "985-47709-Pop-Vinyl-Batman-1989-Joker-w-Hat-w-Chase"
+            pack.mkdir(parents=True)
+            (pack / "01.jpg").write_bytes(b"supplier-image")
+            cache_root = root / "photo_source_cache" / "current"
+            manifest_path = root / "photo_source_manifest.json"
+
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.load_env", return_value={shopify_sync.PHOTO_SOURCE_SUPPLIER_ROOTS_ENV: str(supplier_root)}):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [product],
+                    dry=False,
+                    manifest_path=manifest_path,
+                    cache_root=cache_root,
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            staged_dir = cache_root / shopify_sync.stable_photo_source_dirname(product)
+            self.assertIn("supplier_local", preview)
+            self.assertEqual(manifest[product.sku]["state"], "completed")
             self.assertTrue((staged_dir / "01.jpg").exists())
 
         self.client.session.get.assert_not_called()
@@ -3228,6 +4365,87 @@ class PhotoSourcePhaseTests(unittest.TestCase):
                 self.assertIn("9918995134406", by_code_again)
                 self.assertEqual(fetch_binary.call_count, 1)
 
+    def test_gw_trade_feed_index_cache_round_trip(self):
+        packs = [
+            gw_cache_refresh.ResourcePack(
+                label="BSF-21-03-99189950267-MEPHISTON RED 12ML ROW__1.jpg",
+                images=[gw_cache_refresh.ImageTarget(url="https://trade.games-workshop.com/resources/mephiston.jpg", filename="mephiston.jpg")],
+                archives=[],
+                source_label=gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL,
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "gw_trade_feed_index.json"
+            shopify_sync.save_gw_trade_feed_index_cache(packs, cache_path)
+            loaded = shopify_sync.load_gw_trade_feed_index_cache(cache_path)
+
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0].label, packs[0].label)
+        self.assertEqual(loaded[0].images[0].url, packs[0].images[0].url)
+        self.assertEqual(loaded[0].source_label, gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL)
+
+    def test_load_or_discover_gw_trade_feed_packs_reuses_cache(self):
+        packs = [
+            gw_cache_refresh.ResourcePack(
+                label="BSF-21-03-99189950267-MEPHISTON RED 12ML ROW__1.jpg",
+                images=[gw_cache_refresh.ImageTarget(url="https://trade.games-workshop.com/resources/mephiston.jpg", filename="mephiston.jpg")],
+                archives=[],
+                source_label=gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL,
+            )
+        ]
+        session = requests.Session()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "gw_trade_feed_index.json"
+            shopify_sync.save_gw_trade_feed_index_cache(packs, cache_path)
+            with mock.patch("shopify_sync.gw_cache_refresh.discover_trade_feed_packs") as discover:
+                loaded, stats = shopify_sync.load_or_discover_gw_trade_feed_packs(
+                    session,
+                    logger=lambda _msg: None,
+                    cache_path=cache_path,
+                )
+
+        discover.assert_not_called()
+        self.assertEqual(len(loaded), 1)
+        self.assertTrue(stats.get("cached"))
+
+    def test_load_or_discover_gw_trade_feed_packs_saves_checkpoints(self):
+        packs = [
+            gw_cache_refresh.ResourcePack(
+                label="BSF-21-03-99189950267-MEPHISTON RED 12ML ROW__1.jpg",
+                images=[gw_cache_refresh.ImageTarget(url="https://trade.games-workshop.com/resources/mephiston.jpg", filename="mephiston.jpg")],
+                archives=[],
+                source_label=gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL,
+            )
+        ]
+        session = requests.Session()
+
+        def fake_discover_trade_feed_packs(_session, *, logger=None, on_progress=None, **_kwargs):
+            if on_progress is not None:
+                on_progress(
+                    packs,
+                    {
+                        "request_count": 10,
+                        "image_count": 1,
+                    },
+                )
+            return packs, "GW Trade Feed", {"request_count": 11, "image_count": 1}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "gw_trade_feed_index.json"
+            with mock.patch("shopify_sync.gw_cache_refresh.discover_trade_feed_packs", side_effect=fake_discover_trade_feed_packs), \
+                 mock.patch("shopify_sync.save_gw_trade_feed_index_cache", wraps=shopify_sync.save_gw_trade_feed_index_cache) as save:
+                loaded, stats = shopify_sync.load_or_discover_gw_trade_feed_packs(
+                    session,
+                    logger=lambda _msg: None,
+                    cache_path=cache_path,
+                )
+
+        self.assertEqual(len(loaded), 1)
+        self.assertFalse(stats.get("cached"))
+        self.assertGreaterEqual(save.call_count, 2)
+
     def test_resolve_gw_official_resource_pack_uses_trade_feed_prefix_code(self):
         product = shopify_sync.Product(
             title="B: MEPHISTON RED 12ML ROW X6",
@@ -3296,6 +4514,49 @@ class PhotoSourcePhaseTests(unittest.TestCase):
         self.assertIn("winner", preview)
         self.assertIn("gw_official", preview)
         self.assertIn("trade_feed_prefix", preview)
+
+    def test_photo_source_web_all_rejects_trade_feed_prefix_without_title_agreement(self):
+        gw_product = shopify_sync.Product(
+            title="SPACE MARINES STORMRAVEN GUNSHIP",
+            sku="99120101339",
+            vendor="Games Workshop",
+            source="GW",
+        )
+        existing = dict(self.existing)
+        existing["sku"] = gw_product.sku
+        existing["title"] = gw_product.title
+        existing["vendor"] = gw_product.vendor
+        self.client.iter_existing_for_photo_sync.return_value = iter([existing])
+
+        trade_feed_packs = [
+            gw_cache_refresh.ResourcePack(
+                label="TR-41-25-9912010133-Combat Patrol Blood Angels.jpg",
+                images=[gw_cache_refresh.ImageTarget(url="https://trade.games-workshop.com/resources/blood-angels.jpg", filename="blood-angels.jpg")],
+                archives=[],
+                source_label=gw_cache_refresh.GW_TRADE_FEED_SOURCE_LABEL,
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gw_cache_root = root / "gw_photo_cache" / "current"
+            gw_cache_root.mkdir(parents=True)
+            with self._patched_photo_source_outputs(root), \
+                 mock.patch("shopify_sync.GW_PHOTO_CACHE_CURRENT", new=gw_cache_root), \
+                 mock.patch("shopify_sync.gw_cache_refresh.discover_resource_packs", return_value=([], "Product Images")), \
+                 mock.patch("shopify_sync.load_or_discover_gw_trade_feed_packs", return_value=(trade_feed_packs, {"cached": True, "pack_count": 1})):
+                shopify_sync.phase_photo_source_web_all(
+                    self.client,
+                    [gw_product],
+                    dry=True,
+                    manifest_path=root / "manifest.json",
+                    cache_root=root / "cache" / "current",
+                )
+
+            preview = (root / "preview.csv").read_text(encoding="utf-8")
+
+        self.assertIn("missing", preview)
+        self.assertIn("title agreement was too weak", preview)
 
     def test_choose_best_gw_official_pack_prefers_non_box_variant(self):
         product = shopify_sync.Product(
@@ -4041,6 +5302,80 @@ class RecoverZeroMediaImagesTests(unittest.TestCase):
         called_kwargs = phase_photo_source_web_all.call_args.kwargs
         self.assertEqual(called_kwargs["cache_root"].name, "winners")
         self.assertIn("recovery_runs", str(called_kwargs["cache_root"]))
+        phase_photo_sync.assert_not_called()
+
+    def test_recover_zero_media_images_dry_run_recomputes_preview_without_mutating_stale_manifest(self):
+        product = shopify_sync.Product(
+            title="Pokemon Booster Box",
+            sku="PKM-001",
+            vendor="Pokemon",
+            source="INV",
+        )
+        existing = {
+            "sku": product.sku,
+            "title": product.title,
+            "vendor": product.vendor,
+            "media_ids": [],
+        }
+
+        class Client:
+            def __init__(self):
+                import requests
+                self.session = requests.Session()
+
+            def iter_existing_for_photo_sync(self):
+                yield existing
+
+        search_html = '<html><body><a href="https://example.com/pkm-001-product">Pokemon Booster Box</a></body></html>'
+        candidate_html = """
+        <html><head>
+          <title>PKM-001 Pokemon Booster Box</title>
+          <meta property="og:image" content="https://cdn.example.com/pokemon-booster-box-pkm-001-front.jpg">
+        </head><body>
+          <div>Pokemon Booster Box</div><div>SKU PKM-001</div><div>Add to cart</div>
+        </body></html>
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            preview = root / "photo_source_preview.csv"
+            review = root / "photo_source_review.csv"
+            manifest_path = root / "photo_source_manifest.json"
+            cache_root = root / "photo_source_cache"
+            manifest_path.write_text(json.dumps({
+                product.sku: {
+                    "state": "missing",
+                    "query": shopify_sync.build_photo_source_query(product),
+                    "policy_version": "psv1-stale",
+                    "reason": "old missing result",
+                }
+            }), encoding="utf-8")
+            before = manifest_path.read_text(encoding="utf-8")
+            client = Client()
+            with mock.patch("shopify_sync.PHOTO_SOURCE_PREVIEW_CSV", new=preview), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_REVIEW_CSV", new=review), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_MISSING_TSV", new=root / "photo_source_missing.tsv"), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_AMBIGUOUS_TSV", new=root / "photo_source_ambiguous.tsv"), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_FAILURES_TSV", new=root / "photo_source_failures.tsv"), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_UNMAPPED_SHOPIFY_TSV", new=root / "photo_source_unmapped.tsv"), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_CACHE_ROOT", new=cache_root), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_RECOVERY_RUNS_ROOT", new=cache_root / "recovery_runs"), \
+                 mock.patch("shopify_sync.PHOTO_SOURCE_MANIFEST_JSON", new=manifest_path), \
+                 mock.patch("shopify_sync.fetch_url_with_retries", side_effect=[
+                     FakeResponse(text=search_html, url="https://search"),
+                     FakeResponse(text=candidate_html, url="https://example.com/pkm-001-product"),
+                 ]), \
+                 mock.patch("shopify_sync.phase_photo_sync") as phase_photo_sync:
+                shopify_sync.recover_zero_media_images(client, [product], dry=True)
+
+            after = manifest_path.read_text(encoding="utf-8")
+            with preview.open(encoding="utf-8") as fh:
+                preview_rows = list(csv.DictReader(fh))
+            winner_roots = list((cache_root / "recovery_runs").glob("*/winners"))
+
+        self.assertEqual(preview_rows[0]["status"], "winner")
+        self.assertEqual(before, after)
+        self.assertEqual(len(winner_roots), 1)
         phase_photo_sync.assert_not_called()
 
     def test_recover_zero_media_images_live_applies_only_current_run_winner_root(self):

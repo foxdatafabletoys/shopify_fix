@@ -111,6 +111,7 @@ from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
 import pandas as pd
 import requests
 
+import description_backfill
 import gw_cache_refresh
 from gw_cache_refresh import refresh_gw_cache
 
@@ -126,6 +127,7 @@ PHOTO_SYNC_MANIFEST_JSON = HERE / "photo_sync_manifest.json"
 PHOTO_SYNC_MISSING_TSV = HERE / "photo_sync_missing.tsv"
 PHOTO_SYNC_AMBIGUOUS_TSV = HERE / "photo_sync_ambiguous.tsv"
 PHOTO_SYNC_FAILURES_TSV = HERE / "photo_sync_failures.tsv"
+GENERAL_FAILURES_TSV = HERE / "failures.tsv"
 PHOTO_SOURCE_PREVIEW_CSV = HERE / "photo_source_preview.csv"
 PHOTO_SOURCE_REVIEW_CSV = HERE / "photo_source_review.csv"
 PHOTO_SOURCE_MANIFEST_JSON = HERE / "photo_source_manifest.json"
@@ -138,12 +140,17 @@ COLLECTION_GENERATION_UNMATCHED_CSV = HERE / "collection_generation_unmatched.cs
 COLLECTION_IMAGE_PREVIEW_CSV = HERE / "collection_image_preview.csv"
 ONLINE_STORE_BACKFILL_PREVIEW_CSV = HERE / "online_store_backfill_preview.csv"
 ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV = HERE / "online_store_image_visibility_preview.csv"
+DESCRIPTION_BACKFILL_PREVIEW_CSV = HERE / "description_backfill_preview.csv"
+DESCRIPTION_BACKFILL_REVIEW_CSV = HERE / "description_backfill_review.csv"
+DESCRIPTION_BACKFILL_FAILURES_TSV = HERE / "description_backfill_failures.tsv"
+DESCRIPTION_BACKFILL_MANIFEST_JSON = HERE / "description_backfill_manifest.json"
 GW_RESOURCES_URL = "https://trade.games-workshop.com/resources/"
 GW_PHOTO_CACHE_ROOT = HERE / "gw_photo_cache"
 GW_PHOTO_CACHE_CURRENT = GW_PHOTO_CACHE_ROOT / "current"
 GW_PHOTO_CACHE_STAGING = GW_PHOTO_CACHE_ROOT / "_staging"
 GW_PHOTO_CACHE_STATUS_JSON = HERE / "gw_photo_cache_status.json"
 GW_OFFICIAL_ARCHIVE_INDEX_JSON = HERE / "gw_official_archive_index.json"
+GW_TRADE_FEED_INDEX_JSON = HERE / "gw_trade_feed_index.json"
 PHOTO_SOURCE_CACHE_ROOT = HERE / "photo_source_cache"
 PHOTO_SOURCE_CACHE_CURRENT = PHOTO_SOURCE_CACHE_ROOT / "current"
 PHOTO_SOURCE_CACHE_STAGING = PHOTO_SOURCE_CACHE_ROOT / "_staging"
@@ -211,6 +218,31 @@ PHOTO_SOURCE_PRODUCT_PAGE_MARKERS = (
     "upc",
     "sku",
 )
+DESCRIPTION_BACKFILL_PREVIEW_COLUMNS = [
+    "product_id",
+    "title",
+    "scope_reason",
+    "sku",
+    "status",
+    "source_site",
+    "source_url",
+    "source_reason",
+    "rewrite_reason",
+    "similarity",
+    "repaired_for_sku",
+    "description_html",
+]
+DESCRIPTION_BACKFILL_REVIEW_COLUMNS = [
+    "product_id",
+    "title",
+    "scope_reason",
+    "sku",
+    "status",
+    "source_site",
+    "source_url",
+    "reason",
+    "notes",
+]
 PHOTO_SOURCE_GENERIC_PAGE_MARKERS = (
     "accessories",
     "category",
@@ -221,14 +253,26 @@ PHOTO_SOURCE_GENERIC_PAGE_MARKERS = (
     "search",
 )
 BOOK_PHOTO_SOURCE_VENDORS = {
+    "bluebird",
+    "fsc",
+    "macmillan",
+    "orion books",
     "penguin",
     "penguin books",
+    "pan macmillan",
+    "piatkus",
+    "poisoned pen press",
     "scholastic",
+    "scholastic inc.",
+    "scholistic inc.",
     "simon & schuster",
     "scribneruk",
     "viz media",
+    "viz media llc",
     "walker books",
 }
+PHOTO_SOURCE_MATCHER_POLICY_VERSION = 3
+PHOTO_SOURCE_OUTPUT_SCHEMA_VERSION = 2
 AMAZON_PHOTO_SOURCE_URLS = (
     "https://www.amazon.co.uk/dp/{asin}",
     "https://www.amazon.com/dp/{asin}",
@@ -687,7 +731,14 @@ def load_env() -> dict[str, str]:
                 continue
             k, v = line.split("=", 1)
             env[k.strip()] = v.strip().strip('"').strip("'")
-    for k in ("SHOPIFY_STORE", "SHOPIFY_TOKEN", "SHOPIFY_LOCATION", PHOTO_SOURCE_SUPPLIER_ROOTS_ENV):
+    for k in (
+        "SHOPIFY_STORE",
+        "SHOPIFY_TOKEN",
+        "SHOPIFY_LOCATION",
+        PHOTO_SOURCE_SUPPLIER_ROOTS_ENV,
+        description_backfill.OPENROUTER_API_KEY_ENV,
+        description_backfill.OPENROUTER_MODEL_ENV,
+    ):
         if os.environ.get(k):
             env[k] = os.environ[k]
     return env
@@ -934,19 +985,62 @@ def _extract_product_code(value: str) -> str:
 
 def _extract_asset_match_code(value: str) -> str:
     base = Path(value or "").stem.strip()
+    parts = [part for part in re.split(r"[-_\s]+", base) if part]
+    if len(parts) > 1 and re.search(r"[A-Za-z]", parts[0]) and re.search(r"\d", parts[0]):
+        return parts[0]
     numeric_code = _extract_product_code(base)
     if numeric_code:
         return numeric_code
-    parts = [part for part in re.split(r"[-_\s]+", base) if part]
+    if not parts:
+        return ""
     prefix: list[str] = []
-    for index, part in enumerate(parts[:-1], start=1):
-        prefix.append(part)
-        if re.search(r"\d", part):
-            candidate = "-".join(prefix)
-            tail = "-".join(parts[index:])
-            if tail:
-                return candidate
+    seen_digit = False
+    for index, part in enumerate(parts):
+        has_digit = bool(re.search(r"\d", part))
+        if not prefix:
+            if has_digit:
+                prefix.append(part)
+                seen_digit = True
+                continue
+            if part.isalpha() and index + 1 < len(parts) and re.search(r"\d", parts[index + 1]):
+                prefix.append(part)
+                continue
+            break
+        if has_digit:
+            prefix.append(part)
+            seen_digit = True
+            continue
+        break
+    if seen_digit and len(prefix) < len(parts):
+        return " ".join(prefix)
     return ""
+
+
+def _canonical_match_code(value: str) -> str:
+    return "".join(re.findall(r"[A-Za-z0-9]+", value or "")).upper()
+
+
+def _add_index_code_variant(index: dict[str, list[Any]], code: str, item: Any) -> None:
+    raw = (code or "").strip()
+    if not raw:
+        return
+    for key in [raw, _canonical_match_code(raw)]:
+        if not key:
+            continue
+        bucket = index.setdefault(key, [])
+        if item not in bucket:
+            bucket.append(item)
+
+
+def _lookup_code_matches(index: dict[str, list[Any]], code: str) -> list[Any]:
+    matches: list[Any] = []
+    for key in [(code or "").strip(), _canonical_match_code(code)]:
+        if not key:
+            continue
+        for item in index.get(key, []):
+            if item not in matches:
+                matches.append(item)
+    return matches
 
 
 def _extract_title_slug(value: str) -> str:
@@ -957,8 +1051,13 @@ def _extract_title_slug(value: str) -> str:
         base = tail.lstrip(" -_")
     else:
         asset_code = _extract_asset_match_code(base)
-        if asset_code and base.lower().startswith(asset_code.lower()):
-            base = base[len(asset_code):].lstrip(" -_")
+        if asset_code:
+            code_parts = [part.lower() for part in re.findall(r"[A-Za-z0-9]+", asset_code)]
+            base_parts = [part for part in re.split(r"[-_\s]+", base) if part]
+            if code_parts and len(base_parts) >= len(code_parts):
+                prefix_parts = [part.lower() for part in base_parts[: len(code_parts)]]
+                if prefix_parts == code_parts:
+                    base = "-".join(base_parts[len(code_parts):])
     return _normalize_slug(base)
 
 
@@ -1298,7 +1397,7 @@ def build_photo_indexes(
     by_slug: dict[str, list[PhotoAssetSet]] = {}
     for asset_set in asset_sets:
         if asset_set.product_code:
-            by_code.setdefault(asset_set.product_code, []).append(asset_set)
+            _add_index_code_variant(by_code, asset_set.product_code, asset_set)
         if asset_set.title_slug:
             by_slug.setdefault(asset_set.title_slug, []).append(asset_set)
     return by_code, by_slug
@@ -1313,7 +1412,7 @@ def build_shopify_file_indexes(
         if file.file_status and file.file_status != "READY":
             continue
         if file.product_code:
-            by_code.setdefault(file.product_code, []).append(file)
+            _add_index_code_variant(by_code, file.product_code, file)
         if file.title_slug:
             by_slug.setdefault(file.title_slug, []).append(file)
     for bucket in by_code.values():
@@ -1618,6 +1717,11 @@ def current_photo_source_policy_version() -> str:
         "winner_threshold": PHOTO_SOURCE_WINNER_THRESHOLD,
         "review_threshold": PHOTO_SOURCE_AMBIGUOUS_THRESHOLD,
         "margin_threshold": PHOTO_SOURCE_MARGIN_THRESHOLD,
+        "book_vendors": sorted(BOOK_PHOTO_SOURCE_VENDORS),
+        "matcher_policy_version": PHOTO_SOURCE_MATCHER_POLICY_VERSION,
+        "output_schema_version": PHOTO_SOURCE_OUTPUT_SCHEMA_VERSION,
+        "preview_columns": PHOTO_SOURCE_PREVIEW_COLUMNS,
+        "review_columns": PHOTO_SOURCE_REVIEW_COLUMNS,
         "providers": [
             "supplier_local",
             "gw_cache",
@@ -1635,7 +1739,7 @@ def current_photo_source_policy_version() -> str:
         "outcomes": ["winner", "review", "missing", "failed"],
     }
     digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:12]
-    return f"psv1-{digest}"
+    return f"psv2-{digest}"
 
 
 def is_supplier_or_structured_candidate(candidate: PhotoSourceCandidate) -> bool:
@@ -1917,8 +2021,13 @@ def build_photo_source_preview_row(
     staged_dir: str = "",
 ) -> dict[str, Any]:
     return {
+        "source": product.source,
         "sku": product.sku,
         "title": product.title,
+        "barcode": product.barcode,
+        "vendor": product.vendor,
+        "product_type": product.product_type,
+        "tags": ", ".join(product.tags),
         "status": status,
         "query": query,
         "top_score": top_score,
@@ -1931,8 +2040,13 @@ def build_photo_source_preview_row(
 
 
 PHOTO_SOURCE_PREVIEW_COLUMNS = [
+    "source",
     "sku",
     "title",
+    "barcode",
+    "vendor",
+    "product_type",
+    "tags",
     "status",
     "query",
     "top_score",
@@ -1944,8 +2058,13 @@ PHOTO_SOURCE_PREVIEW_COLUMNS = [
 ]
 
 PHOTO_SOURCE_REVIEW_COLUMNS = [
+    "source",
     "sku",
     "title",
+    "barcode",
+    "vendor",
+    "product_type",
+    "tags",
     "outcome",
     "top_score",
     "runner_up_score",
@@ -1975,8 +2094,13 @@ def build_photo_source_review_row(
         margin_value = top.score - (runner_up.score if runner_up else 0)
         margin = str(max(0, margin_value))
     return {
+        "source": product.source,
         "sku": product.sku,
         "title": product.title,
+        "barcode": product.barcode,
+        "vendor": product.vendor,
+        "product_type": product.product_type,
+        "tags": ", ".join(product.tags),
         "outcome": "review",
         "top_score": str(top.score) if top is not None else "",
         "runner_up_score": str(runner_up.score) if runner_up is not None else "",
@@ -2119,7 +2243,7 @@ def build_gw_official_resource_pack_indexes(
             source_label=pack.source_label,
         )
         if ref.product_code:
-            by_code.setdefault(ref.product_code, []).append(ref)
+            _add_index_code_variant(by_code, ref.product_code, ref)
         if ref.title_slug:
             by_slug.setdefault(ref.title_slug, []).append(ref)
     if session is None:
@@ -2166,7 +2290,7 @@ def build_gw_official_resource_pack_indexes(
                     source_label=pack.source_label,
                 )
                 if ref.product_code:
-                    by_code.setdefault(ref.product_code, []).append(ref)
+                    _add_index_code_variant(by_code, ref.product_code, ref)
                 if ref.title_slug:
                     by_slug.setdefault(ref.title_slug, []).append(ref)
     return by_code, by_slug
@@ -2210,6 +2334,120 @@ def save_gw_official_archive_index_cache(
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def load_gw_trade_feed_index_cache(
+    path: Path | None = None,
+) -> list[gw_cache_refresh.ResourcePack]:
+    path = path or GW_TRADE_FEED_INDEX_JSON
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    packs_payload = payload.get("packs") if isinstance(payload, dict) else None
+    if not isinstance(packs_payload, list):
+        return []
+    packs: list[gw_cache_refresh.ResourcePack] = []
+    for item in packs_payload:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("label")
+        images_payload = item.get("images")
+        archives_payload = item.get("archives")
+        source_label = item.get("source_label") or ""
+        if not isinstance(label, str) or not isinstance(images_payload, list) or not isinstance(archives_payload, list):
+            continue
+        images: list[gw_cache_refresh.ImageTarget] = []
+        for image_item in images_payload:
+            if not isinstance(image_item, dict):
+                continue
+            url = image_item.get("url")
+            filename = image_item.get("filename")
+            if isinstance(url, str) and isinstance(filename, str):
+                images.append(gw_cache_refresh.ImageTarget(url=url, filename=filename))
+        archives = [url for url in archives_payload if isinstance(url, str)]
+        packs.append(
+            gw_cache_refresh.ResourcePack(
+                label=label,
+                images=images,
+                archives=archives,
+                source_label=source_label if isinstance(source_label, str) else "",
+            )
+        )
+    return packs
+
+
+def save_gw_trade_feed_index_cache(
+    packs: list[gw_cache_refresh.ResourcePack],
+    path: Path | None = None,
+) -> None:
+    path = path or GW_TRADE_FEED_INDEX_JSON
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "packs": [
+            {
+                "label": pack.label,
+                "images": [{"url": image.url, "filename": image.filename} for image in pack.images],
+                "archives": list(pack.archives),
+                "source_label": pack.source_label,
+            }
+            for pack in packs
+        ]
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def load_or_discover_gw_trade_feed_packs(
+    session: requests.Session,
+    *,
+    logger: Callable[[str], None],
+    cache_path: Path | None = None,
+) -> tuple[list[gw_cache_refresh.ResourcePack], dict[str, object]]:
+    cache_path = cache_path or GW_TRADE_FEED_INDEX_JSON
+    cached_packs = load_gw_trade_feed_index_cache(cache_path)
+    if cached_packs:
+        stats: dict[str, object] = {
+            "cached": True,
+            "pack_count": len(cached_packs),
+            "path": str(cache_path),
+        }
+        logger(
+            "PHOTO SOURCE GW official trade feed cache reused: "
+            f"{len(cached_packs)} images from {cache_path.name}"
+        )
+        return cached_packs, stats
+
+    last_saved_request_count = -1
+
+    def _save_progress(
+        packs: list[gw_cache_refresh.ResourcePack],
+        stats: dict[str, object],
+    ) -> None:
+        nonlocal last_saved_request_count
+        request_count = int(stats.get("request_count") or 0)
+        if request_count == last_saved_request_count:
+            return
+        if request_count > 0 and (request_count % 10) == 0:
+            save_gw_trade_feed_index_cache(packs, cache_path)
+            last_saved_request_count = request_count
+            logger(
+                "PHOTO SOURCE GW official trade feed cache checkpoint: "
+                f"{len(packs)} images after {request_count} requests"
+            )
+
+    trade_feed_packs, _, trade_feed_stats = gw_cache_refresh.discover_trade_feed_packs(
+        session,
+        logger=logger,
+        on_progress=_save_progress,
+    )
+    save_gw_trade_feed_index_cache(trade_feed_packs, cache_path)
+    logger(
+        "PHOTO SOURCE GW official trade feed cache saved: "
+        f"{len(trade_feed_packs)} images to {cache_path.name}"
+    )
+    return trade_feed_packs, trade_feed_stats
+
+
 def warm_gw_official_archive_index(
     *,
     resources_url: str,
@@ -2221,6 +2459,10 @@ def warm_gw_official_archive_index(
     session = session or requests.Session()
     packs, source_marker = gw_cache_refresh.discover_resource_packs(resources_url, session)
     if dry:
+        trade_feed_page_counts: dict[int, int] = {}
+        for group in gw_cache_refresh.GW_TRADE_FEED_IMAGE_GROUPS:
+            payload = gw_cache_refresh.fetch_trade_feed_page(session, group=group, page=1)
+            trade_feed_page_counts[group] = int(payload.get("page_count") or 0)
         by_code, _ = build_gw_official_resource_pack_indexes(packs, None)
         archive_count = sum(
             1
@@ -2231,7 +2473,8 @@ def warm_gw_official_archive_index(
         logger(
             "GW archive index dry-run: discovered "
             f"{len(packs)} packs / {archive_count} extractable archives / "
-            f"{len(by_code)} code-labelled top-level references from {source_marker}"
+            f"{len(by_code)} code-labelled top-level references from {source_marker}; "
+            f"trade feed pages={trade_feed_page_counts}"
         )
         return {
             "pack_count": len(packs),
@@ -2242,13 +2485,20 @@ def warm_gw_official_archive_index(
     build_gw_official_resource_pack_indexes(packs, session)
     cache = load_gw_official_archive_index_cache(archive_index_path)
     indexed_group_count = sum(len(groups) for groups in cache.values())
+    trade_feed_packs, trade_feed_stats = load_or_discover_gw_trade_feed_packs(
+        session,
+        logger=logger,
+    )
     logger(
         "GW archive index warm complete: "
-        f"{len(cache)} archives cached / {indexed_group_count} grouped archive entries"
+        f"{len(cache)} archives cached / {indexed_group_count} grouped archive entries / "
+        f"{len(trade_feed_packs)} trade feed images cached"
     )
     return {
         "archive_count": len(cache),
         "indexed_group_count": indexed_group_count,
+        "trade_feed_count": len(trade_feed_packs),
+        "trade_feed_request_count": int(trade_feed_stats.get("request_count") or 0),
     }
 
 
@@ -2436,12 +2686,24 @@ def _choose_best_gw_official_pack(
     return ranked[0][5]
 
 
+def validate_gw_official_pack_match(
+    product: Product,
+    match_type: str,
+    pack_ref: GWOfficialResourcePackRef,
+) -> tuple[bool, str]:
+    if match_type.startswith("trade_feed_prefix"):
+        title_score = _gw_official_pack_title_match_score(product, pack_ref)
+        if title_score <= 0:
+            return False, "trade-feed shortened code matched but title agreement was too weak"
+    return True, ""
+
+
 def resolve_photo_asset(
     product: Product,
     by_code: dict[str, list[PhotoAssetSet]],
     by_slug: dict[str, list[PhotoAssetSet]],
 ) -> tuple[str, str, PhotoAssetSet | None, str]:
-    exact_matches = by_code.get(product.sku, [])
+    exact_matches = _lookup_code_matches(by_code, product.sku)
     if len(exact_matches) == 1:
         return "replace", "exact", exact_matches[0], ""
     if len(exact_matches) > 1:
@@ -2467,7 +2729,7 @@ def resolve_gw_official_resource_pack(
     by_code: dict[str, list[GWOfficialResourcePackRef]],
     by_slug: dict[str, list[GWOfficialResourcePackRef]],
 ) -> tuple[str, str, GWOfficialResourcePackRef | None, str]:
-    exact_matches = by_code.get(product.sku, [])
+    exact_matches = _lookup_code_matches(by_code, product.sku)
     if len(exact_matches) == 1:
         return "replace", "exact", exact_matches[0], ""
     if len(exact_matches) > 1:
@@ -2511,7 +2773,7 @@ def resolve_existing_shopify_files(
     by_code: dict[str, list[ShopifyImageFile]],
     by_slug: dict[str, list[ShopifyImageFile]],
 ) -> tuple[str, str, list[ShopifyImageFile], str]:
-    exact_matches = by_code.get(product.sku, [])
+    exact_matches = _lookup_code_matches(by_code, product.sku)
     if exact_matches:
         return "replace", "exact", exact_matches, ""
 
@@ -3381,6 +3643,55 @@ class Shopify:
                 break
             cursor = data["products"]["pageInfo"]["endCursor"]
 
+    def iter_existing_for_description_backfill(self) -> Iterable[dict[str, Any]]:
+        cursor = None
+        page_q = """
+            query($cursor: String) {
+              products(first: 100, after: $cursor) {
+                edges {
+                  cursor
+                  node {
+                    id
+                    title
+                    vendor
+                    productType
+                    description
+                    descriptionHtml
+                    variants(first: 100) {
+                      edges {
+                        node {
+                          sku
+                        }
+                      }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"cursor": cursor})
+            for edge in data["products"]["edges"]:
+                node = edge["node"]
+                skus = [
+                    (variant_edge["node"].get("sku") or "").strip()
+                    for variant_edge in node["variants"]["edges"]
+                    if (variant_edge["node"].get("sku") or "").strip()
+                ]
+                yield {
+                    "id": node["id"],
+                    "title": node.get("title") or "",
+                    "vendor": node.get("vendor") or "",
+                    "product_type": node.get("productType") or "",
+                    "description": node.get("description") or "",
+                    "description_html": node.get("descriptionHtml") or "",
+                    "skus": skus,
+                }
+            if not data["products"]["pageInfo"]["hasNextPage"]:
+                break
+            cursor = data["products"]["pageInfo"]["endCursor"]
+
     def get_collection_image(self, collection_id: str) -> dict[str, str]:
         """Return current image info for a collection (empty dict if no image)."""
         q = """
@@ -3793,6 +4104,20 @@ class Shopify:
             }
         """
         data = self.gql(q, {"product": {"id": product_id, "tags": tags}})
+        errs = data["productUpdate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"productUpdate errors for {product_id}: {errs}")
+
+    def update_product_description(self, product_id: str, description_html: str) -> None:
+        q = """
+            mutation($product: ProductUpdateInput!) {
+              productUpdate(product: $product) {
+                product { id }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {"product": {"id": product_id, "descriptionHtml": description_html}})
         errs = data["productUpdate"]["userErrors"]
         if errs:
             raise RuntimeError(f"productUpdate errors for {product_id}: {errs}")
@@ -4815,14 +5140,14 @@ def phase_import(client: Shopify, products: list[Product], location_id: str, dry
             except Exception as e:
                 publish_failed += 1
                 log(f"  FAILED publish {p.sku} ({p.title!r}): {e}")
-                with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+                with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
                     fh.write(f"import_publish\t{p.sku}\t{p.title}\t{e}\n")
             if (created % 25) == 0:
                 log(f"  progress: created {created}/{len(products) - start_at}  (last: {p.sku})")
         except Exception as e:
             create_failed += 1
             log(f"  FAILED {p.sku} ({p.title!r}): {e}")
-            with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+            with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
                 fh.write(f"{i}\t{p.sku}\t{p.title}\t{e}\n")
     log(
         f"IMPORT summary: created={created}, published={published}, "
@@ -4941,7 +5266,7 @@ def phase_update(client: Shopify, products: list[Product], location_id: str, dry
         except Exception as e:
             write_failed += 1
             log(f"  FAILED update {p.sku} ({p.title!r}): {e}")
-            with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+            with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
                 fh.write(f"update_write\t{p.sku}\t{p.title}\t{e}\n")
             continue
 
@@ -4951,7 +5276,7 @@ def phase_update(client: Shopify, products: list[Product], location_id: str, dry
         except Exception as e:
             publish_failed += 1
             log(f"  FAILED publish {p.sku} ({p.title!r}): {e}")
-            with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+            with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
                 fh.write(f"update_publish\t{p.sku}\t{p.title}\t{e}\n")
 
     # Always write the diff CSV so it's available after a real run too.
@@ -4981,6 +5306,292 @@ def phase_update(client: Shopify, products: list[Product], location_id: str, dry
     )
 
 
+def phase_backfill_descriptions(
+    client: Shopify,
+    env: dict[str, str],
+    *,
+    dry: bool,
+    target_skus: list[str],
+    limit: int | None,
+    manifest_path: Path = DESCRIPTION_BACKFILL_MANIFEST_JSON,
+) -> None:
+    log("=== DESCRIPTION BACKFILL phase: resolving, rewriting, and updating Shopify descriptions ===")
+    description_backfill.require_openrouter_config(env)
+    manifest = description_backfill.load_manifest(manifest_path)
+    policy_version = description_backfill.current_description_backfill_policy_version(
+        preview_columns=DESCRIPTION_BACKFILL_PREVIEW_COLUMNS,
+        review_columns=DESCRIPTION_BACKFILL_REVIEW_COLUMNS,
+    )
+    session = requests.Session()
+    preview_rows: list[dict[str, Any]] = []
+    review_rows: list[dict[str, Any]] = []
+    write_failed = 0
+    updated = 0
+    resumed = 0
+    invalidated = 0
+    reviewed = 0
+    scoped_records = _scope_description_backfill_records(
+        client.iter_existing_for_description_backfill(),
+        target_skus=set(target_skus),
+        limit=limit,
+    )
+    try:
+        for record in scoped_records:
+            sku, sku_reason = _select_description_backfill_sku(record)
+            if not sku:
+                review_rows.append({
+                    "product_id": record["id"],
+                    "title": record["title"],
+                    "scope_reason": record["scope_reason"],
+                    "sku": "",
+                    "status": "review",
+                    "source_site": "wayland_games",
+                    "source_url": "",
+                    "reason": sku_reason,
+                    "notes": "product did not resolve to exactly one SKU",
+                })
+                reviewed += 1
+                continue
+
+            prior_entry = dict(manifest.get(record["id"], {}))
+            if prior_entry.get("policy_version") and prior_entry.get("policy_version") != policy_version:
+                preview_rows.append({
+                    "product_id": record["id"],
+                    "title": record["title"],
+                    "scope_reason": record["scope_reason"],
+                    "sku": sku,
+                    "status": "policy_invalidated",
+                    "source_site": "wayland_games",
+                    "source_url": prior_entry.get("source_url", ""),
+                    "source_reason": prior_entry.get("source_reason", ""),
+                    "rewrite_reason": prior_entry.get("rewrite_reason", ""),
+                    "similarity": prior_entry.get("similarity", ""),
+                    "repaired_for_sku": prior_entry.get("repaired_for_sku", ""),
+                    "description_html": prior_entry.get("description_html", ""),
+                })
+                invalidated += 1
+            if (
+                prior_entry.get("state") == "completed"
+                and prior_entry.get("policy_version") == policy_version
+                and prior_entry.get("sku") == sku
+            ):
+                preview_rows.append({
+                    "product_id": record["id"],
+                    "title": record["title"],
+                    "scope_reason": record["scope_reason"],
+                    "sku": sku,
+                    "status": "resume_completed",
+                    "source_site": "wayland_games",
+                    "source_url": prior_entry.get("source_url", ""),
+                    "source_reason": prior_entry.get("source_reason", ""),
+                    "rewrite_reason": prior_entry.get("rewrite_reason", ""),
+                    "similarity": prior_entry.get("similarity", ""),
+                    "repaired_for_sku": prior_entry.get("repaired_for_sku", ""),
+                    "description_html": prior_entry.get("description_html", ""),
+                })
+                resumed += 1
+                continue
+
+            try:
+                source_resolution = description_backfill.resolve_wayland_source(
+                    session,
+                    title=record["title"],
+                    sku=sku,
+                )
+            except Exception as exc:
+                review_rows.append({
+                    "product_id": record["id"],
+                    "title": record["title"],
+                    "scope_reason": record["scope_reason"],
+                    "sku": sku,
+                    "status": "failed",
+                    "source_site": "wayland_games",
+                    "source_url": "",
+                    "reason": "wayland_lookup_failed",
+                    "notes": str(exc),
+                })
+                manifest[record["id"]] = {
+                    "state": "failed",
+                    "policy_version": policy_version,
+                    "sku": sku,
+                    "error": str(exc),
+                }
+                _append_description_backfill_failure(record["id"], sku, record["title"], str(exc))
+                write_failed += 1
+                continue
+            if source_resolution.status != "accepted" or source_resolution.candidate is None:
+                review_rows.append({
+                    "product_id": record["id"],
+                    "title": record["title"],
+                    "scope_reason": record["scope_reason"],
+                    "sku": sku,
+                    "status": "review",
+                    "source_site": "wayland_games",
+                    "source_url": source_resolution.search_url,
+                    "reason": source_resolution.reason,
+                    "notes": "no confident source description match",
+                })
+                manifest[record["id"]] = {
+                    "state": "review",
+                    "policy_version": policy_version,
+                    "sku": sku,
+                    "source_reason": source_resolution.reason,
+                    "source_url": source_resolution.search_url,
+                }
+                reviewed += 1
+                continue
+
+            try:
+                rewritten = description_backfill.rewrite_with_openrouter(
+                    session,
+                    env,
+                    source_text=source_resolution.candidate.description_text,
+                    sku=sku,
+                )
+            except Exception as exc:
+                review_rows.append({
+                    "product_id": record["id"],
+                    "title": record["title"],
+                    "scope_reason": record["scope_reason"],
+                    "sku": sku,
+                    "status": "failed",
+                    "source_site": "wayland_games",
+                    "source_url": source_resolution.candidate.page_url,
+                    "reason": "openrouter_error",
+                    "notes": str(exc),
+                })
+                manifest[record["id"]] = {
+                    "state": "failed",
+                    "policy_version": policy_version,
+                    "sku": sku,
+                    "source_reason": source_resolution.reason,
+                    "source_url": source_resolution.candidate.page_url,
+                    "error": str(exc),
+                }
+                _append_description_backfill_failure(record["id"], sku, record["title"], str(exc))
+                write_failed += 1
+                continue
+
+            rewrite_result = description_backfill.evaluate_rewrite(
+                source_resolution.candidate.description_text,
+                rewritten,
+                sku,
+            )
+            if rewrite_result.status != "accepted":
+                review_rows.append({
+                    "product_id": record["id"],
+                    "title": record["title"],
+                    "scope_reason": record["scope_reason"],
+                    "sku": sku,
+                    "status": "review",
+                    "source_site": "wayland_games",
+                    "source_url": source_resolution.candidate.page_url,
+                    "reason": rewrite_result.reason,
+                    "notes": rewrite_result.rewritten_text,
+                })
+                manifest[record["id"]] = {
+                    "state": "review",
+                    "policy_version": policy_version,
+                    "sku": sku,
+                    "source_reason": source_resolution.reason,
+                    "source_url": source_resolution.candidate.page_url,
+                    "rewrite_reason": rewrite_result.reason,
+                    "similarity": rewrite_result.similarity,
+                    "repaired_for_sku": rewrite_result.repaired_for_sku,
+                }
+                reviewed += 1
+                continue
+
+            description_html = description_backfill.sanitize_description_html(rewrite_result.rewritten_text)
+            accepted_preview_row = {
+                "product_id": record["id"],
+                "title": record["title"],
+                "scope_reason": record["scope_reason"],
+                "sku": sku,
+                "status": "updated" if not dry else "dry_run_candidate",
+                "source_site": "wayland_games",
+                "source_url": source_resolution.candidate.page_url,
+                "source_reason": source_resolution.reason,
+                "rewrite_reason": rewrite_result.reason,
+                "similarity": f"{rewrite_result.similarity:.4f}",
+                "repaired_for_sku": str(rewrite_result.repaired_for_sku).lower(),
+                "description_html": description_html,
+            }
+
+            if dry:
+                preview_rows.append(accepted_preview_row)
+                manifest[record["id"]] = {
+                    "state": "dry_run_candidate",
+                    "policy_version": policy_version,
+                    "sku": sku,
+                    "source_reason": source_resolution.reason,
+                    "source_url": source_resolution.candidate.page_url,
+                    "rewrite_reason": rewrite_result.reason,
+                    "similarity": rewrite_result.similarity,
+                    "repaired_for_sku": rewrite_result.repaired_for_sku,
+                    "description_html": description_html,
+                }
+                continue
+
+            try:
+                client.update_product_description(record["id"], description_html)
+                preview_rows.append(accepted_preview_row)
+                updated += 1
+            except Exception as exc:
+                preview_rows.append({
+                    **accepted_preview_row,
+                    "status": "write_failed",
+                })
+                review_rows.append({
+                    "product_id": record["id"],
+                    "title": record["title"],
+                    "scope_reason": record["scope_reason"],
+                    "sku": sku,
+                    "status": "failed",
+                    "source_site": "wayland_games",
+                    "source_url": source_resolution.candidate.page_url,
+                    "reason": "shopify_update_failed",
+                    "notes": str(exc),
+                })
+                manifest[record["id"]] = {
+                    "state": "failed",
+                    "policy_version": policy_version,
+                    "sku": sku,
+                    "source_reason": source_resolution.reason,
+                    "source_url": source_resolution.candidate.page_url,
+                    "rewrite_reason": rewrite_result.reason,
+                    "similarity": rewrite_result.similarity,
+                    "repaired_for_sku": rewrite_result.repaired_for_sku,
+                    "error": str(exc),
+                }
+                _append_description_backfill_failure(record["id"], sku, record["title"], str(exc))
+                write_failed += 1
+                continue
+
+            manifest[record["id"]] = {
+                "state": "completed",
+                "policy_version": policy_version,
+                "sku": sku,
+                "source_reason": source_resolution.reason,
+                "source_url": source_resolution.candidate.page_url,
+                "rewrite_reason": rewrite_result.reason,
+                "similarity": rewrite_result.similarity,
+                "repaired_for_sku": rewrite_result.repaired_for_sku,
+                "description_html": description_html,
+            }
+    finally:
+        description_backfill.close_wayland_scraper(session)
+
+    _write_sanitized_csv(DESCRIPTION_BACKFILL_PREVIEW_CSV, DESCRIPTION_BACKFILL_PREVIEW_COLUMNS, preview_rows)
+    _write_sanitized_csv(DESCRIPTION_BACKFILL_REVIEW_CSV, DESCRIPTION_BACKFILL_REVIEW_COLUMNS, review_rows)
+    description_backfill.save_manifest(manifest_path, manifest)
+    log(
+        f"DESCRIPTION BACKFILL summary: scoped={len(scoped_records)} preview={len(preview_rows)} "
+        f"review={len(review_rows)} updated={updated} resumed={resumed} invalidated={invalidated} "
+        f"write_failed={write_failed} dry_run={dry}"
+    )
+
+
 def phase_publish_online_store_backfill(client: Shopify, dry: bool) -> None:
     log("=== ONLINE STORE BACKFILL phase: publishing currently-unpublished Shopify products ===")
     publication_id = client.get_publication_id_by_name(ONLINE_STORE_PUBLICATION_NAME)
@@ -4999,7 +5610,7 @@ def phase_publish_online_store_backfill(client: Shopify, dry: bool) -> None:
                 publish_failed += 1
                 status = f"publish_failed: {e}"
                 log(f"  FAILED publish {candidate['title']!r} ({candidate['id']}): {e}")
-                with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+                with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
                     fh.write(
                         f"backfill_publish\t{'|'.join(candidate['skus'])}\t"
                         f"{candidate['title']}\t{e}\n"
@@ -5059,7 +5670,7 @@ def phase_reconcile_online_store_image_visibility(client: Shopify, dry: bool) ->
                     publish_failed += 1
                     status = f"publish_failed: {e}"
                     log(f"  FAILED publish {candidate['title']!r} ({candidate['id']}): {e}")
-                    with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+                    with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
                         fh.write(
                             f"image_visibility_publish\t{_safe_spreadsheet_cell('|'.join(candidate['skus']))}\t"
                             f"{_safe_spreadsheet_cell(candidate['title'])}\t{_safe_spreadsheet_cell(e)}\n"
@@ -5086,7 +5697,7 @@ def phase_reconcile_online_store_image_visibility(client: Shopify, dry: bool) ->
                     unpublish_failed += 1
                     status = f"unpublish_failed: {e}"
                     log(f"  FAILED unpublish {candidate['title']!r} ({candidate['id']}): {e}")
-                    with (HERE / "failures.tsv").open("a", encoding="utf-8") as fh:
+                    with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
                         fh.write(
                             f"image_visibility_unpublish\t{_safe_spreadsheet_cell('|'.join(candidate['skus']))}\t"
                             f"{_safe_spreadsheet_cell(candidate['title'])}\t{_safe_spreadsheet_cell(e)}\n"
@@ -5142,6 +5753,61 @@ def _safe_spreadsheet_cell(value: Any) -> str:
     if text.startswith(("=", "+", "-", "@")):
         return "'" + text
     return text
+
+
+def _write_sanitized_csv(path: Path, fieldnames: list[str], rows: list[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({name: _safe_spreadsheet_cell(row.get(name, "")) for name in fieldnames})
+
+
+def _append_description_backfill_failure(product_id: str, sku: str, title: str, detail: str) -> None:
+    with DESCRIPTION_BACKFILL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
+        fh.write(
+            "\t".join(
+                _safe_spreadsheet_cell(part)
+                for part in ("description_backfill", product_id, sku, title, detail)
+            )
+            + "\n"
+        )
+
+
+def _select_description_backfill_sku(record: dict[str, Any]) -> tuple[str | None, str]:
+    unique = sorted({sku.strip() for sku in record.get("skus") or [] if sku.strip()})
+    if not unique:
+        return None, "no_sku"
+    if len(unique) > 1:
+        return None, "ambiguous_multi_variant_skus"
+    return unique[0], "unique_product_sku"
+
+
+def _scope_description_backfill_records(
+    records: Iterable[dict[str, Any]],
+    *,
+    target_skus: set[str],
+    limit: int | None,
+) -> list[dict[str, Any]]:
+    scoped: list[dict[str, Any]] = []
+    normalized_targets = {sku.strip() for sku in target_skus if sku.strip()}
+    for record in records:
+        skus = {sku.strip() for sku in record.get("skus") or [] if sku.strip()}
+        if normalized_targets:
+            if not skus.intersection(normalized_targets):
+                continue
+            scope_reason = "sku_filter"
+        else:
+            scope_reason = "full_catalog"
+        next_record = dict(record)
+        next_record["scope_reason"] = scope_reason
+        scoped.append(next_record)
+        if limit is not None and len(scoped) >= limit:
+            break
+    if limit is not None:
+        for record in scoped:
+            record["scope_reason"] = f"{record['scope_reason']}:limit"
+    return scoped
 
 
 def _format_graphql_errors(errors: Any) -> str:
@@ -5424,13 +6090,17 @@ def phase_photo_source_web_all(
             if gw_official_indexes is None and not gw_official_error:
                 try:
                     gw_packs, _ = gw_cache_refresh.discover_resource_packs(GW_RESOURCES_URL, session)
-                    trade_feed_packs, _, trade_feed_stats = gw_cache_refresh.discover_trade_feed_packs(session, logger=log)
-                    gw_packs.extend(trade_feed_packs)
-                    log(
-                        "PHOTO SOURCE GW official trade feed discovered "
-                        f"{int(trade_feed_stats.get('image_count') or 0)} images "
-                        f"across {int(trade_feed_stats.get('request_count') or 0)} requests"
+                    trade_feed_packs, trade_feed_stats = load_or_discover_gw_trade_feed_packs(
+                        session,
+                        logger=log,
                     )
+                    gw_packs.extend(trade_feed_packs)
+                    if not trade_feed_stats.get("cached"):
+                        log(
+                            "PHOTO SOURCE GW official trade feed discovered "
+                            f"{int(trade_feed_stats.get('image_count') or 0)} images "
+                            f"across {int(trade_feed_stats.get('request_count') or 0)} requests"
+                        )
                     gw_official_indexes = build_gw_official_resource_pack_indexes(gw_packs, session)
                     if not gw_official_resource_indexes_usable(*gw_official_indexes):
                         gw_official_error = "official GW resource feed did not expose product-code-labelled packs"
@@ -5448,76 +6118,81 @@ def phase_photo_source_web_all(
                     gw_official_by_slug,
                 )
                 if action == "replace" and pack_ref is not None:
-                    staged_dir_display = display_path(current_root / pack_name)
-                    winner_page_url = pack_ref.pack.images[0].url if pack_ref.pack.images else (
-                        pack_ref.pack.archives[0] if pack_ref.pack.archives else f"gw-official://{match_type}"
-                    )
-                    winner_image_url = pack_ref.pack.images[0].url if pack_ref.pack.images else (
-                        pack_ref.pack.archives[0] if pack_ref.pack.archives else ""
-                    )
-                    if not dry:
-                        update_and_save_photo_manifest_entry(
-                            manifest,
-                            manifest_path,
-                            sku=product.sku,
-                            state="downloading",
-                            query=query,
-                            top_score=100,
-                            winner_page_url=winner_page_url,
-                            winner_image_url=winner_image_url,
-                            winner_reasons=["gw_official", match_type],
-                            staged_dir=staged_dir_display,
-                            manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
-                            policy_version=policy_version,
+                    allowed, validation_reason = validate_gw_official_pack_match(product, match_type, pack_ref)
+                    if not allowed:
+                        if not supplier_note:
+                            supplier_note = f"gw official: {validation_reason}"
+                    else:
+                        staged_dir_display = display_path(current_root / pack_name)
+                        winner_page_url = pack_ref.pack.images[0].url if pack_ref.pack.images else (
+                            pack_ref.pack.archives[0] if pack_ref.pack.archives else f"gw-official://{match_type}"
                         )
-                        stage_gw_official_resource_pack(
-                            pack_ref,
-                            session,
-                            current_root,
-                            pack_name,
-                            {
-                                "sku": product.sku,
-                                "title": product.title,
-                                "query": query,
-                                "score": 100,
-                                "source": "gw-official-resource",
-                                "match_type": match_type,
-                                "reasons": ["gw_official", match_type],
-                                "source_url": winner_page_url,
-                            },
+                        winner_image_url = pack_ref.pack.images[0].url if pack_ref.pack.images else (
+                            pack_ref.pack.archives[0] if pack_ref.pack.archives else ""
                         )
-                        update_and_save_photo_manifest_entry(
-                            manifest,
-                            manifest_path,
-                            sku=product.sku,
-                            state="completed",
-                            query=query,
-                            top_score=100,
-                            winner_page_url=winner_page_url,
-                            winner_image_url=winner_image_url,
-                            winner_reasons=["gw_official", match_type],
-                            staged_dir=staged_dir_display,
-                            manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
-                            policy_version=policy_version,
-                            reason="",
-                        )
-                    preview_rows.append(build_photo_source_preview_row(
-                        product,
-                        status="winner",
-                        query=query,
-                        top_score=100,
-                        winner=_build_direct_photo_source_candidate(
+                        if not dry:
+                            update_and_save_photo_manifest_entry(
+                                manifest,
+                                manifest_path,
+                                sku=product.sku,
+                                state="downloading",
+                                query=query,
+                                top_score=100,
+                                winner_page_url=winner_page_url,
+                                winner_image_url=winner_image_url,
+                                winner_reasons=["gw_official", match_type],
+                                staged_dir=staged_dir_display,
+                                manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                                policy_version=policy_version,
+                            )
+                            stage_gw_official_resource_pack(
+                                pack_ref,
+                                session,
+                                current_root,
+                                pack_name,
+                                {
+                                    "sku": product.sku,
+                                    "title": product.title,
+                                    "query": query,
+                                    "score": 100,
+                                    "source": "gw-official-resource",
+                                    "match_type": match_type,
+                                    "reasons": ["gw_official", match_type],
+                                    "source_url": winner_page_url,
+                                },
+                            )
+                            update_and_save_photo_manifest_entry(
+                                manifest,
+                                manifest_path,
+                                sku=product.sku,
+                                state="completed",
+                                query=query,
+                                top_score=100,
+                                winner_page_url=winner_page_url,
+                                winner_image_url=winner_image_url,
+                                winner_reasons=["gw_official", match_type],
+                                staged_dir=staged_dir_display,
+                                manifest_version=PHOTO_SOURCE_MANIFEST_VERSION,
+                                policy_version=policy_version,
+                                reason="",
+                            )
+                        preview_rows.append(build_photo_source_preview_row(
                             product,
-                            page_url=winner_page_url,
-                            image_url=winner_image_url,
-                            score=100,
-                            reasons=["gw_official", match_type],
-                            source_class="gw_official",
-                        ),
-                        staged_dir=staged_dir_display if not dry else "",
-                    ))
-                    flush_photo_source_outputs(preview_rows, review_rows)
-                    continue
+                            status="winner",
+                            query=query,
+                            top_score=100,
+                            winner=_build_direct_photo_source_candidate(
+                                product,
+                                page_url=winner_page_url,
+                                image_url=winner_image_url,
+                                score=100,
+                                reasons=["gw_official", match_type],
+                                source_class="gw_official",
+                            ),
+                            staged_dir=staged_dir_display if not dry else "",
+                        ))
+                        flush_photo_source_outputs(preview_rows, review_rows)
+                        continue
                 if reason and not supplier_note:
                     supplier_note = f"gw official: {reason}"
 
@@ -6231,6 +6906,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  --dry-run              Preview a job before changing Shopify.\n"
             "  --delete / --import    Clear placeholder products or create products from sheets.\n"
             "  --update               Refresh existing Shopify products by SKU.\n"
+            "  --backfill-descriptions Rewrite existing Shopify descriptions through OpenRouter.\n"
             "  --generate-collections Rebuild managed collections from product tags.\n"
             "  --photo-*              Repair or attach product images.\n"
             "  --all                  Delete placeholder products, then import fresh products.\n"
@@ -6281,6 +6957,25 @@ def build_parser() -> argparse.ArgumentParser:
         dest="do_update",
         action="store_true",
         help="Update products that already exist in Shopify, matched by SKU. Run this when prices, stock, or costs changed in the sheets.",
+    )
+    catalog.add_argument(
+        "--backfill-descriptions",
+        dest="do_backfill_descriptions",
+        action="store_true",
+        help="Rewrite existing Shopify product descriptions from Wayland Games source text through OpenRouter. Run this as a separate description-only backfill workflow.",
+    )
+    catalog.add_argument(
+        "--backfill-descriptions-sku",
+        dest="backfill_description_skus",
+        action="append",
+        default=[],
+        help="Limit description backfill to this SKU. Repeat the flag to run a deterministic canary subset.",
+    )
+    catalog.add_argument(
+        "--backfill-descriptions-limit",
+        dest="backfill_description_limit",
+        type=int,
+        help="Stop description backfill after this many scoped products. Use with --backfill-descriptions for canary runs.",
     )
     catalog.add_argument(
         "--all",
@@ -6380,12 +7075,19 @@ def main() -> int:
 
     if not (args.dry_run or args.preflight or args.delete or args.do_delete_collections
             or args.do_generate_collections or args.do_update_collection_images
-            or args.do_gw_refresh_cache or args.do_gw_build_archive_index or args.do_import or args.do_update or args.do_publish_online_store_backfill
+            or args.do_gw_refresh_cache or args.do_gw_build_archive_index or args.do_import or args.do_update or args.do_backfill_descriptions or args.do_publish_online_store_backfill
             or args.do_reconcile_online_store_image_visibility
             or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
             or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.all):
         parser.print_help()
         return 1
+
+    if args.backfill_description_skus and not args.do_backfill_descriptions:
+        raise RuntimeError("--backfill-descriptions-sku requires --backfill-descriptions.")
+    if args.backfill_description_limit is not None and not args.do_backfill_descriptions:
+        raise RuntimeError("--backfill-descriptions-limit requires --backfill-descriptions.")
+    if args.backfill_description_limit is not None and args.backfill_description_limit <= 0:
+        raise RuntimeError("--backfill-descriptions-limit must be greater than zero.")
 
     if args.do_gw_refresh_cache:
         invalid_refresh_combo = (
@@ -6551,6 +7253,21 @@ def main() -> int:
             "generate-collections/import/update/photo-sync/photo-sync-existing-files/photo-sync-existing-files-all/all "
             "and cannot be combined with --start-at or --photo-root."
         )
+    if args.do_backfill_descriptions and (
+        args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
+        or args.do_update_collection_images or args.do_import or args.do_update
+        or args.do_publish_online_store_backfill or args.do_reconcile_online_store_image_visibility
+        or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+        or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
+        or args.all or args.start_at != 0 or args.photo_root is not None
+    ):
+        raise RuntimeError(
+            "--backfill-descriptions must run separately from preflight/delete/delete-collections/"
+            "generate-collections/update-collection-images/import/update/publish-online-store-backfill/"
+            "reconcile-online-store-image-visibility/photo-sync/photo-sync-existing-files/"
+            "photo-sync-existing-files-all/photo-source-web-all/recover-zero-media-images/"
+            "photo-sync-staged-local-all/all and cannot be combined with --start-at or --photo-root."
+        )
     if args.do_publish_online_store_backfill and (
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_update_collection_images or args.do_import or args.do_update
@@ -6593,6 +7310,7 @@ def main() -> int:
         and not args.do_generate_collections
         and not args.do_delete_collections
         and not args.do_update_collection_images
+        and not args.do_backfill_descriptions
         and not args.do_publish_online_store_backfill
         and not args.do_reconcile_online_store_image_visibility
     ):
@@ -6632,6 +7350,21 @@ def main() -> int:
                 "Collection image update dry-run complete. Review "
                 "collection_image_preview.csv, then re-run with "
                 "--update-collection-images (no --dry-run) to apply."
+            )
+        return 0
+    if args.do_backfill_descriptions:
+        phase_backfill_descriptions(
+            client,
+            env,
+            dry=args.dry_run,
+            target_skus=args.backfill_description_skus,
+            limit=args.backfill_description_limit,
+        )
+        if args.dry_run:
+            log(
+                "Description backfill dry-run complete. Review "
+                "description_backfill_preview.csv and description_backfill_review.csv, then re-run with "
+                "--backfill-descriptions (no --dry-run) to apply."
             )
         return 0
     if args.do_publish_online_store_backfill:
