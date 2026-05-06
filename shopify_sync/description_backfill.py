@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any, Sequence
-from urllib.parse import quote_plus, urljoin, urlparse
+from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
 
 import requests
 
@@ -26,6 +26,7 @@ WAYLAND_TIMEOUT_SECONDS = 20
 WAYLAND_BROWSER_TIMEOUT_MS = WAYLAND_TIMEOUT_SECONDS * 1000
 WAYLAND_CHALLENGE_WAIT_TIMEOUT_MS = 45000
 WAYLAND_RETRY_DELAYS_SECONDS: tuple[float, ...] = (1.0, 2.0)
+WAYLAND_POST_LOAD_SETTLE_MS = 750
 WAYLAND_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -43,6 +44,33 @@ WAYLAND_EXTRA_HTTP_HEADERS: dict[str, str] = {
     "Upgrade-Insecure-Requests": "1",
 }
 WAYLAND_PLAYWRIGHT_SESSION_ATTR = "_description_backfill_wayland_scraper"
+GAMES_WORKSHOP_SEARCH_URL = "https://html.duckduckgo.com/html/"
+GAMES_WORKSHOP_TIMEOUT_SECONDS = 20
+GAMES_WORKSHOP_MAX_CANDIDATE_PAGES = 5
+GAMES_WORKSHOP_ALLOWED_HOSTS = frozenset({
+    "warhammer.com",
+    "www.warhammer.com",
+    "games-workshop.com",
+    "www.games-workshop.com",
+})
+GAMES_WORKSHOP_DISALLOWED_PATH_MARKERS: tuple[str, ...] = (
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".gif",
+    ".svg",
+    ".pdf",
+    "/blogs/",
+    "/news/",
+    "/community/",
+    "/downloads/",
+    "/articles/",
+    "/events/",
+    "/contact",
+    "/privacy",
+    "/terms",
+)
 
 
 @dataclass(frozen=True)
@@ -52,6 +80,7 @@ class WaylandCandidate:
     description_text: str
     sku_text: str
     title_score: float
+    source_site: str = "wayland_games"
 
 
 @dataclass(frozen=True)
@@ -59,6 +88,7 @@ class SourceResolution:
     status: str
     reason: str
     search_url: str
+    source_site: str = "wayland_games"
     candidate: WaylandCandidate | None = None
 
 
@@ -218,6 +248,7 @@ def current_description_backfill_policy_version(
         "wayland_search_strategy": "playwright",
         "wayland_search_url": WAYLAND_SEARCH_URL,
         "wayland_timeout_seconds": WAYLAND_TIMEOUT_SECONDS,
+        "games_workshop_search_url": GAMES_WORKSHOP_SEARCH_URL,
         "openrouter_model_default": OPENROUTER_DEFAULT_MODEL,
         "openrouter_timeout_seconds": OPENROUTER_TIMEOUT_SECONDS,
         "similarity_threshold": DESCRIPTION_BACKFILL_SIMILARITY_THRESHOLD,
@@ -353,10 +384,7 @@ class WaylandPlaywrightScraper:
                 self._page.goto(url, wait_until="domcontentloaded", timeout=WAYLAND_BROWSER_TIMEOUT_MS)
                 self._wait_for_challenge_clear()
                 self._dismiss_cookie_banner()
-                try:
-                    self._page.wait_for_load_state("networkidle", timeout=WAYLAND_BROWSER_TIMEOUT_MS)
-                except self._playwright_timeout:
-                    pass
+                self._brief_settle()
                 self._wait_for_challenge_clear()
                 html_text = self._page.content()
                 if self._looks_like_challenge_page(html_text):
@@ -385,9 +413,17 @@ class WaylandPlaywrightScraper:
                 continue
             try:
                 getattr(resource, method_name)()
+            except KeyboardInterrupt:
+                pass
             except Exception:
                 pass
             setattr(self, attr_name, None)
+
+    def _brief_settle(self) -> None:
+        try:
+            self._page.wait_for_timeout(WAYLAND_POST_LOAD_SETTLE_MS)
+        except Exception:
+            pass
 
     def _dismiss_cookie_banner(self) -> None:
         selectors = (
@@ -421,10 +457,7 @@ class WaylandPlaywrightScraper:
                 """,
                 timeout=WAYLAND_CHALLENGE_WAIT_TIMEOUT_MS,
             )
-            try:
-                self._page.wait_for_load_state("networkidle", timeout=WAYLAND_BROWSER_TIMEOUT_MS)
-            except self._playwright_timeout:
-                pass
+            self._brief_settle()
         except self._playwright_timeout:
             pass
 
@@ -569,6 +602,138 @@ def _parse_search_candidates(html_text: str, search_url: str) -> list[tuple[str,
     return matches
 
 
+def _normalize_search_redirect(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.netloc.endswith("duckduckgo.com") and parsed.path.startswith("/l/"):
+        encoded = parse_qs(parsed.query).get("uddg", [""])[0]
+        if encoded:
+            return encoded
+    return url
+
+
+def _build_games_workshop_search_url(title: str, sku: str) -> str:
+    query_parts = [
+        f"site:warhammer.com/en-GB/shop \"{title}\"",
+        f"\"{sku}\"" if sku else "",
+    ]
+    query = " ".join(part for part in query_parts if part).strip()
+    return f"{GAMES_WORKSHOP_SEARCH_URL}?q={quote_plus(query)}"
+
+
+def _is_games_workshop_product_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = (parsed.netloc or "").lower()
+    if host not in GAMES_WORKSHOP_ALLOWED_HOSTS:
+        return False
+    path = (parsed.path or "").lower()
+    if "/shop/" not in path:
+        return False
+    return not any(marker in path for marker in GAMES_WORKSHOP_DISALLOWED_PATH_MARKERS)
+
+
+def _search_games_workshop_candidates(
+    session: requests.Session,
+    *,
+    title: str,
+    sku: str,
+) -> tuple[list[tuple[str, str]], str]:
+    search_url = _build_games_workshop_search_url(title, sku)
+    response = fetch_url_with_retries(
+        session,
+        search_url,
+        timeout=GAMES_WORKSHOP_TIMEOUT_SECONDS,
+        retry_delays=WAYLAND_RETRY_DELAYS_SECONDS,
+    )
+    parser = _AnchorCollector()
+    parser.feed(response.text)
+    seen: set[str] = set()
+    candidates: list[tuple[str, str]] = []
+    for anchor in parser.anchors:
+        resolved = _normalize_search_redirect(anchor["href"])
+        if not _is_games_workshop_product_url(resolved):
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        candidates.append((resolved, anchor["text"]))
+        if len(candidates) >= GAMES_WORKSHOP_MAX_CANDIDATE_PAGES:
+            break
+    return candidates, search_url
+
+
+def resolve_games_workshop_source(
+    session: requests.Session,
+    *,
+    title: str,
+    sku: str,
+) -> SourceResolution:
+    candidate_links, search_url = _search_games_workshop_candidates(session, title=title, sku=sku)
+    if not candidate_links:
+        return SourceResolution(
+            status="review",
+            reason="no_games_workshop_candidate",
+            search_url=search_url,
+            source_site="games_workshop",
+        )
+
+    sku_matches: list[WaylandCandidate] = []
+    title_only_matches: list[WaylandCandidate] = []
+    for page_url, link_title in candidate_links:
+        response = fetch_url_with_retries(
+            session,
+            page_url,
+            timeout=GAMES_WORKSHOP_TIMEOUT_SECONDS,
+            retry_delays=WAYLAND_RETRY_DELAYS_SECONDS,
+        )
+        page_html = response.text
+        page_title = _extract_page_title(page_html) or link_title
+        description_text = _extract_description_text(page_html)
+        sku_present = _sku_present_in_text(page_html, sku)
+        title_score = _title_similarity(title, page_title)
+        if len(description_text) < 40:
+            continue
+        candidate = WaylandCandidate(
+            page_url=page_url,
+            title=page_title,
+            description_text=description_text,
+            sku_text=sku,
+            title_score=title_score,
+            source_site="games_workshop",
+        )
+        if sku_present and title_score >= 0.5:
+            sku_matches.append(candidate)
+        elif title_score >= 0.8:
+            title_only_matches.append(candidate)
+
+    pool = sku_matches or title_only_matches
+    if not pool:
+        return SourceResolution(
+            status="review",
+            reason="no_confident_games_workshop_match",
+            search_url=search_url,
+            source_site="games_workshop",
+        )
+    pool.sort(key=lambda c: c.title_score, reverse=True)
+    best = pool[0]
+    if len(pool) > 1 and pool[1].title_score >= best.title_score - 0.05:
+        return SourceResolution(
+            status="review",
+            reason="multiple_confident_games_workshop_matches",
+            search_url=search_url,
+            source_site="games_workshop",
+        )
+    reason = "games_workshop_title_sku_match" if sku_matches else "games_workshop_title_only_match"
+    return SourceResolution(
+        status="accepted",
+        reason=reason,
+        search_url=search_url,
+        source_site="games_workshop",
+        candidate=best,
+    )
+
+
 def _search_wayland_candidates(
     session: requests.Session,
     *,
@@ -696,6 +861,63 @@ def resolve_wayland_source(
         return SourceResolution(status="review", reason="multiple_confident_wayland_matches", search_url=search_url)
     reason = "unique_title_sku_match" if sku_matches else "unique_title_only_match"
     return SourceResolution(status="accepted", reason=reason, search_url=search_url, candidate=best)
+
+
+def resolve_preferred_source(
+    session: requests.Session,
+    *,
+    title: str,
+    sku: str,
+) -> SourceResolution:
+    wayland_result: SourceResolution | None = None
+    wayland_error: Exception | None = None
+    try:
+        wayland_result = resolve_wayland_source(session, title=title, sku=sku)
+    except Exception as exc:
+        wayland_error = exc
+    if wayland_result is not None and wayland_result.status == "accepted" and wayland_result.candidate is not None:
+        return wayland_result
+
+    games_workshop_result: SourceResolution | None = None
+    games_workshop_error: Exception | None = None
+    try:
+        games_workshop_result = resolve_games_workshop_source(session, title=title, sku=sku)
+    except Exception as exc:
+        games_workshop_error = exc
+    if (
+        games_workshop_result is not None
+        and games_workshop_result.status == "accepted"
+        and games_workshop_result.candidate is not None
+    ):
+        return games_workshop_result
+
+    if wayland_result is not None and games_workshop_result is not None:
+        return SourceResolution(
+            status="review",
+            reason="no_confident_wayland_or_games_workshop_match",
+            search_url=games_workshop_result.search_url,
+            source_site=games_workshop_result.source_site,
+        )
+    if games_workshop_result is not None:
+        return SourceResolution(
+            status="review",
+            reason="wayland_lookup_failed_no_confident_games_workshop_match" if wayland_error else games_workshop_result.reason,
+            search_url=games_workshop_result.search_url,
+            source_site=games_workshop_result.source_site,
+        )
+    if wayland_result is not None:
+        return SourceResolution(
+            status="review",
+            reason="games_workshop_lookup_failed_no_confident_wayland_match" if games_workshop_error else wayland_result.reason,
+            search_url=wayland_result.search_url,
+            source_site=wayland_result.source_site,
+        )
+    details = []
+    if wayland_error is not None:
+        details.append(f"Wayland lookup failed: {wayland_error}")
+    if games_workshop_error is not None:
+        details.append(f"Games Workshop lookup failed: {games_workshop_error}")
+    raise RuntimeError("; ".join(details) if details else "No description source could be resolved.")
 
 
 def _build_rewrite_messages(source_text: str, sku: str) -> list[dict[str, str]]:

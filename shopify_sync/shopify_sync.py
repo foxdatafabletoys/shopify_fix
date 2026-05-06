@@ -144,6 +144,7 @@ DESCRIPTION_BACKFILL_PREVIEW_CSV = HERE / "description_backfill_preview.csv"
 DESCRIPTION_BACKFILL_REVIEW_CSV = HERE / "description_backfill_review.csv"
 DESCRIPTION_BACKFILL_FAILURES_TSV = HERE / "description_backfill_failures.tsv"
 DESCRIPTION_BACKFILL_MANIFEST_JSON = HERE / "description_backfill_manifest.json"
+DESCRIPTION_BACKFILL_CHECKPOINT_EVERY = 10
 GW_RESOURCES_URL = "https://trade.games-workshop.com/resources/"
 GW_PHOTO_CACHE_ROOT = HERE / "gw_photo_cache"
 GW_PHOTO_CACHE_CURRENT = GW_PHOTO_CACHE_ROOT / "current"
@@ -5335,195 +5336,261 @@ def phase_backfill_descriptions(
         target_skus=set(target_skus),
         limit=limit,
     )
+    total_scoped = len(scoped_records)
+    if total_scoped == 0:
+        log(f"DESCRIPTION BACKFILL scope: scoped=0 dry_run={dry}")
+    else:
+        log(
+            "DESCRIPTION BACKFILL scope: "
+            f"scoped={total_scoped} dry_run={dry} checkpoint_every={DESCRIPTION_BACKFILL_CHECKPOINT_EVERY}"
+        )
     try:
-        for record in scoped_records:
-            sku, sku_reason = _select_description_backfill_sku(record)
-            if not sku:
-                review_rows.append({
-                    "product_id": record["id"],
-                    "title": record["title"],
-                    "scope_reason": record["scope_reason"],
-                    "sku": "",
-                    "status": "review",
-                    "source_site": "wayland_games",
-                    "source_url": "",
-                    "reason": sku_reason,
-                    "notes": "product did not resolve to exactly one SKU",
-                })
-                reviewed += 1
-                continue
-
-            prior_entry = dict(manifest.get(record["id"], {}))
-            if prior_entry.get("policy_version") and prior_entry.get("policy_version") != policy_version:
-                preview_rows.append({
-                    "product_id": record["id"],
-                    "title": record["title"],
-                    "scope_reason": record["scope_reason"],
-                    "sku": sku,
-                    "status": "policy_invalidated",
-                    "source_site": "wayland_games",
-                    "source_url": prior_entry.get("source_url", ""),
-                    "source_reason": prior_entry.get("source_reason", ""),
-                    "rewrite_reason": prior_entry.get("rewrite_reason", ""),
-                    "similarity": prior_entry.get("similarity", ""),
-                    "repaired_for_sku": prior_entry.get("repaired_for_sku", ""),
-                    "description_html": prior_entry.get("description_html", ""),
-                })
-                invalidated += 1
-            if (
-                prior_entry.get("state") == "completed"
-                and prior_entry.get("policy_version") == policy_version
-                and prior_entry.get("sku") == sku
-            ):
-                preview_rows.append({
-                    "product_id": record["id"],
-                    "title": record["title"],
-                    "scope_reason": record["scope_reason"],
-                    "sku": sku,
-                    "status": "resume_completed",
-                    "source_site": "wayland_games",
-                    "source_url": prior_entry.get("source_url", ""),
-                    "source_reason": prior_entry.get("source_reason", ""),
-                    "rewrite_reason": prior_entry.get("rewrite_reason", ""),
-                    "similarity": prior_entry.get("similarity", ""),
-                    "repaired_for_sku": prior_entry.get("repaired_for_sku", ""),
-                    "description_html": prior_entry.get("description_html", ""),
-                })
-                resumed += 1
-                continue
-
+        for index, record in enumerate(scoped_records, start=1):
+            sku: str | None = None
             try:
-                source_resolution = description_backfill.resolve_wayland_source(
-                    session,
-                    title=record["title"],
-                    sku=sku,
-                )
-            except Exception as exc:
-                review_rows.append({
-                    "product_id": record["id"],
-                    "title": record["title"],
-                    "scope_reason": record["scope_reason"],
-                    "sku": sku,
-                    "status": "failed",
-                    "source_site": "wayland_games",
-                    "source_url": "",
-                    "reason": "wayland_lookup_failed",
-                    "notes": str(exc),
-                })
-                manifest[record["id"]] = {
-                    "state": "failed",
-                    "policy_version": policy_version,
-                    "sku": sku,
-                    "error": str(exc),
-                }
-                _append_description_backfill_failure(record["id"], sku, record["title"], str(exc))
-                write_failed += 1
-                continue
-            if source_resolution.status != "accepted" or source_resolution.candidate is None:
-                review_rows.append({
-                    "product_id": record["id"],
-                    "title": record["title"],
-                    "scope_reason": record["scope_reason"],
-                    "sku": sku,
-                    "status": "review",
-                    "source_site": "wayland_games",
-                    "source_url": source_resolution.search_url,
-                    "reason": source_resolution.reason,
-                    "notes": "no confident source description match",
-                })
-                manifest[record["id"]] = {
-                    "state": "review",
-                    "policy_version": policy_version,
-                    "sku": sku,
-                    "source_reason": source_resolution.reason,
-                    "source_url": source_resolution.search_url,
-                }
-                reviewed += 1
-                continue
+                sku, sku_reason = _select_description_backfill_sku(record)
+                prior_entry = dict(manifest.get(record["id"], {}))
+                prior_source_site = prior_entry.get("source_site", "wayland_games")
+                if not sku:
+                    review_rows.append({
+                        "product_id": record["id"],
+                        "title": record["title"],
+                        "scope_reason": record["scope_reason"],
+                        "sku": "",
+                        "status": "review",
+                        "source_site": prior_source_site,
+                        "source_url": "",
+                        "reason": sku_reason,
+                        "notes": "product did not resolve to exactly one SKU",
+                    })
+                    reviewed += 1
+                    continue
 
-            try:
-                rewritten = description_backfill.rewrite_with_openrouter(
-                    session,
-                    env,
-                    source_text=source_resolution.candidate.description_text,
-                    sku=sku,
-                )
-            except Exception as exc:
-                review_rows.append({
-                    "product_id": record["id"],
-                    "title": record["title"],
-                    "scope_reason": record["scope_reason"],
-                    "sku": sku,
-                    "status": "failed",
-                    "source_site": "wayland_games",
-                    "source_url": source_resolution.candidate.page_url,
-                    "reason": "openrouter_error",
-                    "notes": str(exc),
-                })
-                manifest[record["id"]] = {
-                    "state": "failed",
-                    "policy_version": policy_version,
-                    "sku": sku,
-                    "source_reason": source_resolution.reason,
-                    "source_url": source_resolution.candidate.page_url,
-                    "error": str(exc),
-                }
-                _append_description_backfill_failure(record["id"], sku, record["title"], str(exc))
-                write_failed += 1
-                continue
+                if prior_entry.get("policy_version") and prior_entry.get("policy_version") != policy_version:
+                    preview_rows.append({
+                        "product_id": record["id"],
+                        "title": record["title"],
+                        "scope_reason": record["scope_reason"],
+                        "sku": sku,
+                        "status": "policy_invalidated",
+                        "source_site": prior_source_site,
+                        "source_url": prior_entry.get("source_url", ""),
+                        "source_reason": prior_entry.get("source_reason", ""),
+                        "rewrite_reason": prior_entry.get("rewrite_reason", ""),
+                        "similarity": prior_entry.get("similarity", ""),
+                        "repaired_for_sku": prior_entry.get("repaired_for_sku", ""),
+                        "description_html": prior_entry.get("description_html", ""),
+                    })
+                    invalidated += 1
+                if (
+                    prior_entry.get("state") == "completed"
+                    and prior_entry.get("policy_version") == policy_version
+                    and prior_entry.get("sku") == sku
+                ):
+                    preview_rows.append({
+                        "product_id": record["id"],
+                        "title": record["title"],
+                        "scope_reason": record["scope_reason"],
+                        "sku": sku,
+                        "status": "resume_completed",
+                        "source_site": prior_source_site,
+                        "source_url": prior_entry.get("source_url", ""),
+                        "source_reason": prior_entry.get("source_reason", ""),
+                        "rewrite_reason": prior_entry.get("rewrite_reason", ""),
+                        "similarity": prior_entry.get("similarity", ""),
+                        "repaired_for_sku": prior_entry.get("repaired_for_sku", ""),
+                        "description_html": prior_entry.get("description_html", ""),
+                    })
+                    resumed += 1
+                    continue
 
-            rewrite_result = description_backfill.evaluate_rewrite(
-                source_resolution.candidate.description_text,
-                rewritten,
-                sku,
-            )
-            if rewrite_result.status != "accepted":
-                review_rows.append({
+                try:
+                    source_resolution = description_backfill.resolve_preferred_source(
+                        session,
+                        title=record["title"],
+                        sku=sku,
+                    )
+                except Exception as exc:
+                    review_rows.append({
+                        "product_id": record["id"],
+                        "title": record["title"],
+                        "scope_reason": record["scope_reason"],
+                        "sku": sku,
+                        "status": "failed",
+                        "source_site": "source_lookup",
+                        "source_url": "",
+                        "reason": "source_lookup_failed",
+                        "notes": str(exc),
+                    })
+                    manifest[record["id"]] = {
+                        "state": "failed",
+                        "policy_version": policy_version,
+                        "sku": sku,
+                        "source_site": "source_lookup",
+                        "error": str(exc),
+                    }
+                    _append_description_backfill_failure(record["id"], sku, record["title"], str(exc))
+                    write_failed += 1
+                    continue
+                if source_resolution.status != "accepted" or source_resolution.candidate is None:
+                    review_rows.append({
+                        "product_id": record["id"],
+                        "title": record["title"],
+                        "scope_reason": record["scope_reason"],
+                        "sku": sku,
+                        "status": "review",
+                        "source_site": source_resolution.source_site,
+                        "source_url": source_resolution.search_url,
+                        "reason": source_resolution.reason,
+                        "notes": "no confident source description match",
+                    })
+                    manifest[record["id"]] = {
+                        "state": "review",
+                        "policy_version": policy_version,
+                        "sku": sku,
+                        "source_site": source_resolution.source_site,
+                        "source_reason": source_resolution.reason,
+                        "source_url": source_resolution.search_url,
+                    }
+                    reviewed += 1
+                    continue
+
+                try:
+                    rewritten = description_backfill.rewrite_with_openrouter(
+                        session,
+                        env,
+                        source_text=source_resolution.candidate.description_text,
+                        sku=sku,
+                    )
+                except Exception as exc:
+                    review_rows.append({
+                        "product_id": record["id"],
+                        "title": record["title"],
+                        "scope_reason": record["scope_reason"],
+                        "sku": sku,
+                        "status": "failed",
+                        "source_site": source_resolution.candidate.source_site,
+                        "source_url": source_resolution.candidate.page_url,
+                        "reason": "openrouter_error",
+                        "notes": str(exc),
+                    })
+                    manifest[record["id"]] = {
+                        "state": "failed",
+                        "policy_version": policy_version,
+                        "sku": sku,
+                        "source_site": source_resolution.candidate.source_site,
+                        "source_reason": source_resolution.reason,
+                        "source_url": source_resolution.candidate.page_url,
+                        "error": str(exc),
+                    }
+                    _append_description_backfill_failure(record["id"], sku, record["title"], str(exc))
+                    write_failed += 1
+                    continue
+
+                rewrite_result = description_backfill.evaluate_rewrite(
+                    source_resolution.candidate.description_text,
+                    rewritten,
+                    sku,
+                )
+                if rewrite_result.status != "accepted":
+                    review_rows.append({
+                        "product_id": record["id"],
+                        "title": record["title"],
+                        "scope_reason": record["scope_reason"],
+                        "sku": sku,
+                        "status": "review",
+                        "source_site": source_resolution.candidate.source_site,
+                        "source_url": source_resolution.candidate.page_url,
+                        "reason": rewrite_result.reason,
+                        "notes": rewrite_result.rewritten_text,
+                    })
+                    manifest[record["id"]] = {
+                        "state": "review",
+                        "policy_version": policy_version,
+                        "sku": sku,
+                        "source_site": source_resolution.candidate.source_site,
+                        "source_reason": source_resolution.reason,
+                        "source_url": source_resolution.candidate.page_url,
+                        "rewrite_reason": rewrite_result.reason,
+                        "similarity": rewrite_result.similarity,
+                        "repaired_for_sku": rewrite_result.repaired_for_sku,
+                    }
+                    reviewed += 1
+                    continue
+
+                description_html = description_backfill.sanitize_description_html(rewrite_result.rewritten_text)
+                accepted_preview_row = {
                     "product_id": record["id"],
                     "title": record["title"],
                     "scope_reason": record["scope_reason"],
                     "sku": sku,
-                    "status": "review",
-                    "source_site": "wayland_games",
+                    "status": "updated" if not dry else "dry_run_candidate",
+                    "source_site": source_resolution.candidate.source_site,
                     "source_url": source_resolution.candidate.page_url,
-                    "reason": rewrite_result.reason,
-                    "notes": rewrite_result.rewritten_text,
-                })
-                manifest[record["id"]] = {
-                    "state": "review",
-                    "policy_version": policy_version,
-                    "sku": sku,
                     "source_reason": source_resolution.reason,
-                    "source_url": source_resolution.candidate.page_url,
                     "rewrite_reason": rewrite_result.reason,
-                    "similarity": rewrite_result.similarity,
-                    "repaired_for_sku": rewrite_result.repaired_for_sku,
+                    "similarity": f"{rewrite_result.similarity:.4f}",
+                    "repaired_for_sku": str(rewrite_result.repaired_for_sku).lower(),
+                    "description_html": description_html,
                 }
-                reviewed += 1
-                continue
 
-            description_html = description_backfill.sanitize_description_html(rewrite_result.rewritten_text)
-            accepted_preview_row = {
-                "product_id": record["id"],
-                "title": record["title"],
-                "scope_reason": record["scope_reason"],
-                "sku": sku,
-                "status": "updated" if not dry else "dry_run_candidate",
-                "source_site": "wayland_games",
-                "source_url": source_resolution.candidate.page_url,
-                "source_reason": source_resolution.reason,
-                "rewrite_reason": rewrite_result.reason,
-                "similarity": f"{rewrite_result.similarity:.4f}",
-                "repaired_for_sku": str(rewrite_result.repaired_for_sku).lower(),
-                "description_html": description_html,
-            }
+                if dry:
+                    preview_rows.append(accepted_preview_row)
+                    manifest[record["id"]] = {
+                        "state": "dry_run_candidate",
+                        "policy_version": policy_version,
+                        "sku": sku,
+                        "source_site": source_resolution.candidate.source_site,
+                        "source_reason": source_resolution.reason,
+                        "source_url": source_resolution.candidate.page_url,
+                        "rewrite_reason": rewrite_result.reason,
+                        "similarity": rewrite_result.similarity,
+                        "repaired_for_sku": rewrite_result.repaired_for_sku,
+                        "description_html": description_html,
+                    }
+                    continue
 
-            if dry:
-                preview_rows.append(accepted_preview_row)
+                try:
+                    client.update_product_description(record["id"], description_html)
+                    preview_rows.append(accepted_preview_row)
+                    updated += 1
+                except Exception as exc:
+                    preview_rows.append({
+                        **accepted_preview_row,
+                        "status": "write_failed",
+                    })
+                    review_rows.append({
+                        "product_id": record["id"],
+                        "title": record["title"],
+                        "scope_reason": record["scope_reason"],
+                        "sku": sku,
+                        "status": "failed",
+                        "source_site": source_resolution.candidate.source_site,
+                        "source_url": source_resolution.candidate.page_url,
+                        "reason": "shopify_update_failed",
+                        "notes": str(exc),
+                    })
+                    manifest[record["id"]] = {
+                        "state": "failed",
+                        "policy_version": policy_version,
+                        "sku": sku,
+                        "source_site": source_resolution.candidate.source_site,
+                        "source_reason": source_resolution.reason,
+                        "source_url": source_resolution.candidate.page_url,
+                        "rewrite_reason": rewrite_result.reason,
+                        "similarity": rewrite_result.similarity,
+                        "repaired_for_sku": rewrite_result.repaired_for_sku,
+                        "error": str(exc),
+                    }
+                    _append_description_backfill_failure(record["id"], sku, record["title"], str(exc))
+                    write_failed += 1
+                    continue
+
                 manifest[record["id"]] = {
-                    "state": "dry_run_candidate",
+                    "state": "completed",
                     "policy_version": policy_version,
                     "sku": sku,
+                    "source_site": source_resolution.candidate.source_site,
                     "source_reason": source_resolution.reason,
                     "source_url": source_resolution.candidate.page_url,
                     "rewrite_reason": rewrite_result.reason,
@@ -5531,60 +5598,29 @@ def phase_backfill_descriptions(
                     "repaired_for_sku": rewrite_result.repaired_for_sku,
                     "description_html": description_html,
                 }
-                continue
-
-            try:
-                client.update_product_description(record["id"], description_html)
-                preview_rows.append(accepted_preview_row)
-                updated += 1
-            except Exception as exc:
-                preview_rows.append({
-                    **accepted_preview_row,
-                    "status": "write_failed",
-                })
-                review_rows.append({
-                    "product_id": record["id"],
-                    "title": record["title"],
-                    "scope_reason": record["scope_reason"],
-                    "sku": sku,
-                    "status": "failed",
-                    "source_site": "wayland_games",
-                    "source_url": source_resolution.candidate.page_url,
-                    "reason": "shopify_update_failed",
-                    "notes": str(exc),
-                })
-                manifest[record["id"]] = {
-                    "state": "failed",
-                    "policy_version": policy_version,
-                    "sku": sku,
-                    "source_reason": source_resolution.reason,
-                    "source_url": source_resolution.candidate.page_url,
-                    "rewrite_reason": rewrite_result.reason,
-                    "similarity": rewrite_result.similarity,
-                    "repaired_for_sku": rewrite_result.repaired_for_sku,
-                    "error": str(exc),
-                }
-                _append_description_backfill_failure(record["id"], sku, record["title"], str(exc))
-                write_failed += 1
-                continue
-
-            manifest[record["id"]] = {
-                "state": "completed",
-                "policy_version": policy_version,
-                "sku": sku,
-                "source_reason": source_resolution.reason,
-                "source_url": source_resolution.candidate.page_url,
-                "rewrite_reason": rewrite_result.reason,
-                "similarity": rewrite_result.similarity,
-                "repaired_for_sku": rewrite_result.repaired_for_sku,
-                "description_html": description_html,
-            }
+            finally:
+                if total_scoped and index % DESCRIPTION_BACKFILL_CHECKPOINT_EVERY == 0:
+                    _write_description_backfill_checkpoint(
+                        preview_rows=preview_rows,
+                        review_rows=review_rows,
+                        manifest=manifest,
+                        manifest_path=manifest_path,
+                    )
+                    log(
+                        "DESCRIPTION BACKFILL progress: "
+                        f"processed={index}/{total_scoped} updated={updated} review={reviewed} "
+                        f"resumed={resumed} invalidated={invalidated} write_failed={write_failed} "
+                        f"dry_run={dry} current_sku={sku or ''} current_title={record['title']}"
+                    )
     finally:
+        _write_description_backfill_checkpoint(
+            preview_rows=preview_rows,
+            review_rows=review_rows,
+            manifest=manifest,
+            manifest_path=manifest_path,
+        )
         description_backfill.close_wayland_scraper(session)
 
-    _write_sanitized_csv(DESCRIPTION_BACKFILL_PREVIEW_CSV, DESCRIPTION_BACKFILL_PREVIEW_COLUMNS, preview_rows)
-    _write_sanitized_csv(DESCRIPTION_BACKFILL_REVIEW_CSV, DESCRIPTION_BACKFILL_REVIEW_COLUMNS, review_rows)
-    description_backfill.save_manifest(manifest_path, manifest)
     log(
         f"DESCRIPTION BACKFILL summary: scoped={len(scoped_records)} preview={len(preview_rows)} "
         f"review={len(review_rows)} updated={updated} resumed={resumed} invalidated={invalidated} "
@@ -5772,6 +5808,18 @@ def _append_description_backfill_failure(product_id: str, sku: str, title: str, 
             )
             + "\n"
         )
+
+
+def _write_description_backfill_checkpoint(
+    *,
+    preview_rows: list[dict[str, Any]],
+    review_rows: list[dict[str, Any]],
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> None:
+    _write_sanitized_csv(DESCRIPTION_BACKFILL_PREVIEW_CSV, DESCRIPTION_BACKFILL_PREVIEW_COLUMNS, preview_rows)
+    _write_sanitized_csv(DESCRIPTION_BACKFILL_REVIEW_CSV, DESCRIPTION_BACKFILL_REVIEW_COLUMNS, review_rows)
+    description_backfill.save_manifest(manifest_path, manifest)
 
 
 def _select_description_backfill_sku(record: dict[str, Any]) -> tuple[str | None, str]:

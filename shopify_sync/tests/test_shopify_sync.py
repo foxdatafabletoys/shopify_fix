@@ -508,6 +508,70 @@ class DescriptionBackfillHelperTests(unittest.TestCase):
         self.assertTrue(scraper.closed)
         self.assertFalse(hasattr(session, shopify_sync.description_backfill.WAYLAND_PLAYWRIGHT_SESSION_ATTR))
 
+    def test_wayland_scraper_close_suppresses_keyboard_interrupt_from_resource_close(self):
+        scraper = object.__new__(shopify_sync.description_backfill.WaylandPlaywrightScraper)
+
+        class InterruptingCloser:
+            def close(self):
+                raise KeyboardInterrupt()
+
+        scraper._page = InterruptingCloser()
+        scraper._context = None
+        scraper._browser = None
+        scraper._playwright_manager = None
+
+        shopify_sync.description_backfill.WaylandPlaywrightScraper.close(scraper)
+
+        self.assertIsNone(scraper._page)
+
+    def test_resolve_preferred_source_falls_back_to_games_workshop_when_wayland_reviews(self):
+        session = requests.Session()
+        search_html = """
+        <html><body>
+          <a href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.warhammer.com%2Fen-GB%2Fshop%2Farmageddon-battalion-deathwatch">
+            Armageddon Battalion: Deathwatch
+          </a>
+        </body></html>
+        """
+        product_html = """
+        <html>
+          <head>
+            <title>Armageddon Battalion: Deathwatch</title>
+            <meta name="description" content="Assemble an elite Deathwatch strike force for Armageddon with veteran operatives and specialist wargear.">
+          </head>
+          <body>
+            <div>99120109017</div>
+          </body>
+        </html>
+        """
+        session.get = mock.Mock(side_effect=[
+            FakeResponse(text=search_html, url="https://html.duckduckgo.com/html/?q=deathwatch"),
+            FakeResponse(text=product_html, url="https://www.warhammer.com/en-GB/shop/armageddon-battalion-deathwatch"),
+        ])
+
+        with mock.patch.object(
+            shopify_sync.description_backfill,
+            "resolve_wayland_source",
+            return_value=shopify_sync.description_backfill.SourceResolution(
+                status="review",
+                reason="no_confident_wayland_match",
+                search_url="https://www.waylandgames.co.uk/search?query=99120109017",
+            ),
+        ):
+            result = shopify_sync.description_backfill.resolve_preferred_source(
+                session,
+                title="ARMAGEDDON BATTALION: DEATHWATCH",
+                sku="99120109017",
+            )
+
+        self.assertEqual(result.status, "accepted")
+        self.assertEqual(result.source_site, "games_workshop")
+        self.assertEqual(result.reason, "games_workshop_title_sku_match")
+        self.assertEqual(
+            result.candidate.page_url,
+            "https://www.warhammer.com/en-GB/shop/armageddon-battalion-deathwatch",
+        )
+
     def test_require_playwright_raises_clear_runtime_error_when_missing(self):
         session = requests.Session()
         with mock.patch.object(
@@ -2130,7 +2194,7 @@ class PhaseDescriptionBackfillTests(unittest.TestCase):
         ])
 
         with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
-             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", return_value=shopify_sync.description_backfill.SourceResolution(
+             mock.patch("shopify_sync.description_backfill.resolve_preferred_source", return_value=shopify_sync.description_backfill.SourceResolution(
                  status="accepted",
                  reason="unique_title_sku_match",
                  search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
@@ -2168,7 +2232,7 @@ class PhaseDescriptionBackfillTests(unittest.TestCase):
         self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
 
         with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
-             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", return_value=shopify_sync.description_backfill.SourceResolution(
+             mock.patch("shopify_sync.description_backfill.resolve_preferred_source", return_value=shopify_sync.description_backfill.SourceResolution(
                  status="accepted",
                  reason="unique_title_sku_match",
                  search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
@@ -2206,7 +2270,7 @@ class PhaseDescriptionBackfillTests(unittest.TestCase):
         self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
 
         with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
-             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", return_value=shopify_sync.description_backfill.SourceResolution(
+             mock.patch("shopify_sync.description_backfill.resolve_preferred_source", return_value=shopify_sync.description_backfill.SourceResolution(
                  status="review",
                  reason="no_confident_wayland_match",
                  search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
@@ -2229,7 +2293,7 @@ class PhaseDescriptionBackfillTests(unittest.TestCase):
         self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
 
         with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
-             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", return_value=shopify_sync.description_backfill.SourceResolution(
+             mock.patch("shopify_sync.description_backfill.resolve_preferred_source", return_value=shopify_sync.description_backfill.SourceResolution(
                  status="accepted",
                  reason="unique_title_sku_match",
                  search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
@@ -2304,7 +2368,7 @@ class PhaseDescriptionBackfillTests(unittest.TestCase):
         ]
 
         with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
-             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", side_effect=source_resolutions), \
+             mock.patch("shopify_sync.description_backfill.resolve_preferred_source", side_effect=source_resolutions), \
              mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter", side_effect=["Fresh copy one.", "Fresh copy two."]), \
              mock.patch("shopify_sync.description_backfill.evaluate_rewrite", side_effect=rewrite_results):
             shopify_sync.phase_backfill_descriptions(
@@ -2346,7 +2410,7 @@ class PhaseDescriptionBackfillTests(unittest.TestCase):
         self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
 
         with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
-             mock.patch("shopify_sync.description_backfill.resolve_wayland_source") as resolve_source, \
+             mock.patch("shopify_sync.description_backfill.resolve_preferred_source") as resolve_source, \
              mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter") as rewrite:
             shopify_sync.phase_backfill_descriptions(
                 self.client,
@@ -2375,7 +2439,7 @@ class PhaseDescriptionBackfillTests(unittest.TestCase):
         self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
 
         with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
-             mock.patch("shopify_sync.description_backfill.resolve_wayland_source", return_value=shopify_sync.description_backfill.SourceResolution(
+             mock.patch("shopify_sync.description_backfill.resolve_preferred_source", return_value=shopify_sync.description_backfill.SourceResolution(
                  status="accepted",
                  reason="unique_title_sku_match",
                  search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
@@ -2405,6 +2469,123 @@ class PhaseDescriptionBackfillTests(unittest.TestCase):
         self.assertIn("dry_run_candidate", preview)
         self.assertNotIn("resume_completed", preview)
         self.assertNotEqual(manifest["gid://shopify/Product/1"]["policy_version"], "dbv1-stale")
+
+    def test_games_workshop_fallback_is_recorded_in_preview_and_manifest(self):
+        self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
+
+        with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
+             mock.patch("shopify_sync.description_backfill.resolve_preferred_source", return_value=shopify_sync.description_backfill.SourceResolution(
+                 status="accepted",
+                 reason="games_workshop_title_only_match",
+                 search_url="https://html.duckduckgo.com/html/?q=Captain",
+                 source_site="games_workshop",
+                 candidate=shopify_sync.description_backfill.WaylandCandidate(
+                     page_url="https://www.warhammer.com/en-GB/shop/space-marines-captain",
+                     title="Space Marines Captain",
+                     description_text="Lead a veteran strike force into battle with this heavily armoured commander.",
+                     sku_text="SKU-1",
+                     title_score=1.0,
+                     source_site="games_workshop",
+                 ),
+             )), \
+             mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter", return_value="Fresh copy for collectors."), \
+             mock.patch("shopify_sync.description_backfill.evaluate_rewrite", return_value=shopify_sync.description_backfill.RewriteResult(
+                 status="accepted",
+                 reason="rewrite_passed",
+                 source_text="source",
+                 rewritten_text="Fresh copy for collectors. SKU: SKU-1.",
+                 similarity=0.22,
+                 repaired_for_sku=True,
+             )):
+            shopify_sync.phase_backfill_descriptions(
+                self.client,
+                self.env,
+                dry=True,
+                target_skus=[],
+                limit=None,
+                manifest_path=self.manifest_path,
+            )
+
+        preview = self.preview_path.read_text(encoding="utf-8")
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertIn("games_workshop", preview)
+        self.assertEqual(manifest["gid://shopify/Product/1"]["source_site"], "games_workshop")
+
+    def test_interrupt_still_flushes_completed_backfill_checkpoint(self):
+        self.client.iter_existing_for_description_backfill.return_value = iter([
+            self._record(product_id="gid://shopify/Product/1", title="Captain", skus=["SKU-1"]),
+            self._record(product_id="gid://shopify/Product/2", title="Chaplain", skus=["SKU-2"]),
+        ])
+
+        with mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
+             mock.patch("shopify_sync.description_backfill.resolve_preferred_source", side_effect=[
+                 shopify_sync.description_backfill.SourceResolution(
+                     status="accepted",
+                     reason="unique_title_sku_match",
+                     search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
+                     candidate=self._candidate(),
+                 ),
+                 KeyboardInterrupt(),
+             ]), \
+             mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter", return_value="Fresh copy for collectors."), \
+             mock.patch("shopify_sync.description_backfill.evaluate_rewrite", return_value=shopify_sync.description_backfill.RewriteResult(
+                 status="accepted",
+                 reason="rewrite_passed",
+                 source_text="source",
+                 rewritten_text="Fresh copy for collectors. SKU: SKU-1.",
+                 similarity=0.22,
+                 repaired_for_sku=True,
+             )):
+            with self.assertRaises(KeyboardInterrupt):
+                shopify_sync.phase_backfill_descriptions(
+                    self.client,
+                    self.env,
+                    dry=False,
+                    target_skus=[],
+                    limit=None,
+                    manifest_path=self.manifest_path,
+                )
+
+        preview = self.preview_path.read_text(encoding="utf-8")
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertIn("updated", preview)
+        self.assertEqual(manifest["gid://shopify/Product/1"]["state"], "completed")
+        self.assertNotIn("gid://shopify/Product/2", manifest)
+
+    def test_backfill_logs_progress_when_checkpoint_boundary_is_hit(self):
+        self.client.iter_existing_for_description_backfill.return_value = iter([self._record()])
+
+        with mock.patch("shopify_sync.DESCRIPTION_BACKFILL_CHECKPOINT_EVERY", 1), \
+             mock.patch("shopify_sync.log") as log_mock, \
+             mock.patch("shopify_sync.description_backfill.require_openrouter_config"), \
+             mock.patch("shopify_sync.description_backfill.resolve_preferred_source", return_value=shopify_sync.description_backfill.SourceResolution(
+                 status="accepted",
+                 reason="unique_title_sku_match",
+                 search_url="https://www.waylandgames.co.uk/search?s=SKU-1",
+                 candidate=self._candidate(),
+             )), \
+             mock.patch("shopify_sync.description_backfill.rewrite_with_openrouter", return_value="Fresh copy for collectors."), \
+             mock.patch("shopify_sync.description_backfill.evaluate_rewrite", return_value=shopify_sync.description_backfill.RewriteResult(
+                 status="accepted",
+                 reason="rewrite_passed",
+                 source_text="source",
+                 rewritten_text="Fresh copy for collectors. SKU: SKU-1.",
+                 similarity=0.22,
+                 repaired_for_sku=True,
+             )):
+            shopify_sync.phase_backfill_descriptions(
+                self.client,
+                self.env,
+                dry=True,
+                target_skus=[],
+                limit=None,
+                manifest_path=self.manifest_path,
+            )
+
+        logged_messages = [call.args[0] for call in log_mock.call_args_list]
+        self.assertTrue(
+            any(message.startswith("DESCRIPTION BACKFILL progress: processed=1/1") for message in logged_messages)
+        )
 
 
 class PhaseOnlineStoreImageVisibilityTests(unittest.TestCase):
