@@ -147,12 +147,21 @@ def _token_set(value: str) -> set[str]:
 
 
 def _title_similarity(left: str, right: str) -> float:
+    """F1-style token overlap. Symmetric and tolerant of one title carrying
+    extra branding tokens (e.g. Wayland's `<title>` adds " | Games Workshop |
+    Wayland Games"), while still rejecting near-misses across distinct
+    products. Returns 0.0..1.0.
+    """
     left_tokens = _token_set(left)
     right_tokens = _token_set(right)
     if not left_tokens or not right_tokens:
         return 0.0
     overlap = len(left_tokens & right_tokens)
-    return overlap / max(len(left_tokens), len(right_tokens))
+    if overlap == 0:
+        return 0.0
+    precision = overlap / len(left_tokens)
+    recall = overlap / len(right_tokens)
+    return (2 * precision * recall) / (precision + recall)
 
 
 def _sku_present_in_text(text: str, sku: str) -> bool:
@@ -244,8 +253,12 @@ def save_manifest(path: Any, manifest: dict[str, dict[str, Any]]) -> None:
 
 
 def build_search_url(title: str, sku: str) -> str:
+    # Wayland's Next.js search reads `?query=...` from the URL (the older `?s=`
+    # parameter is silently ignored, which yields the empty "No results found"
+    # SPA page for every lookup). Send the SKU + title joined by a space, just
+    # as the on-site search box would.
     query = " ".join(part for part in (sku, title) if part).strip()
-    return f"{WAYLAND_SEARCH_URL}?s={quote_plus(query)}"
+    return f"{WAYLAND_SEARCH_URL}?query={quote_plus(query)}"
 
 
 def build_wayland_product_guess_url(title: str, sku: str) -> str:
@@ -446,6 +459,53 @@ def fetch_url_with_retries(
     raise RuntimeError(f"Failed to fetch {url}")
 
 
+_WAYLAND_PRODUCT_PATH_RE = re.compile(r"^/[a-z0-9][a-z0-9-]*-\d{4,}/?$")
+_WAYLAND_NON_PRODUCT_PATH_PREFIXES: tuple[str, ...] = (
+    "/account",
+    "/auth/",
+    "/cart",
+    "/checkout",
+    "/wishlist",
+    "/search",
+    "/news",
+    "/blog",
+    "/pre-orders",
+    "/help",
+    "/about",
+    "/contact",
+    "/faq",
+    "/terms",
+    "/privacy",
+    "/cookie",
+    "/shipping",
+    "/returns",
+    "/affiliate",
+    "/competitions",
+    "/wayland-games-centre",
+    "/how-to",
+    "/_next",
+    "/favicon",
+    "/artwork-prints",
+    "/eu-shipping",
+    "/accessibility",
+)
+
+
+def _is_wayland_product_path(path: str) -> bool:
+    """Wayland product URLs follow `/<slug-with-hyphens>-<numeric-code>` and
+    sit at the site root (no category prefix). Filter out nav, account, blog,
+    static-asset, and category landing-page URLs that share the same domain
+    but aren't products.
+    """
+    if not path or path == "/" or path.startswith("#"):
+        return False
+    lowered = path.lower()
+    for prefix in _WAYLAND_NON_PRODUCT_PATH_PREFIXES:
+        if lowered.startswith(prefix):
+            return False
+    return bool(_WAYLAND_PRODUCT_PATH_RE.match(lowered))
+
+
 def _parse_search_candidates(html_text: str, search_url: str) -> list[tuple[str, str]]:
     parser = _AnchorCollector()
     parser.feed(html_text)
@@ -459,6 +519,8 @@ def _parse_search_candidates(html_text: str, search_url: str) -> list[tuple[str,
         absolute = urljoin(base, href)
         parsed = urlparse(absolute)
         if "waylandgames.co.uk" not in parsed.netloc.lower():
+            continue
+        if not _is_wayland_product_path(parsed.path):
             continue
         if absolute in seen:
             continue
@@ -475,17 +537,38 @@ def _search_wayland_candidates(
     title: str,
     sku: str,
 ) -> tuple[list[tuple[str, str]], str]:
-    search_url = build_search_url(title, sku)
+    """Build the candidate list: a slug-guess URL plus search results from up
+    to two queries.
+
+    Wayland's search engine treats the query as a literal phrase. When we
+    prepend the F&F variant SKU and that SKU doesn't exist on Wayland (because
+    of GW catalogue-code drift), the search returns ZERO hits and the page
+    falls back to a site-wide "featured products" carousel — so the candidate
+    list ends up full of unrelated products. Fix: also run a title-only query
+    and merge candidates. Title-only is more permissive (more results to score
+    against) and recovers SKU-mismatched products.
+    """
+    primary_url = build_search_url(title, sku)
     scraper = _get_wayland_scraper(session)
     guessed_url = build_wayland_product_guess_url(title, sku)
     candidates: list[tuple[str, str]] = [(guessed_url, title)]
     seen = {guessed_url}
-    for candidate_url, candidate_title in _parse_search_candidates(scraper.fetch_html(search_url), search_url):
-        if candidate_url in seen:
+    queries = [primary_url]
+    if sku:
+        title_only_url = f"{WAYLAND_SEARCH_URL}?query={quote_plus(title)}"
+        if title_only_url != primary_url:
+            queries.append(title_only_url)
+    for query_url in queries:
+        try:
+            search_html = scraper.fetch_html(query_url)
+        except Exception:
             continue
-        seen.add(candidate_url)
-        candidates.append((candidate_url, candidate_title))
-    return candidates, search_url
+        for candidate_url, candidate_title in _parse_search_candidates(search_html, query_url):
+            if candidate_url in seen:
+                continue
+            seen.add(candidate_url)
+            candidates.append((candidate_url, candidate_title))
+    return candidates, primary_url
 
 
 def _extract_description_text(page_html: str) -> str:
@@ -528,8 +611,17 @@ def resolve_wayland_source(
         return SourceResolution(status="review", reason="no_wayland_candidate", search_url=search_url)
 
     scraper = _get_wayland_scraper(session)
-    accepted: list[WaylandCandidate] = []
-    for page_url, link_title in candidate_links[:5]:
+    # Two acceptance lanes:
+    #   (a) "title + SKU" — title >= 0.6 AND SKU literally present on the page.
+    #   (b) "title-only"  — title >= 0.85, no SKU required. This handles cases
+    #       where Wayland's URL/SKU is a different GW code generation for the
+    #       same product (e.g. F&F has 99120218074 but Wayland has 99120218009
+    #       for Dracothian Guard — same model, different GW catalogue codes).
+    sku_matches: list[WaylandCandidate] = []
+    title_only_matches: list[WaylandCandidate] = []
+    # Score up to 8 candidates — we merge two search queries (SKU+title and
+    # title-only) plus a slug-guess URL, so candidate counts can exceed 5.
+    for page_url, link_title in candidate_links[:8]:
         page_html = scraper.fetch_html(page_url)
         page_title = _extract_page_title(page_html) or link_title
         description_text = _extract_description_text(page_html)
@@ -537,24 +629,35 @@ def resolve_wayland_source(
         title_score = _title_similarity(title, page_title)
         if not description_text:
             continue
-        if title_score < 0.6:
-            continue
-        if not sku_present:
-            continue
-        accepted.append(
-            WaylandCandidate(
-                page_url=page_url,
-                title=page_title,
-                description_text=description_text,
-                sku_text=sku,
-                title_score=title_score,
-            )
+        candidate = WaylandCandidate(
+            page_url=page_url,
+            title=page_title,
+            description_text=description_text,
+            sku_text=sku,
+            title_score=title_score,
         )
-    if not accepted:
+        # SKU-confirmed lane: F1 >= 0.5 (lenient — the SKU agrees, so a
+        # moderate title overlap is enough confidence).
+        # Title-only lane:    F1 >= 0.8 (strict — without SKU confirmation we
+        # need the titles to be near-identical to avoid cross-product mixups
+        # like accepting "Krondys Son of Dracothian" for "Dracothian Guard").
+        if sku_present and title_score >= 0.5:
+            sku_matches.append(candidate)
+        elif not sku_present and title_score >= 0.8:
+            title_only_matches.append(candidate)
+    # Prefer SKU-confirmed matches when present; otherwise fall back to the
+    # strict title-only lane. Within each lane, pick the highest title score.
+    pool = sku_matches or title_only_matches
+    if not pool:
         return SourceResolution(status="review", reason="no_confident_wayland_match", search_url=search_url)
-    if len(accepted) > 1:
+    pool.sort(key=lambda c: c.title_score, reverse=True)
+    best = pool[0]
+    # Disambiguate ties: if the top two have similar scores, that's still a
+    # review case — we shouldn't guess between two equally-good matches.
+    if len(pool) > 1 and pool[1].title_score >= best.title_score - 0.05:
         return SourceResolution(status="review", reason="multiple_confident_wayland_matches", search_url=search_url)
-    return SourceResolution(status="accepted", reason="unique_title_sku_match", search_url=search_url, candidate=accepted[0])
+    reason = "unique_title_sku_match" if sku_matches else "unique_title_only_match"
+    return SourceResolution(status="accepted", reason=reason, search_url=search_url, candidate=best)
 
 
 def _build_rewrite_messages(source_text: str, sku: str) -> list[dict[str, str]]:
