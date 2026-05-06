@@ -1,24 +1,35 @@
 {
   "gid://shopify/Product/15724502090112": {
-    "policy_version": "dbv1-14ee227536c1",
+    "description_html": "<p>, and the \"Buy Now\" that's visible in the description indicates an immediate purchase option is available. SKU: 99120109017.</p>",
+    "policy_version": "dbv1-52d111002a03",
+    "repaired_for_sku": true,
+    "rewrite_reason": "rewrite_passed",
+    "similarity": 0.09523809523809523,
     "sku": "99120109017",
-    "source_reason": "no_confident_wayland_match",
-    "source_url": "https://www.waylandgames.co.uk/search?query=99120109017+ARMAGEDDON+BATTALION%3A+DEATHWATCH",
-    "state": "review"
+    "source_reason": "unique_title_sku_match",
+    "source_site": "wayland_games",
+    "source_url": "https://www.waylandgames.co.uk/armageddon-battalion-deathwatch-99120109017",
+    "state": "dry_run_candidate"
   },
   "gid://shopify/Product/15724502155648": {
-    "policy_version": "dbv1-14ee227536c1",
+    "policy_version": "dbv1-52d111002a03",
     "sku": "60040199190",
-    "source_reason": "no_confident_wayland_match",
-    "source_url": "https://www.waylandgames.co.uk/search?query=60040199190+ARMAGEDDON%3A+RETURN+OF+YARRICK+%28ENG%29",
+    "source_reason": "no_confident_wayland_or_games_workshop_match",
+    "source_site": "games_workshop",
+    "source_url": "https://html.duckduckgo.com/html/?q=site%3Awarhammer.com%2Fen-GB%2Fshop+%22ARMAGEDDON%3A+RETURN+OF+YARRICK+%28ENG%29%22+%2260040199190%22",
     "state": "review"
   },
   "gid://shopify/Product/15724502253952": {
-    "policy_version": "dbv1-14ee227536c1",
+    "description_html": "<p>The SKU 99120103128 corresponds to the Orks: Wazdakka Gutsmek miniature from Games Workshop's Warhammer 40,000 line, offering a fast, worry\u2011free delivery experience.</p>",
+    "policy_version": "dbv1-52d111002a03",
+    "repaired_for_sku": false,
+    "rewrite_reason": "rewrite_passed",
+    "similarity": 0.4,
     "sku": "99120103128",
-    "source_reason": "no_confident_wayland_match",
-    "source_url": "https://www.waylandgames.co.uk/search?query=99120103128+ORKS%3A+WAZDAKKA+GUTSMEK",
-    "state": "review"
+    "source_reason": "unique_title_sku_match",
+    "source_site": "wayland_games",
+    "source_url": "https://www.waylandgames.co.uk/orks-wazdakka-gutsmek-99120103128",
+    "state": "dry_run_candidate"
   },
   "gid://shopify/Product/15724502319488": {
     "policy_version": "dbv1-14ee227536c1",

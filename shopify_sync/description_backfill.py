@@ -258,6 +258,8 @@ def current_description_backfill_policy_version(
         "outcomes": ["updated", "review", "failed", "resume_completed", "policy_invalidated"],
         "required_match_signals": ["unique_candidate", "title_agreement", "sku_present"],
         "required_rewrite_gates": ["non_empty", "sku_present", "non_copy_like", "html_shape"],
+        "extractor_version": "v2_ld_json_first",
+        "rewrite_prompt_version": "v2_facts_only_no_filler",
     }
     digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:12]
     return f"dbv1-{digest}"
@@ -774,7 +776,77 @@ def _search_wayland_candidates(
     return candidates, primary_url
 
 
+_PRODUCT_LD_JSON_TYPES = frozenset({"Product", "IndividualProduct", "ProductGroup"})
+_DESCRIPTION_TEXT_MIN_PARAGRAPH_LENGTH = 80
+
+
+def _flatten_ld_json_payload(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        items: list[dict[str, Any]] = []
+        graph = payload.get("@graph")
+        if isinstance(graph, list):
+            for entry in graph:
+                items.extend(_flatten_ld_json_payload(entry))
+        else:
+            items.append(payload)
+        return items
+    if isinstance(payload, list):
+        items = []
+        for entry in payload:
+            items.extend(_flatten_ld_json_payload(entry))
+        return items
+    return []
+
+
+def _extract_ld_json_product_description(page_html: str) -> str:
+    blobs = re.findall(
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        page_html, flags=re.DOTALL | re.IGNORECASE,
+    )
+    for blob in blobs:
+        try:
+            payload = json.loads(blob.strip())
+        except (ValueError, TypeError):
+            continue
+        for item in _flatten_ld_json_payload(payload):
+            type_value = item.get("@type")
+            types = type_value if isinstance(type_value, list) else [type_value]
+            if not any(isinstance(t, str) and t in _PRODUCT_LD_JSON_TYPES for t in types):
+                continue
+            desc = item.get("description")
+            if isinstance(desc, str):
+                stripped = re.sub(r"<[^>]+>", " ", desc)
+                clean = _collapse_ws(html.unescape(stripped))
+                if len(clean) >= _DESCRIPTION_TEXT_MIN_PARAGRAPH_LENGTH:
+                    return clean
+    return ""
+
+
 def _extract_description_text(page_html: str) -> str:
+    """Pull the product description text, preferring substantive content over
+    SEO metadata.
+
+    Order of preference:
+      1. application/ld+json Product schema `description` field — this is the
+         full structured product copy on Shopify-themed sites like Wayland.
+      2. Longest body paragraph >= 80 chars — catches the rendered product
+         description block when LD+JSON is missing.
+      3. <meta name=description> / og:description — last resort because on
+         Wayland these are templated SEO blurbs ("Super fast delivery with no
+         worries!") that poison the rewrite if used as source.
+    """
+    ld_description = _extract_ld_json_product_description(page_html)
+    if ld_description:
+        return ld_description
+    parser = _TextCollector()
+    parser.feed(page_html)
+    text = parser.text()
+    paragraphs = [
+        line for line in text.splitlines()
+        if len(line) >= _DESCRIPTION_TEXT_MIN_PARAGRAPH_LENGTH
+    ]
+    if paragraphs:
+        return max(paragraphs, key=len)
     meta_match = re.search(
         r'<meta[^>]+(?:name|property)=["\'](?:description|og:description)["\'][^>]+content=["\'](.*?)["\']',
         page_html,
@@ -782,11 +854,7 @@ def _extract_description_text(page_html: str) -> str:
     )
     if meta_match:
         return _collapse_ws(html.unescape(meta_match.group(1)))
-    parser = _TextCollector()
-    parser.feed(page_html)
-    text = parser.text()
-    paragraphs = [line for line in text.splitlines() if len(line) >= 40]
-    return paragraphs[0] if paragraphs else ""
+    return ""
 
 
 def _extract_page_title(page_html: str) -> str:
@@ -921,19 +989,46 @@ def resolve_preferred_source(
 
 
 def _build_rewrite_messages(source_text: str, sku: str) -> list[dict[str, str]]:
+    system_prompt = (
+        "You write product page copy for Fox & Fable Toysellers, a UK tabletop "
+        "miniatures retailer. Your job is to rewrite supplier descriptions into "
+        "original copy for our Shopify store.\n"
+        "\n"
+        "Hard rules:\n"
+        "- Output exactly one paragraph of 60 to 120 words. No headings, no lists, "
+        "no multiple paragraphs, no markdown.\n"
+        "- Use ONLY facts present in the source description. Never invent model "
+        "counts, faction names, points values, contents of the box, scale, "
+        "edition, release dates, or game-mechanical details.\n"
+        "- BANNED phrases and ideas: 'fast delivery', 'worry-free', 'must-have', "
+        "'amazing value', 'buy now', 'unleash', 'epic', 'legendary' (unless that "
+        "is the model's actual rules tag), 'this set is perfect for', and any "
+        "commentary about the source page itself such as buttons, navigation, "
+        "stock status, pricing, or shipping options.\n"
+        "- Do NOT mention that this was rewritten, AI-generated, summarised, "
+        "or based on another retailer's copy.\n"
+        "- Include the exact SKU value once, near the end of the paragraph, in "
+        "the form 'SKU: <value>.'\n"
+        "- If the source is too thin to write 60 words honestly, write fewer "
+        "words rather than padding with filler. A short, accurate description "
+        "is always preferable to invented detail.\n"
+        "- Output plain prose only. Do not include reasoning, your thinking, "
+        "labels like 'Output:' or 'Description:', or quotation marks around "
+        "the response.\n"
+        "\n"
+        "Tone: knowledgeable, warm, written for hobbyists who already know the "
+        "game system. Lead with what the product is and what is notable about "
+        "it (faction, role, signature wargear, characterful detail). Avoid hype."
+    )
+    user_prompt = (
+        f"SKU to include: {sku}\n"
+        f"\n"
+        f"Source description:\n"
+        f"{source_text}"
+    )
     return [
-        {
-            "role": "system",
-            "content": (
-                "Rewrite supplier product descriptions into original ecommerce copy. "
-                "Return one concise paragraph only. Preserve factual meaning, avoid direct copying, "
-                "do not invent details, and include the SKU exactly once."
-            ),
-        },
-        {
-            "role": "user",
-            "content": f"SKU: {sku}\nSource description:\n{source_text}",
-        },
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ]
 
 
