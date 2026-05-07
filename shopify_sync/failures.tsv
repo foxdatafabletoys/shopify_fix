@@ -4492,3 +4492,4 @@ update_write	A	t	write failed
 update_write	A	t	write failed
 0	SKU-1	Title 1	create failed
 update_write	A	t	write failed
+country_of_origin_backfill	gid://shopify/Product/1	gid://shopify/ProductVariant/1	gid://shopify/InventoryItem/1	SKU-1	Captain	boom

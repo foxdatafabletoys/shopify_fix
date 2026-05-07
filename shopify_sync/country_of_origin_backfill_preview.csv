@@ -1,0 +1,2 @@
+product_id,variant_id,inventory_item_id,sku,title,before_origin,desired_origin,status,notes
+gid://shopify/Product/1,gid://shopify/ProductVariant/1,gid://shopify/InventoryItem/1,SKU-1,Captain,US,GB,write_failed,boom
