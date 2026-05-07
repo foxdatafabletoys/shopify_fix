@@ -822,38 +822,75 @@ def _extract_ld_json_product_description(page_html: str) -> str:
     return ""
 
 
-def _extract_description_text(page_html: str) -> str:
-    """Pull the product description text, preferring substantive content over
-    SEO metadata.
+_SEO_TEMPLATE_PHRASES = (
+    "fast delivery",
+    "fast despatch",
+    "no worries",
+    "worry-free",
+    "discover this",
+    "buy now",
+    "free uk delivery",
+    "free shipping",
+    "best price",
+    "new and sealed",
+)
 
-    Order of preference:
-      1. application/ld+json Product schema `description` field — this is the
-         full structured product copy on Shopify-themed sites like Wayland.
-      2. Longest body paragraph >= 80 chars — catches the rendered product
-         description block when LD+JSON is missing.
-      3. <meta name=description> / og:description — last resort because on
-         Wayland these are templated SEO blurbs ("Super fast delivery with no
-         worries!") that poison the rewrite if used as source.
+
+def _looks_like_seo_template(text: str) -> bool:
+    """Reject candidate descriptions that are obviously templated retail
+    boilerplate. On Wayland the Product LD+JSON `description` field is just
+    the SEO meta-tag text, e.g. 'Discover this {product}... Super fast
+    delivery with no worries!' — useless as source material for a rewrite.
     """
+    lowered = (text or "").lower()
+    return any(phrase in lowered for phrase in _SEO_TEMPLATE_PHRASES)
+
+
+def _extract_description_text(page_html: str) -> str:
+    """Pull the product description text, picking the longest non-templated
+    candidate across all available sources.
+
+    Wayland's Product LD+JSON description and meta tag often share the same
+    SEO blurb (~100 chars), while the actual product copy (~500-1000 chars)
+    lives in the rendered body. Earlier versions of this function preferred
+    LD+JSON unconditionally and never reached the body fallback. Now we
+    collect all candidates, drop those that look like SEO templates, and
+    return the longest one >= the minimum length threshold.
+    """
+    candidates: list[str] = []
+
     ld_description = _extract_ld_json_product_description(page_html)
     if ld_description:
-        return ld_description
+        candidates.append(ld_description)
+
     parser = _TextCollector()
     parser.feed(page_html)
-    text = parser.text()
-    paragraphs = [
-        line for line in text.splitlines()
+    body_text = parser.text()
+    body_paragraphs = [
+        line for line in body_text.splitlines()
         if len(line) >= _DESCRIPTION_TEXT_MIN_PARAGRAPH_LENGTH
     ]
-    if paragraphs:
-        return max(paragraphs, key=len)
+    if body_paragraphs:
+        candidates.append(max(body_paragraphs, key=len))
+
     meta_match = re.search(
         r'<meta[^>]+(?:name|property)=["\'](?:description|og:description)["\'][^>]+content=["\'](.*?)["\']',
         page_html,
         flags=re.IGNORECASE | re.DOTALL,
     )
     if meta_match:
-        return _collapse_ws(html.unescape(meta_match.group(1)))
+        candidates.append(_collapse_ws(html.unescape(meta_match.group(1))))
+
+    substantive = [
+        c for c in candidates
+        if len(c) >= _DESCRIPTION_TEXT_MIN_PARAGRAPH_LENGTH and not _looks_like_seo_template(c)
+    ]
+    if substantive:
+        return max(substantive, key=len)
+    # Last resort: if every candidate looked templated, take the longest one
+    # we found rather than feeding the model nothing.
+    if candidates:
+        return max(candidates, key=len)
     return ""
 
 

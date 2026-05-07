@@ -367,6 +367,140 @@ class ShopifyDescriptionBackfillTests(unittest.TestCase):
             self.client.update_product_description("gid://shopify/Product/1", "<p>Fresh copy</p>")
 
 
+class ShopifyCountryOfOriginBackfillTests(unittest.TestCase):
+    def setUp(self):
+        self.client = shopify_sync.Shopify("example-store", "shpat_test")
+
+    def test_iter_existing_for_country_of_origin_backfill_returns_all_variants_without_sku_filtering(self):
+        self.client.gql = mock.Mock(side_effect=[
+            {
+                "products": {
+                    "edges": [
+                        {
+                            "cursor": "product-cursor-1",
+                            "node": {
+                                "id": "gid://shopify/Product/1",
+                                "title": "Starter Set",
+                                "variants": {
+                                    "edges": [
+                                        {
+                                            "node": {
+                                                "id": "gid://shopify/ProductVariant/1",
+                                                "sku": "SKU-1",
+                                                "inventoryItem": {
+                                                    "id": "gid://shopify/InventoryItem/1",
+                                                    "countryCodeOfOrigin": "US",
+                                                },
+                                            }
+                                        },
+                                        {
+                                            "node": {
+                                                "id": "gid://shopify/ProductVariant/2",
+                                                "sku": "",
+                                                "inventoryItem": {
+                                                    "id": "gid://shopify/InventoryItem/2",
+                                                    "countryCodeOfOrigin": None,
+                                                },
+                                            }
+                                        },
+                                    ],
+                                    "pageInfo": {"hasNextPage": True, "endCursor": "variant-cursor-2"},
+                                },
+                            },
+                        }
+                    ],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            },
+            {
+                "product": {
+                    "variants": {
+                        "edges": [
+                            {
+                                "node": {
+                                    "id": "gid://shopify/ProductVariant/3",
+                                    "sku": "SKU-3",
+                                    "inventoryItem": {
+                                        "id": "gid://shopify/InventoryItem/3",
+                                        "countryCodeOfOrigin": "GB",
+                                    },
+                                }
+                            }
+                        ],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    }
+                }
+            },
+        ])
+
+        records = list(self.client.iter_existing_for_country_of_origin_backfill())
+
+        self.assertEqual(
+            records,
+            [
+                {
+                    "product_id": "gid://shopify/Product/1",
+                    "title": "Starter Set",
+                    "variant_id": "gid://shopify/ProductVariant/1",
+                    "sku": "SKU-1",
+                    "inventory_item_id": "gid://shopify/InventoryItem/1",
+                    "country_of_origin": "US",
+                },
+                {
+                    "product_id": "gid://shopify/Product/1",
+                    "title": "Starter Set",
+                    "variant_id": "gid://shopify/ProductVariant/2",
+                    "sku": "",
+                    "inventory_item_id": "gid://shopify/InventoryItem/2",
+                    "country_of_origin": "",
+                },
+                {
+                    "product_id": "gid://shopify/Product/1",
+                    "title": "Starter Set",
+                    "variant_id": "gid://shopify/ProductVariant/3",
+                    "sku": "SKU-3",
+                    "inventory_item_id": "gid://shopify/InventoryItem/3",
+                    "country_of_origin": "GB",
+                },
+            ],
+        )
+        first_query, first_variables = self.client.gql.call_args_list[0].args
+        self.assertIn("countryCodeOfOrigin", first_query)
+        self.assertEqual(first_variables, {"cursor": None})
+        second_query, second_variables = self.client.gql.call_args_list[1].args
+        self.assertIn("product(id: $productId)", second_query)
+        self.assertEqual(
+            second_variables,
+            {"productId": "gid://shopify/Product/1", "cursor": "variant-cursor-2"},
+        )
+
+    def test_update_inventory_item_country_of_origin_sends_inventory_item_update(self):
+        self.client.gql = mock.Mock(return_value={
+            "inventoryItemUpdate": {
+                "inventoryItem": {
+                    "id": "gid://shopify/InventoryItem/1",
+                    "countryCodeOfOrigin": "GB",
+                },
+                "userErrors": [],
+            }
+        })
+
+        self.client.update_inventory_item_country_of_origin(
+            "gid://shopify/InventoryItem/1",
+            "GB",
+        )
+
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("inventoryItemUpdate", query)
+        self.assertEqual(
+            variables,
+            {
+                "id": "gid://shopify/InventoryItem/1",
+                "input": {"countryCodeOfOrigin": "GB"},
+            },
+        )
+
+
 class DescriptionBackfillHelperTests(unittest.TestCase):
     def test_require_openrouter_config_rejects_missing_api_key(self):
         with self.assertRaisesRegex(RuntimeError, "OPENROUTER_API_KEY must be set"):
@@ -1653,6 +1787,7 @@ class MainFlowTests(unittest.TestCase):
         self.assertIn("--backfill-descriptions-sku", help_text)
         self.assertIn("--backfill-descriptions-limit", help_text)
         self.assertIn("Rewrite existing Shopify product descriptions", help_text)
+        self.assertIn("--backfill-country-of-origin", help_text)
 
     def test_backfill_descriptions_runs_without_prepare_or_location_lookup(self):
         client = mock.Mock()
@@ -1811,6 +1946,49 @@ class MainFlowTests(unittest.TestCase):
     def test_publish_online_store_backfill_rejects_update_combination(self):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--publish-online-store-backfill", "--update"]):
             with self.assertRaisesRegex(RuntimeError, "--publish-online-store-backfill must run separately"):
+                shopify_sync.main()
+
+    def test_backfill_country_of_origin_runs_without_prepare_or_location_lookup(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--backfill-country-of-origin"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_backfill_country_of_origin") as phase_backfill, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_backfill.assert_called_once_with(client, dry=False)
+        run_preflight.assert_not_called()
+        prepare_products.assert_not_called()
+
+    def test_backfill_country_of_origin_dry_run_bypasses_plain_preview_flow(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--backfill-country-of-origin", "--dry-run"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_backfill_country_of_origin") as phase_backfill, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_backfill.assert_called_once_with(client, dry=True)
+        prepare_products.assert_not_called()
+        run_preflight.assert_not_called()
+
+    def test_backfill_country_of_origin_rejects_update_combination(self):
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--backfill-country-of-origin", "--update"]):
+            with self.assertRaisesRegex(RuntimeError, "--backfill-country-of-origin must run separately"):
                 shopify_sync.main()
 
     def test_reconcile_online_store_image_visibility_runs_without_prepare_or_location_lookup(self):
@@ -2141,6 +2319,137 @@ class PhaseOnlineStoreBackfillTests(unittest.TestCase):
         )
         preview = self.preview_path.read_text(encoding="utf-8")
         self.assertIn("published", preview)
+
+
+class PhaseCountryOfOriginBackfillTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+        self.outputs_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.outputs_dir.cleanup)
+        root = Path(self.outputs_dir.name)
+        self.preview_path = root / "country_of_origin_backfill_preview.csv"
+        self.verification_path = root / "country_of_origin_verification.csv"
+        self.failures_path = root / "failures.tsv"
+        self.output_patchers = [
+            mock.patch("shopify_sync.COUNTRY_OF_ORIGIN_BACKFILL_PREVIEW_CSV", new=self.preview_path),
+            mock.patch("shopify_sync.COUNTRY_OF_ORIGIN_VERIFICATION_CSV", new=self.verification_path),
+            mock.patch("shopify_sync.GENERAL_FAILURES_TSV", new=self.failures_path),
+        ]
+        for patcher in self.output_patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _record(
+        self,
+        *,
+        product_id="gid://shopify/Product/1",
+        title="Captain",
+        variant_id="gid://shopify/ProductVariant/1",
+        inventory_item_id="gid://shopify/InventoryItem/1",
+        sku="SKU-1",
+        origin="US",
+    ):
+        return {
+            "product_id": product_id,
+            "title": title,
+            "variant_id": variant_id,
+            "inventory_item_id": inventory_item_id,
+            "sku": sku,
+            "country_of_origin": origin,
+        }
+
+    def test_dry_run_writes_preview_without_shopify_writes(self):
+        self.client.iter_existing_for_country_of_origin_backfill.return_value = iter([
+            self._record(origin="US"),
+            self._record(
+                product_id="gid://shopify/Product/2",
+                title="No SKU Variant",
+                variant_id="gid://shopify/ProductVariant/2",
+                inventory_item_id="gid://shopify/InventoryItem/2",
+                sku="",
+                origin="",
+            ),
+            self._record(
+                product_id="gid://shopify/Product/3",
+                title="Missing Inventory",
+                variant_id="gid://shopify/ProductVariant/3",
+                inventory_item_id="",
+                sku="SKU-3",
+                origin="",
+            ),
+            self._record(
+                product_id="gid://shopify/Product/4",
+                title="Already UK",
+                variant_id="gid://shopify/ProductVariant/4",
+                inventory_item_id="gid://shopify/InventoryItem/4",
+                sku="SKU-4",
+                origin="GB",
+            ),
+        ])
+
+        shopify_sync.phase_backfill_country_of_origin(self.client, dry=True)
+
+        self.client.update_inventory_item_country_of_origin.assert_not_called()
+        preview = self.preview_path.read_text(encoding="utf-8")
+        self.assertIn("dry_run_candidate", preview)
+        self.assertIn("missing_inventory_item", preview)
+        self.assertIn("already_uk", preview)
+        self.assertIn("No SKU Variant", preview)
+        self.assertFalse(self.verification_path.exists())
+
+    def test_live_run_updates_candidates_and_writes_verification_artifact(self):
+        initial_records = [
+            self._record(origin="US"),
+            self._record(
+                product_id="gid://shopify/Product/2",
+                title="Already UK",
+                variant_id="gid://shopify/ProductVariant/2",
+                inventory_item_id="gid://shopify/InventoryItem/2",
+                sku="SKU-2",
+                origin="GB",
+            ),
+        ]
+        final_records = [
+            self._record(origin="GB"),
+            self._record(
+                product_id="gid://shopify/Product/2",
+                title="Already UK",
+                variant_id="gid://shopify/ProductVariant/2",
+                inventory_item_id="gid://shopify/InventoryItem/2",
+                sku="SKU-2",
+                origin="GB",
+            ),
+        ]
+        self.client.iter_existing_for_country_of_origin_backfill.side_effect = [
+            iter(initial_records),
+            iter(final_records),
+        ]
+
+        shopify_sync.phase_backfill_country_of_origin(self.client, dry=False)
+
+        self.client.update_inventory_item_country_of_origin.assert_called_once_with(
+            "gid://shopify/InventoryItem/1",
+            "GB",
+        )
+        preview = self.preview_path.read_text(encoding="utf-8")
+        verification = self.verification_path.read_text(encoding="utf-8")
+        self.assertIn("updated", preview)
+        self.assertIn("verified_uk", verification)
+        self.assertIn("after_origin", verification)
+
+    def test_live_run_raises_when_non_uk_survivor_remains_after_verification(self):
+        initial_records = [self._record(origin="US")]
+        final_records = [self._record(origin="US")]
+        self.client.iter_existing_for_country_of_origin_backfill.side_effect = [
+            iter(initial_records),
+            iter(final_records),
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "verification_failed=1"):
+            shopify_sync.phase_backfill_country_of_origin(self.client, dry=False)
+
+        verification = self.verification_path.read_text(encoding="utf-8")
+        self.assertIn("verification_failed_non_uk", verification)
 
 
 class PhaseDescriptionBackfillTests(unittest.TestCase):

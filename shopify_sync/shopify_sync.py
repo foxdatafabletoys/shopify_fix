@@ -140,6 +140,8 @@ COLLECTION_GENERATION_UNMATCHED_CSV = HERE / "collection_generation_unmatched.cs
 COLLECTION_IMAGE_PREVIEW_CSV = HERE / "collection_image_preview.csv"
 ONLINE_STORE_BACKFILL_PREVIEW_CSV = HERE / "online_store_backfill_preview.csv"
 ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV = HERE / "online_store_image_visibility_preview.csv"
+COUNTRY_OF_ORIGIN_BACKFILL_PREVIEW_CSV = HERE / "country_of_origin_backfill_preview.csv"
+COUNTRY_OF_ORIGIN_VERIFICATION_CSV = HERE / "country_of_origin_verification.csv"
 DESCRIPTION_BACKFILL_PREVIEW_CSV = HERE / "description_backfill_preview.csv"
 DESCRIPTION_BACKFILL_REVIEW_CSV = HERE / "description_backfill_review.csv"
 DESCRIPTION_BACKFILL_FAILURES_TSV = HERE / "description_backfill_failures.tsv"
@@ -169,6 +171,7 @@ PHOTO_SYNC_STATE_AUDIT_PENDING = "audit_pending"
 LATEST_GW_RELEASE_LIMIT = 60
 AUTO_COLLECTION_TAG_PREFIX = "AUTO_COLLECTION::"
 ONLINE_STORE_PUBLICATION_NAME = "Online Store"
+COUNTRY_OF_ORIGIN_TARGET_CODE = "GB"
 PHOTO_SOURCE_SEARCH_URL = "https://html.duckduckgo.com/html/"
 PHOTO_SOURCE_SEARCH_PROVIDERS = (
     ("https://search.yahoo.com/search", "p"),
@@ -242,6 +245,28 @@ DESCRIPTION_BACKFILL_REVIEW_COLUMNS = [
     "source_site",
     "source_url",
     "reason",
+    "notes",
+]
+COUNTRY_OF_ORIGIN_BACKFILL_PREVIEW_COLUMNS = [
+    "product_id",
+    "variant_id",
+    "inventory_item_id",
+    "sku",
+    "title",
+    "before_origin",
+    "desired_origin",
+    "status",
+    "notes",
+]
+COUNTRY_OF_ORIGIN_VERIFICATION_COLUMNS = [
+    "product_id",
+    "variant_id",
+    "inventory_item_id",
+    "sku",
+    "title",
+    "before_origin",
+    "after_origin",
+    "status",
     "notes",
 ]
 PHOTO_SOURCE_GENERIC_PAGE_MARKERS = (
@@ -3693,6 +3718,105 @@ class Shopify:
                 break
             cursor = data["products"]["pageInfo"]["endCursor"]
 
+    def _yield_country_of_origin_variants(
+        self,
+        product_id: str,
+        title: str,
+        variants_connection: dict[str, Any],
+    ) -> Iterable[dict[str, Any]]:
+        def _emit(variant_node: dict[str, Any]) -> dict[str, Any]:
+            inventory_item = variant_node.get("inventoryItem") or {}
+            return {
+                "product_id": product_id,
+                "title": title,
+                "variant_id": variant_node["id"],
+                "sku": (variant_node.get("sku") or "").strip(),
+                "inventory_item_id": inventory_item.get("id") or "",
+                "country_of_origin": (inventory_item.get("countryCodeOfOrigin") or "").strip(),
+            }
+
+        page_q = """
+            query($productId: ID!, $cursor: String) {
+              product(id: $productId) {
+                variants(first: 100, after: $cursor) {
+                  edges {
+                    node {
+                      id
+                      sku
+                      inventoryItem {
+                        id
+                        countryCodeOfOrigin
+                      }
+                    }
+                  }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+            }
+        """
+
+        connection = variants_connection
+        while True:
+            for edge in connection.get("edges") or []:
+                yield _emit(edge["node"])
+            page_info = connection.get("pageInfo") or {}
+            if not page_info.get("hasNextPage"):
+                break
+            data = self.gql(page_q, {
+                "productId": product_id,
+                "cursor": page_info.get("endCursor"),
+            })
+            product = data.get("product") or {}
+            connection = product.get("variants") or {
+                "edges": [],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+
+    def iter_existing_for_country_of_origin_backfill(self) -> Iterable[dict[str, Any]]:
+        cursor = None
+        page_q = """
+            query($cursor: String) {
+              products(first: 100, after: $cursor) {
+                edges {
+                  cursor
+                  node {
+                    id
+                    title
+                    variants(first: 100) {
+                      edges {
+                        node {
+                          id
+                          sku
+                          inventoryItem {
+                            id
+                            countryCodeOfOrigin
+                          }
+                        }
+                      }
+                      pageInfo { hasNextPage endCursor }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"cursor": cursor})
+            for edge in data["products"]["edges"]:
+                node = edge["node"]
+                yield from self._yield_country_of_origin_variants(
+                    node["id"],
+                    node.get("title") or "",
+                    node.get("variants") or {
+                        "edges": [],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    },
+                )
+            if not data["products"]["pageInfo"]["hasNextPage"]:
+                break
+            cursor = data["products"]["pageInfo"]["endCursor"]
+
     def get_collection_image(self, collection_id: str) -> dict[str, str]:
         """Return current image info for a collection (empty dict if no image)."""
         q = """
@@ -4122,6 +4246,26 @@ class Shopify:
         errs = data["productUpdate"]["userErrors"]
         if errs:
             raise RuntimeError(f"productUpdate errors for {product_id}: {errs}")
+
+    def update_inventory_item_country_of_origin(self, inventory_item_id: str, country_code: str) -> None:
+        q = """
+            mutation($id: ID!, $input: InventoryItemInput!) {
+              inventoryItemUpdate(id: $id, input: $input) {
+                inventoryItem {
+                  id
+                  countryCodeOfOrigin
+                }
+                userErrors { field message }
+              }
+            }
+        """
+        data = self.gql(q, {
+            "id": inventory_item_id,
+            "input": {"countryCodeOfOrigin": country_code},
+        })
+        errs = data["inventoryItemUpdate"]["userErrors"]
+        if errs:
+            raise RuntimeError(f"inventoryItemUpdate errors for {inventory_item_id}: {errs}")
 
     def get_product_metafield_definition(self, namespace: str, key: str) -> dict[str, Any] | None:
         q = """
@@ -5777,6 +5921,191 @@ def phase_reconcile_online_store_image_visibility(client: Shopify, dry: bool) ->
     )
 
 
+def _normalize_country_of_origin(value: Any) -> str:
+    return str(value or "").strip().upper()
+
+
+def _is_target_country_of_origin(value: Any) -> bool:
+    return _normalize_country_of_origin(value) == COUNTRY_OF_ORIGIN_TARGET_CODE
+
+
+def _append_country_of_origin_failure(record: dict[str, Any], detail: str) -> None:
+    with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
+        fh.write(
+            "\t".join(
+                _safe_spreadsheet_cell(part)
+                for part in (
+                    "country_of_origin_backfill",
+                    record.get("product_id", ""),
+                    record.get("variant_id", ""),
+                    record.get("inventory_item_id", ""),
+                    record.get("sku", ""),
+                    record.get("title", ""),
+                    detail,
+                )
+            )
+            + "\n"
+        )
+
+
+def phase_backfill_country_of_origin(client: Shopify, dry: bool) -> None:
+    log("=== COUNTRY OF ORIGIN BACKFILL phase: forcing inventory items to United Kingdom ===")
+    records = list(client.iter_existing_for_country_of_origin_backfill())
+    preview_rows: list[dict[str, Any]] = []
+    record_index: dict[str, dict[str, Any]] = {}
+    candidates: list[dict[str, Any]] = []
+    hard_failures = 0
+    already_uk = 0
+
+    for record in records:
+        key = record["variant_id"]
+        before_origin = _normalize_country_of_origin(record.get("country_of_origin"))
+        entry = {
+            "product_id": record["product_id"],
+            "variant_id": record["variant_id"],
+            "inventory_item_id": record.get("inventory_item_id", ""),
+            "sku": record.get("sku", ""),
+            "title": record.get("title", ""),
+            "before_origin": before_origin,
+            "desired_origin": COUNTRY_OF_ORIGIN_TARGET_CODE,
+            "status": "",
+            "notes": "",
+        }
+        if not record.get("inventory_item_id"):
+            entry["status"] = "missing_inventory_item"
+            entry["notes"] = "reachable variant has no inventory item id"
+            hard_failures += 1
+        elif _is_target_country_of_origin(before_origin):
+            entry["status"] = "already_uk"
+            already_uk += 1
+        else:
+            entry["status"] = "dry_run_candidate" if dry else "pending_update"
+            candidates.append(record)
+        preview_rows.append(entry)
+        record_index[key] = entry
+
+    write_failed = 0
+    updated = 0
+    verification_failed = 0
+
+    if not dry:
+        for record in candidates:
+            entry = record_index[record["variant_id"]]
+            try:
+                client.update_inventory_item_country_of_origin(
+                    record["inventory_item_id"],
+                    COUNTRY_OF_ORIGIN_TARGET_CODE,
+                )
+                entry["status"] = "updated"
+                updated += 1
+            except Exception as exc:
+                entry["status"] = "write_failed"
+                entry["notes"] = str(exc)
+                _append_country_of_origin_failure(record, str(exc))
+                write_failed += 1
+
+    _write_sanitized_csv(
+        COUNTRY_OF_ORIGIN_BACKFILL_PREVIEW_CSV,
+        COUNTRY_OF_ORIGIN_BACKFILL_PREVIEW_COLUMNS,
+        preview_rows,
+    )
+    log(f"  wrote preview: {COUNTRY_OF_ORIGIN_BACKFILL_PREVIEW_CSV}")
+
+    if dry:
+        log(
+            "COUNTRY OF ORIGIN BACKFILL summary: "
+            f"scanned={len(records)} candidates={len(candidates)} already_uk={already_uk} "
+            f"hard_failures={hard_failures} dry_run={dry}"
+        )
+        return
+
+    verification_rows: list[dict[str, Any]] = []
+    final_records = list(client.iter_existing_for_country_of_origin_backfill())
+    final_by_variant = {record["variant_id"]: record for record in final_records}
+    seen_variant_ids: set[str] = set()
+
+    for preview_row in preview_rows:
+        variant_id = preview_row["variant_id"]
+        seen_variant_ids.add(variant_id)
+        final_record = final_by_variant.get(variant_id)
+        if final_record is None:
+            verification_rows.append({
+                "product_id": preview_row["product_id"],
+                "variant_id": variant_id,
+                "inventory_item_id": preview_row["inventory_item_id"],
+                "sku": preview_row["sku"],
+                "title": preview_row["title"],
+                "before_origin": preview_row["before_origin"],
+                "after_origin": "",
+                "status": "missing_on_verification",
+                "notes": "variant was present during candidate scan but missing on verification scan",
+            })
+            verification_failed += 1
+            continue
+
+        after_origin = _normalize_country_of_origin(final_record.get("country_of_origin"))
+        status = "verified_uk"
+        notes = ""
+        if not final_record.get("inventory_item_id"):
+            status = "missing_inventory_item"
+            notes = "reachable variant has no inventory item id"
+            verification_failed += 1
+        elif not _is_target_country_of_origin(after_origin):
+            status = "verification_failed_non_uk"
+            notes = f"expected {COUNTRY_OF_ORIGIN_TARGET_CODE}"
+            verification_failed += 1
+
+        verification_rows.append({
+            "product_id": final_record["product_id"],
+            "variant_id": variant_id,
+            "inventory_item_id": final_record.get("inventory_item_id", ""),
+            "sku": final_record.get("sku", ""),
+            "title": final_record.get("title", ""),
+            "before_origin": preview_row["before_origin"],
+            "after_origin": after_origin,
+            "status": status,
+            "notes": notes,
+        })
+
+    for record in final_records:
+        if record["variant_id"] in seen_variant_ids:
+            continue
+        after_origin = _normalize_country_of_origin(record.get("country_of_origin"))
+        status = "verified_uk" if _is_target_country_of_origin(after_origin) else "verification_failed_non_uk"
+        if status != "verified_uk":
+            verification_failed += 1
+        verification_rows.append({
+            "product_id": record["product_id"],
+            "variant_id": record["variant_id"],
+            "inventory_item_id": record.get("inventory_item_id", ""),
+            "sku": record.get("sku", ""),
+            "title": record.get("title", ""),
+            "before_origin": "",
+            "after_origin": after_origin,
+            "status": status,
+            "notes": "newly observed during verification scan",
+        })
+
+    _write_sanitized_csv(
+        COUNTRY_OF_ORIGIN_VERIFICATION_CSV,
+        COUNTRY_OF_ORIGIN_VERIFICATION_COLUMNS,
+        verification_rows,
+    )
+    log(f"  wrote verification: {COUNTRY_OF_ORIGIN_VERIFICATION_CSV}")
+    log(
+        "COUNTRY OF ORIGIN BACKFILL summary: "
+        f"scanned={len(records)} candidates={len(candidates)} updated={updated} already_uk={already_uk} "
+        f"hard_failures={hard_failures} write_failed={write_failed} verification_failed={verification_failed} "
+        f"dry_run={dry}"
+    )
+
+    if hard_failures or write_failed or verification_failed:
+        raise RuntimeError(
+            "Country-of-origin backfill did not complete cleanly: "
+            f"hard_failures={hard_failures} write_failed={write_failed} verification_failed={verification_failed}"
+        )
+
+
 def _graphql_error_code(err: Any) -> str | None:
     if isinstance(err, dict):
         return err.get("extensions", {}).get("code")
@@ -7059,6 +7388,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Publish existing products to the current Online Store publication when they are missing from it. Run this to backfill storefront visibility without changing product data.",
     )
     publishing.add_argument(
+        "--backfill-country-of-origin",
+        dest="do_backfill_country_of_origin",
+        action="store_true",
+        help="Force every reachable Shopify product variant to country of origin United Kingdom in a one-time backfill. Run this separately from normal import or update flows.",
+    )
+    publishing.add_argument(
         "--reconcile-online-store-image-visibility",
         dest="do_reconcile_online_store_image_visibility",
         action="store_true",
@@ -7124,7 +7459,7 @@ def main() -> int:
     if not (args.dry_run or args.preflight or args.delete or args.do_delete_collections
             or args.do_generate_collections or args.do_update_collection_images
             or args.do_gw_refresh_cache or args.do_gw_build_archive_index or args.do_import or args.do_update or args.do_backfill_descriptions or args.do_publish_online_store_backfill
-            or args.do_reconcile_online_store_image_visibility
+            or args.do_backfill_country_of_origin or args.do_reconcile_online_store_image_visibility
             or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
             or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.all):
         parser.print_help()
@@ -7319,27 +7654,43 @@ def main() -> int:
     if args.do_publish_online_store_backfill and (
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_update_collection_images or args.do_import or args.do_update
-        or args.do_reconcile_online_store_image_visibility
+        or args.do_backfill_country_of_origin or args.do_reconcile_online_store_image_visibility
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
         or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
             "--publish-online-store-backfill must run separately from preflight/delete/delete-collections/"
-            "generate-collections/update-collection-images/import/update/reconcile-online-store-image-visibility/photo-sync/photo-sync-existing-files/"
+            "generate-collections/update-collection-images/import/update/backfill-country-of-origin/reconcile-online-store-image-visibility/photo-sync/photo-sync-existing-files/"
             "photo-sync-existing-files-all/all and cannot be combined with --start-at or --photo-root."
+        )
+    if args.do_backfill_country_of_origin and (
+        args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
+        or args.do_update_collection_images or args.do_import or args.do_update
+        or args.do_backfill_descriptions or args.do_publish_online_store_backfill
+        or args.do_reconcile_online_store_image_visibility
+        or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+        or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
+        or args.all or args.start_at != 0 or args.photo_root is not None
+    ):
+        raise RuntimeError(
+            "--backfill-country-of-origin must run separately from preflight/delete/delete-collections/"
+            "generate-collections/update-collection-images/import/update/backfill-descriptions/"
+            "publish-online-store-backfill/reconcile-online-store-image-visibility/photo-sync/photo-sync-existing-files/"
+            "photo-sync-existing-files-all/photo-source-web-all/recover-zero-media-images/photo-sync-staged-local-all/all "
+            "and cannot be combined with --start-at or --photo-root."
         )
     if args.do_reconcile_online_store_image_visibility and (
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_update_collection_images or args.do_import or args.do_update
-        or args.do_publish_online_store_backfill
+        or args.do_backfill_country_of_origin or args.do_publish_online_store_backfill
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
         or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
             "--reconcile-online-store-image-visibility must run separately from preflight/delete/delete-collections/"
-            "generate-collections/update-collection-images/import/update/publish-online-store-backfill/photo-sync/"
+            "generate-collections/update-collection-images/import/update/backfill-country-of-origin/publish-online-store-backfill/photo-sync/"
             "photo-sync-existing-files/photo-sync-existing-files-all/all and cannot be combined with --start-at or --photo-root."
         )
 
@@ -7360,6 +7711,7 @@ def main() -> int:
         and not args.do_update_collection_images
         and not args.do_backfill_descriptions
         and not args.do_publish_online_store_backfill
+        and not args.do_backfill_country_of_origin
         and not args.do_reconcile_online_store_image_visibility
     ):
         prepare_products_for_import()
@@ -7422,6 +7774,15 @@ def main() -> int:
                 "Online Store backfill dry-run complete. Review "
                 "online_store_backfill_preview.csv, then re-run with "
                 "--publish-online-store-backfill (no --dry-run) to apply."
+            )
+        return 0
+    if args.do_backfill_country_of_origin:
+        phase_backfill_country_of_origin(client, dry=args.dry_run)
+        if args.dry_run:
+            log(
+                "Country-of-origin backfill dry-run complete. Review "
+                "country_of_origin_backfill_preview.csv, then re-run with "
+                "--backfill-country-of-origin (no --dry-run) to apply."
             )
         return 0
     if args.do_reconcile_online_store_image_visibility:
