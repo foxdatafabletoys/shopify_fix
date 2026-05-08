@@ -82,11 +82,13 @@ There are two publication-related maintenance jobs.
 
 `--reconcile-online-store-image-visibility`:
 
+- checks active products only and skips draft or archived products
+- treats zero inventory as still eligible for publish or unpublish decisions
 - checks whether products have attached Shopify media
-- publishes products that do have media
-- unpublishes products that do not
+- publishes products with media to `Online Store` and `Google & YouTube`
+- unpublishes products without media from `Online Store` and `Google & YouTube`
 
-This lane is meant to keep storefront visibility aligned with product completeness.
+This lane is meant to keep channel visibility aligned with product completeness, using the same media-driven rule in both directions.
 
 ## GW Cache Flow
 

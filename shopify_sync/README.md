@@ -13,7 +13,7 @@ The current implementation supports these feature areas:
 - Shopify product deletion for rebuild workflows.
 - Managed smart collection generation, retagging, and collection image maintenance.
 - Online Store publication backfill.
-- Online Store visibility reconciliation based on whether a product has Shopify media.
+- Store visibility reconciliation for `Online Store` and `Google & YouTube`, based on whether an active product has Shopify media.
 - Games Workshop image-cache discovery and refresh from official GW resource sources and a trade-feed endpoint.
 - Product image attachment from staged local files.
 - Product image attachment from existing Shopify Files.
@@ -116,6 +116,15 @@ Supplier-root notes:
 - On the current stale zero-media snapshot, a local simulation showed the entire non-GW non-book tail (`80` rows) can stage as supplier-local winners when those folders are present and named in the accepted forms above.
 - The book-provider lane is vendor-gated. The current allowlist covers the book-heavy vendors seen in the stale queue, including `VIZ Media LLC`, `Poisoned Pen Press`, `Scholastic Inc.`, `Simon & Schuster`, `Orion Books`, `Piatkus`, `Macmillan`, `pan macmillan`, `bluebird`, and `FSC`.
 
+### 5. Reconcile channel visibility after image cleanup
+
+```bash
+python shopify_sync.py --reconcile-online-store-image-visibility --dry-run
+python shopify_sync.py --reconcile-online-store-image-visibility
+```
+
+This workflow reconciles `Online Store` and `Google & YouTube` together for active products only. Draft and archived products are skipped. Products with any Shopify media are published to both channels, products with no Shopify media are unpublished from both channels, and zero inventory does not block either action.
+
 ## Generated Artifacts
 
 The repo intentionally keeps its operational outputs next to the code. Common artifacts include:
@@ -126,7 +135,7 @@ The repo intentionally keeps its operational outputs next to the code. Common ar
 - `collection_generation_unmatched.csv`: products that did not match the managed taxonomy.
 - `collection_image_preview.csv`: planned or applied collection image updates.
 - `online_store_backfill_preview.csv`: publication backfill preview.
-- `online_store_image_visibility_preview.csv`: visibility reconciliation preview.
+- `online_store_image_visibility_preview.csv`: visibility reconciliation preview for `Online Store` and `Google & YouTube`.
 - `photo_sync_preview.csv`: photo sync decisions and outcomes.
 - `photo_sync_manifest.json`: per-SKU photo-sync state tracking.
 - `photo_source_preview.csv`: zero-media sourcing decisions.

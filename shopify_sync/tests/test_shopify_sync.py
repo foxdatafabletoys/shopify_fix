@@ -1618,6 +1618,7 @@ class ProductPublicationTests(unittest.TestCase):
                 {
                     "id": "gid://shopify/Product/1",
                     "title": "Visible With Video Only",
+                    "status": "",
                     "published_on_publication": True,
                     "publication_id": "gid://shopify/Publication/2",
                     "has_media": True,
@@ -1626,6 +1627,7 @@ class ProductPublicationTests(unittest.TestCase):
                 {
                     "id": "gid://shopify/Product/2",
                     "title": "Hidden Without Media",
+                    "status": "",
                     "published_on_publication": False,
                     "publication_id": "gid://shopify/Publication/2",
                     "has_media": False,
@@ -1636,6 +1638,71 @@ class ProductPublicationTests(unittest.TestCase):
         query, variables = self.client.gql.call_args.args
         self.assertIn("publishedOnPublication", query)
         self.assertIn("media(first: 1)", query)
+        self.assertEqual(variables, {"cursor": None, "publicationId": "gid://shopify/Publication/2"})
+
+    def test_iter_products_for_online_store_image_visibility_excludes_draft_and_archived_but_keeps_active_zero_inventory(self):
+        self.client.gql = mock.Mock(return_value={
+            "products": {
+                "edges": [
+                    {
+                        "cursor": "cur-1",
+                        "node": {
+                            "id": "gid://shopify/Product/1",
+                            "title": "Active Zero Inventory",
+                            "status": "ACTIVE",
+                            "totalInventory": 0,
+                            "publishedOnPublication": False,
+                            "variants": {"edges": [{"node": {"sku": "ZERO-1"}}]},
+                            "media": {"edges": []},
+                        },
+                    },
+                    {
+                        "cursor": "cur-2",
+                        "node": {
+                            "id": "gid://shopify/Product/2",
+                            "title": "Draft Product",
+                            "status": "DRAFT",
+                            "totalInventory": 5,
+                            "publishedOnPublication": True,
+                            "variants": {"edges": [{"node": {"sku": "DRAFT-1"}}]},
+                            "media": {"edges": [{"node": {"id": "gid://shopify/MediaImage/2"}}]},
+                        },
+                    },
+                    {
+                        "cursor": "cur-3",
+                        "node": {
+                            "id": "gid://shopify/Product/3",
+                            "title": "Archived Product",
+                            "status": "ARCHIVED",
+                            "totalInventory": 2,
+                            "publishedOnPublication": False,
+                            "variants": {"edges": [{"node": {"sku": "ARCH-1"}}]},
+                            "media": {"edges": []},
+                        },
+                    },
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        })
+
+        rows = list(self.client.iter_products_for_online_store_image_visibility("gid://shopify/Publication/2"))
+
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "id": "gid://shopify/Product/1",
+                    "title": "Active Zero Inventory",
+                    "status": "ACTIVE",
+                    "published_on_publication": False,
+                    "publication_id": "gid://shopify/Publication/2",
+                    "has_media": False,
+                    "skus": ["ZERO-1"],
+                }
+            ],
+        )
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("status", query)
         self.assertEqual(variables, {"cursor": None, "publicationId": "gid://shopify/Publication/2"})
 
 
@@ -1651,8 +1718,14 @@ class MainFlowTests(unittest.TestCase):
         self.assertIn("photos and media", help_text)
         self.assertIn("Run this before any live delete, import, update, or media job.", help_text)
         self.assertIn("Run this when prices, stock, or costs changed in the sheets.", help_text)
+        self.assertIn("Google & YouTube", help_text)
+        self.assertIn("Draft and archived products are ignored.", help_text)
         self.assertIn("Run this when you want a conservative one-command recovery for missing images.", help_text)
         self.assertIn("Most job flags must be run by themselves.", help_text)
+
+    def test_top_level_usage_text_mentions_two_publication_visibility_rule(self):
+        self.assertIn("`Online Store` and `Google & YouTube` visibility", shopify_sync.__doc__)
+        self.assertIn("for active products only", shopify_sync.__doc__)
 
     def test_gw_refresh_cache_runs_without_shopify_credentials(self):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--gw-refresh-cache"]), \
@@ -1788,6 +1861,13 @@ class MainFlowTests(unittest.TestCase):
         self.assertIn("--backfill-descriptions-limit", help_text)
         self.assertIn("Rewrite existing Shopify product descriptions", help_text)
         self.assertIn("--backfill-country-of-origin", help_text)
+
+    def test_help_text_describes_fixed_publications_for_image_visibility_reconcile(self):
+        help_text = shopify_sync.build_parser().format_help()
+
+        self.assertIn("--reconcile-online-store-image-visibility", help_text)
+        self.assertIn("Online Store", help_text)
+        self.assertIn("Google & YouTube", help_text)
 
     def test_backfill_descriptions_runs_without_prepare_or_location_lookup(self):
         client = mock.Mock()
@@ -2028,6 +2108,51 @@ class MainFlowTests(unittest.TestCase):
         phase_reconcile.assert_called_once_with(client, dry=True)
         prepare_products.assert_not_called()
         run_preflight.assert_not_called()
+
+    def test_reconcile_online_store_image_visibility_dry_run_logs_two_publication_message(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--reconcile-online-store-image-visibility", "--dry-run"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_reconcile_online_store_image_visibility"), \
+             mock.patch("shopify_sync.log") as log_mock:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        logged_messages = [call.args[0] for call in log_mock.call_args_list]
+        self.assertTrue(
+            any(
+                "Store image-visibility dry-run complete for Online Store and Google & YouTube." in message
+                for message in logged_messages
+            )
+        )
+
+    def test_reconcile_online_store_image_visibility_dry_run_logs_preview_message(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--reconcile-online-store-image-visibility", "--dry-run"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_reconcile_online_store_image_visibility"), \
+             mock.patch("shopify_sync.log") as log_mock:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        logged_messages = [call.args[0] for call in log_mock.call_args_list]
+        self.assertTrue(
+            any(
+                "Store image-visibility dry-run complete for Online Store and Google & YouTube. Review "
+                "online_store_image_visibility_preview.csv" in message
+                for message in logged_messages
+            )
+        )
 
     def test_reconcile_online_store_image_visibility_rejects_backfill_combination(self):
         with mock.patch(
@@ -2949,62 +3074,202 @@ class PhaseOnlineStoreImageVisibilityTests(unittest.TestCase):
         self.assertIn("dry_run_unpublish", preview)
         self.assertNotIn("Already Hidden", preview)
 
+    def test_dry_run_looks_up_both_fixed_publications_before_any_iteration_or_preview_write(self):
+        preview_path = Path(self.failures_dir.name) / "image_visibility_preview.csv"
+
+        def lookup(name):
+            if name == "Online Store":
+                return "gid://shopify/Publication/online"
+            if name == "Google & YouTube":
+                raise RuntimeError("missing Google & YouTube publication")
+            raise AssertionError(f"unexpected publication lookup: {name}")
+
+        self.client.get_publication_id_by_name.side_effect = lookup
+
+        with self.assertRaisesRegex(RuntimeError, "missing Google & YouTube publication"), \
+             mock.patch("shopify_sync.ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV", new=preview_path):
+            shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=True)
+
+        self.client.iter_products_for_online_store_image_visibility.assert_not_called()
+        self.client.publish_to_publication.assert_not_called()
+        self.client.unpublish_from_publication.assert_not_called()
+        self.assertFalse(preview_path.exists())
+
+    def test_dry_run_writes_only_action_rows_across_fixed_publication_pairs(self):
+        self.client.get_publication_id_by_name.side_effect = [
+            "gid://shopify/Publication/online",
+            "gid://shopify/Publication/google",
+        ]
+        self.client.iter_products_for_online_store_image_visibility.side_effect = [
+            iter([
+                {
+                    "id": "gid://shopify/Product/1",
+                    "title": "Online Needs Publish",
+                    "published_on_publication": False,
+                    "publication_id": "gid://shopify/Publication/online",
+                    "has_media": True,
+                    "skus": ["PAIR-PUB-1"],
+                },
+                {
+                    "id": "gid://shopify/Product/2",
+                    "title": "Online Already Hidden",
+                    "published_on_publication": False,
+                    "publication_id": "gid://shopify/Publication/online",
+                    "has_media": False,
+                    "skus": ["PAIR-SKIP-1"],
+                },
+            ]),
+            iter([
+                {
+                    "id": "gid://shopify/Product/3",
+                    "title": "Google Needs Unpublish",
+                    "published_on_publication": True,
+                    "publication_id": "gid://shopify/Publication/google",
+                    "has_media": False,
+                    "skus": ["PAIR-UNPUB-1"],
+                },
+                {
+                    "id": "gid://shopify/Product/4",
+                    "title": "Google Already Visible",
+                    "published_on_publication": True,
+                    "publication_id": "gid://shopify/Publication/google",
+                    "has_media": True,
+                    "skus": ["PAIR-SKIP-2"],
+                },
+            ]),
+        ]
+
+        with mock.patch("shopify_sync.ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV", new=self.preview_path), \
+             mock.patch("shopify_sync.log") as log_mock:
+            shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=True)
+
+        self.assertEqual(
+            self.client.iter_products_for_online_store_image_visibility.call_args_list,
+            [
+                mock.call("gid://shopify/Publication/online"),
+                mock.call("gid://shopify/Publication/google"),
+            ],
+        )
+        with self.preview_path.open(encoding="utf-8") as fh:
+            preview_rows = list(csv.DictReader(fh))
+
+        self.assertEqual(len(preview_rows), 2)
+        self.assertEqual(
+            {row["title"] for row in preview_rows},
+            {"Online Needs Publish", "Google Needs Unpublish"},
+        )
+        self.assertEqual(
+            {row["publication_name"] for row in preview_rows},
+            {"Online Store", "Google & YouTube"},
+        )
+        self.assertEqual(
+            {row["status"] for row in preview_rows},
+            {"dry_run_publish", "dry_run_unpublish"},
+        )
+        logged_messages = [call.args[0] for call in log_mock.call_args_list]
+        self.assertTrue(
+            any(
+                "STORE IMAGE VISIBILITY summary:" in message
+                and "candidates=4" in message
+                and "actions=2" in message
+                and "unchanged=2" in message
+                for message in logged_messages
+            )
+        )
+
     def test_live_run_publishes_and_unpublishes_mismatches(self):
-        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"
-        self.client.iter_products_for_online_store_image_visibility.return_value = iter([
-            {
-                "id": "gid://shopify/Product/1",
-                "title": "Needs Publish",
-                "published_on_publication": False,
-                "publication_id": "gid://shopify/Publication/2",
-                "has_media": True,
-                "skus": ["PUB-1"],
-            },
-            {
-                "id": "gid://shopify/Product/2",
-                "title": "Needs Unpublish",
-                "published_on_publication": True,
-                "publication_id": "gid://shopify/Publication/2",
-                "has_media": False,
-                "skus": ["UNPUB-1"],
-            },
-        ])
+        self.client.get_publication_id_by_name.side_effect = [
+            "gid://shopify/Publication/online",
+            "gid://shopify/Publication/google",
+        ]
+        self.client.iter_products_for_online_store_image_visibility.side_effect = [
+            iter([
+                {
+                    "id": "gid://shopify/Product/1",
+                    "title": "Needs Publish",
+                    "published_on_publication": False,
+                    "publication_id": "gid://shopify/Publication/online",
+                    "has_media": True,
+                    "skus": ["PUB-1"],
+                },
+                {
+                    "id": "gid://shopify/Product/2",
+                    "title": "Needs Unpublish",
+                    "published_on_publication": True,
+                    "publication_id": "gid://shopify/Publication/online",
+                    "has_media": False,
+                    "skus": ["UNPUB-1"],
+                },
+            ]),
+            iter([
+                {
+                    "id": "gid://shopify/Product/3",
+                    "title": "Needs Google Publish",
+                    "published_on_publication": False,
+                    "publication_id": "gid://shopify/Publication/google",
+                    "has_media": True,
+                    "skus": ["GOOG-1"],
+                },
+                {
+                    "id": "gid://shopify/Product/4",
+                    "title": "Needs Google Unpublish",
+                    "published_on_publication": True,
+                    "publication_id": "gid://shopify/Publication/google",
+                    "has_media": False,
+                    "skus": ["GOOG-2"],
+                },
+            ]),
+        ]
 
         with mock.patch("shopify_sync.ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV", new=self.preview_path):
             shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=False)
 
-        self.client.publish_to_publication.assert_called_once_with(
-            "gid://shopify/Product/1",
-            "gid://shopify/Publication/2",
+        self.assertEqual(
+            self.client.publish_to_publication.call_args_list,
+            [
+                mock.call("gid://shopify/Product/1", "gid://shopify/Publication/online"),
+                mock.call("gid://shopify/Product/3", "gid://shopify/Publication/google"),
+            ],
         )
-        self.client.unpublish_from_publication.assert_called_once_with(
-            "gid://shopify/Product/2",
-            "gid://shopify/Publication/2",
+        self.assertEqual(
+            self.client.unpublish_from_publication.call_args_list,
+            [
+                mock.call("gid://shopify/Product/2", "gid://shopify/Publication/online"),
+                mock.call("gid://shopify/Product/4", "gid://shopify/Publication/google"),
+            ],
         )
         preview = self.preview_path.read_text(encoding="utf-8")
         self.assertIn("published", preview)
         self.assertIn("unpublished", preview)
+        self.assertIn("Google & YouTube", preview)
 
     def test_live_run_continues_after_publish_and_unpublish_failures(self):
-        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"
-        self.client.iter_products_for_online_store_image_visibility.return_value = iter([
-            {
-                "id": "gid://shopify/Product/1",
-                "title": "Publish Failure",
-                "published_on_publication": False,
-                "publication_id": "gid://shopify/Publication/2",
-                "has_media": True,
-                "skus": ["PUB-FAIL"],
-            },
-            {
-                "id": "gid://shopify/Product/2",
-                "title": "Unpublish Failure",
-                "published_on_publication": True,
-                "publication_id": "gid://shopify/Publication/2",
-                "has_media": False,
-                "skus": ["UNPUB-FAIL"],
-            },
-        ])
+        self.client.get_publication_id_by_name.side_effect = [
+            "gid://shopify/Publication/online",
+            "gid://shopify/Publication/google",
+        ]
+        self.client.iter_products_for_online_store_image_visibility.side_effect = [
+            iter([
+                {
+                    "id": "gid://shopify/Product/1",
+                    "title": "Publish Failure",
+                    "published_on_publication": False,
+                    "publication_id": "gid://shopify/Publication/online",
+                    "has_media": True,
+                    "skus": ["PUB-FAIL"],
+                },
+            ]),
+            iter([
+                {
+                    "id": "gid://shopify/Product/2",
+                    "title": "Unpublish Failure",
+                    "published_on_publication": True,
+                    "publication_id": "gid://shopify/Publication/google",
+                    "has_media": False,
+                    "skus": ["UNPUB-FAIL"],
+                },
+            ]),
+        ]
         self.client.publish_to_publication.side_effect = RuntimeError("publish broke")
         self.client.unpublish_from_publication.side_effect = RuntimeError("unpublish broke")
 
@@ -3015,13 +3280,19 @@ class PhaseOnlineStoreImageVisibilityTests(unittest.TestCase):
                  mock.patch("shopify_sync.GENERAL_FAILURES_TSV", new=failures_path):
                 shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=False)
 
-            preview = preview_path.read_text(encoding="utf-8")
+            with preview_path.open(encoding="utf-8") as fh:
+                preview_rows = list(csv.DictReader(fh))
             failures = failures_path.read_text(encoding="utf-8")
 
-        self.assertIn("publish_failed: publish broke", preview)
-        self.assertIn("unpublish_failed: unpublish broke", preview)
-        self.assertIn("image_visibility_publish\tPUB-FAIL\tPublish Failure\tpublish broke", failures)
-        self.assertIn("image_visibility_unpublish\tUNPUB-FAIL\tUnpublish Failure\tunpublish broke", failures)
+        self.assertEqual(
+            {row["status"] for row in preview_rows},
+            {"publish_failed: publish broke", "unpublish_failed: unpublish broke"},
+        )
+        self.assertIn("image_visibility_publish:Online Store\tPUB-FAIL\tPublish Failure\tpublish broke", failures)
+        self.assertIn(
+            "image_visibility_unpublish:Google & YouTube\tUNPUB-FAIL\tUnpublish Failure\tunpublish broke",
+            failures,
+        )
 
     def test_exports_sanitize_formula_like_titles_and_skus(self):
         self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/2"

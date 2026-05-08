@@ -28,8 +28,10 @@ What it does:
                Finds existing Shopify products that are not published to the
                current publication and publishes them to `Online Store`.
   --reconcile-online-store-image-visibility
-               Reconciles `Online Store` visibility against product media:
-               publishes products with any attached Shopify media and unpublishes products with none.
+               Reconciles `Online Store` and `Google & YouTube` visibility
+               against product media for active products only: publishes
+               products with any attached Shopify media and unpublishes
+               products with none.
   --photo-sync-staged-local-all
                Applies curated staged local fallback images across the full
                catalog and writes the fallback-image audit metafield after
@@ -171,6 +173,11 @@ PHOTO_SYNC_STATE_AUDIT_PENDING = "audit_pending"
 LATEST_GW_RELEASE_LIMIT = 60
 AUTO_COLLECTION_TAG_PREFIX = "AUTO_COLLECTION::"
 ONLINE_STORE_PUBLICATION_NAME = "Online Store"
+GOOGLE_YOUTUBE_PUBLICATION_NAME = "Google & YouTube"
+IMAGE_VISIBILITY_PUBLICATION_NAMES = (
+    ONLINE_STORE_PUBLICATION_NAME,
+    GOOGLE_YOUTUBE_PUBLICATION_NAME,
+)
 COUNTRY_OF_ORIGIN_TARGET_CODE = "GB"
 PHOTO_SOURCE_SEARCH_URL = "https://html.duckduckgo.com/html/"
 PHOTO_SOURCE_SEARCH_PROVIDERS = (
@@ -4125,6 +4132,7 @@ class Shopify:
                   node {
                     id
                     title
+                    status
                     publishedOnPublication(publicationId: $publicationId)
                     variants(first: 10) {
                       edges {
@@ -4150,9 +4158,13 @@ class Shopify:
             data = self.gql(page_q, {"cursor": cursor, "publicationId": publication_id})
             for edge in data["products"]["edges"]:
                 node = edge["node"]
+                status = (node.get("status") or "").strip().upper()
+                if status in {"DRAFT", "ARCHIVED"}:
+                    continue
                 yield {
                     "id": node["id"],
                     "title": node.get("title") or "",
+                    "status": status,
                     "published_on_publication": bool(node.get("publishedOnPublication")),
                     "publication_id": publication_id,
                     "has_media": bool(((node.get("media") or {}).get("edges") or [])),
@@ -5827,74 +5839,88 @@ def phase_publish_online_store_backfill(client: Shopify, dry: bool) -> None:
 
 
 def phase_reconcile_online_store_image_visibility(client: Shopify, dry: bool) -> None:
-    log("=== ONLINE STORE IMAGE VISIBILITY phase: reconciling publication against any product media ===")
-    publication_id = client.get_publication_id_by_name(ONLINE_STORE_PUBLICATION_NAME)
-    candidates = list(client.iter_products_for_online_store_image_visibility(publication_id))
+    log("=== STORE IMAGE VISIBILITY phase: reconciling Online Store and Google & YouTube against any product media for active products ===")
+    publication_targets = [
+        {
+            "name": publication_name,
+            "id": client.get_publication_id_by_name(publication_name),
+        }
+        for publication_name in IMAGE_VISIBILITY_PUBLICATION_NAMES
+    ]
     rows: list[dict[str, str]] = []
+    candidates = 0
+    actions = 0
     published = 0
     unpublished = 0
     publish_failed = 0
     unpublish_failed = 0
     unchanged = 0
 
-    for candidate in candidates:
-        has_media = candidate["has_media"]
-        is_published = candidate["published_on_publication"]
-        if has_media and not is_published:
-            status = "dry_run_publish" if dry else "published"
-            if not dry:
-                try:
-                    client.publish_to_publication(candidate["id"], publication_id)
-                    published += 1
-                except Exception as e:
-                    publish_failed += 1
-                    status = f"publish_failed: {e}"
-                    log(f"  FAILED publish {candidate['title']!r} ({candidate['id']}): {e}")
-                    with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
-                        fh.write(
-                            f"image_visibility_publish\t{_safe_spreadsheet_cell('|'.join(candidate['skus']))}\t"
-                            f"{_safe_spreadsheet_cell(candidate['title'])}\t{_safe_spreadsheet_cell(e)}\n"
-                        )
-            rows.append({
+    for publication in publication_targets:
+        for candidate in client.iter_products_for_online_store_image_visibility(publication["id"]):
+            candidates += 1
+            has_media = candidate["has_media"]
+            is_published = candidate["published_on_publication"]
+            row = {
                 "product_id": candidate["id"],
                 "title": _safe_spreadsheet_cell(candidate["title"]),
                 "skus": _safe_spreadsheet_cell("|".join(candidate["skus"])),
-                "publication_name": ONLINE_STORE_PUBLICATION_NAME,
+                "publication_name": publication["name"],
                 "publication_id": candidate["publication_id"],
-                "published_on_publication": "false",
-                "has_media": "true",
-                "desired_published_on_publication": "true",
-                "status": status,
-            })
-            continue
-        if not has_media and is_published:
-            status = "dry_run_unpublish" if dry else "unpublished"
-            if not dry:
-                try:
-                    client.unpublish_from_publication(candidate["id"], publication_id)
-                    unpublished += 1
-                except Exception as e:
-                    unpublish_failed += 1
-                    status = f"unpublish_failed: {e}"
-                    log(f"  FAILED unpublish {candidate['title']!r} ({candidate['id']}): {e}")
-                    with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
-                        fh.write(
-                            f"image_visibility_unpublish\t{_safe_spreadsheet_cell('|'.join(candidate['skus']))}\t"
-                            f"{_safe_spreadsheet_cell(candidate['title'])}\t{_safe_spreadsheet_cell(e)}\n"
+                "published_on_publication": "true" if is_published else "false",
+                "has_media": "true" if has_media else "false",
+                "desired_published_on_publication": "true" if has_media else "false",
+                "status": "",
+            }
+            if has_media and not is_published:
+                actions += 1
+                status = "dry_run_publish" if dry else "published"
+                if not dry:
+                    try:
+                        client.publish_to_publication(candidate["id"], publication["id"])
+                        published += 1
+                    except Exception as e:
+                        publish_failed += 1
+                        status = f"publish_failed: {e}"
+                        log(
+                            f"  FAILED publish {candidate['title']!r} ({candidate['id']}) "
+                            f"to {publication['name']!r}: {e}"
                         )
-            rows.append({
-                "product_id": candidate["id"],
-                "title": _safe_spreadsheet_cell(candidate["title"]),
-                "skus": _safe_spreadsheet_cell("|".join(candidate["skus"])),
-                "publication_name": ONLINE_STORE_PUBLICATION_NAME,
-                "publication_id": candidate["publication_id"],
-                "published_on_publication": "true",
-                "has_media": "false",
-                "desired_published_on_publication": "false",
-                "status": status,
-            })
-            continue
-        unchanged += 1
+                        with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
+                            fh.write(
+                                f"image_visibility_publish:{publication['name']}\t"
+                                f"{_safe_spreadsheet_cell('|'.join(candidate['skus']))}\t"
+                                f"{_safe_spreadsheet_cell(candidate['title'])}\t"
+                                f"{_safe_spreadsheet_cell(e)}\n"
+                            )
+                row["status"] = status
+                rows.append(row)
+                continue
+            if not has_media and is_published:
+                actions += 1
+                status = "dry_run_unpublish" if dry else "unpublished"
+                if not dry:
+                    try:
+                        client.unpublish_from_publication(candidate["id"], publication["id"])
+                        unpublished += 1
+                    except Exception as e:
+                        unpublish_failed += 1
+                        status = f"unpublish_failed: {e}"
+                        log(
+                            f"  FAILED unpublish {candidate['title']!r} ({candidate['id']}) "
+                            f"from {publication['name']!r}: {e}"
+                        )
+                        with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
+                            fh.write(
+                                f"image_visibility_unpublish:{publication['name']}\t"
+                                f"{_safe_spreadsheet_cell('|'.join(candidate['skus']))}\t"
+                                f"{_safe_spreadsheet_cell(candidate['title'])}\t"
+                                f"{_safe_spreadsheet_cell(e)}\n"
+                            )
+                row["status"] = status
+                rows.append(row)
+                continue
+            unchanged += 1
 
     cols = [
         "product_id",
@@ -5914,8 +5940,8 @@ def phase_reconcile_online_store_image_visibility(client: Shopify, dry: bool) ->
             writer.writerow(row)
     log(f"  wrote preview: {ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV}")
     log(
-        "ONLINE STORE IMAGE VISIBILITY summary: "
-        f"candidates={len(candidates)} actions={len(rows)} published={published} "
+        "STORE IMAGE VISIBILITY summary: "
+        f"candidates={candidates} actions={actions} published={published} "
         f"unpublished={unpublished} unchanged={unchanged} "
         f"publish_failed={publish_failed} unpublish_failed={unpublish_failed} dry_run={dry}"
     )
@@ -7397,7 +7423,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--reconcile-online-store-image-visibility",
         dest="do_reconcile_online_store_image_visibility",
         action="store_true",
-        help="Make Online Store visibility follow media presence: products with media are published, products with no media are unpublished. Run this after image cleanup.",
+        help="Make `Online Store` and `Google & YouTube` visibility follow media presence for active products only: products with media are published, products with none are unpublished. Draft and archived products are ignored. Run this after image cleanup.",
     )
 
     photos = parser.add_argument_group("photos and media")
@@ -7789,7 +7815,7 @@ def main() -> int:
         phase_reconcile_online_store_image_visibility(client, dry=args.dry_run)
         if args.dry_run:
             log(
-                "Online Store image-visibility dry-run complete. Review "
+                "Store image-visibility dry-run complete for Online Store and Google & YouTube. Review "
                 "online_store_image_visibility_preview.csv, then re-run with "
                 "--reconcile-online-store-image-visibility (no --dry-run) to apply."
             )
