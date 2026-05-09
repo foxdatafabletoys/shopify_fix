@@ -534,7 +534,7 @@ class DescriptionBackfillHelperTests(unittest.TestCase):
 
     def test_resolve_wayland_source_accepts_unique_title_and_sku_match(self):
         session = requests.Session()
-        search_url = "https://www.waylandgames.co.uk/search?s=SKU-1+Space+Marines+Captain"
+        search_url = "https://www.waylandgames.co.uk/search?query=sku+1+space+marines+captain"
         guessed_url = "https://www.waylandgames.co.uk/space-marines-captain-sku-1"
         search_html = '<html><body><a href="/space-marines-captain">Space Marines Captain</a></body></html>'
         product_html = """
@@ -542,7 +542,7 @@ class DescriptionBackfillHelperTests(unittest.TestCase):
           <head><title>Space Marines Captain</title></head>
           <body>
             <div>SKU SKU-1</div>
-            <p>Lead a veteran strike force into battle with this heavily armoured commander.</p>
+            <p>Lead a veteran strike force into battle with this heavily armoured commander, equipped to direct elite Space Marines through punishing front-line engagements and decisive boarding actions across the battlezone.</p>
           </body>
         </html>
         """
@@ -1705,6 +1705,87 @@ class ProductPublicationTests(unittest.TestCase):
         self.assertIn("status", query)
         self.assertEqual(variables, {"cursor": None, "publicationId": "gid://shopify/Publication/2"})
 
+    def test_iter_products_for_google_youtube_stock_visibility_keeps_status_and_inventory_for_all_states(self):
+        self.client.gql = mock.Mock(return_value={
+            "products": {
+                "edges": [
+                    {
+                        "cursor": "cur-1",
+                        "node": {
+                            "id": "gid://shopify/Product/1",
+                            "title": "Active In Stock",
+                            "status": "ACTIVE",
+                            "totalInventory": 4,
+                            "publishedOnPublication": False,
+                            "variants": {"edges": [{"node": {"sku": "ACT-1"}}]},
+                        },
+                    },
+                    {
+                        "cursor": "cur-2",
+                        "node": {
+                            "id": "gid://shopify/Product/2",
+                            "title": "Draft Zero Stock",
+                            "status": "DRAFT",
+                            "totalInventory": 0,
+                            "publishedOnPublication": True,
+                            "variants": {"edges": [{"node": {"sku": "DRF-0"}}]},
+                        },
+                    },
+                    {
+                        "cursor": "cur-3",
+                        "node": {
+                            "id": "gid://shopify/Product/3",
+                            "title": "Archived In Stock",
+                            "status": "ARCHIVED",
+                            "totalInventory": 2,
+                            "publishedOnPublication": True,
+                            "variants": {"edges": [{"node": {"sku": "ARC-2"}}]},
+                        },
+                    },
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        })
+
+        rows = list(self.client.iter_products_for_google_youtube_stock_visibility("gid://shopify/Publication/2"))
+
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "id": "gid://shopify/Product/1",
+                    "title": "Active In Stock",
+                    "status": "ACTIVE",
+                    "total_inventory": 4,
+                    "published_on_publication": False,
+                    "publication_id": "gid://shopify/Publication/2",
+                    "skus": ["ACT-1"],
+                },
+                {
+                    "id": "gid://shopify/Product/2",
+                    "title": "Draft Zero Stock",
+                    "status": "DRAFT",
+                    "total_inventory": 0,
+                    "published_on_publication": True,
+                    "publication_id": "gid://shopify/Publication/2",
+                    "skus": ["DRF-0"],
+                },
+                {
+                    "id": "gid://shopify/Product/3",
+                    "title": "Archived In Stock",
+                    "status": "ARCHIVED",
+                    "total_inventory": 2,
+                    "published_on_publication": True,
+                    "publication_id": "gid://shopify/Publication/2",
+                    "skus": ["ARC-2"],
+                },
+            ],
+        )
+        query, variables = self.client.gql.call_args.args
+        self.assertIn("totalInventory", query)
+        self.assertIn("status", query)
+        self.assertEqual(variables, {"cursor": None, "publicationId": "gid://shopify/Publication/2"})
+
 
 class MainFlowTests(unittest.TestCase):
     def test_help_text_explains_jobs_in_plain_english(self):
@@ -1720,12 +1801,14 @@ class MainFlowTests(unittest.TestCase):
         self.assertIn("Run this when prices, stock, or costs changed in the sheets.", help_text)
         self.assertIn("Google & YouTube", help_text)
         self.assertIn("Draft and archived products are ignored.", help_text)
+        self.assertIn("--reconcile-google-youtube-stock-visibility", help_text)
         self.assertIn("Run this when you want a conservative one-command recovery for missing images.", help_text)
         self.assertIn("Most job flags must be run by themselves.", help_text)
 
     def test_top_level_usage_text_mentions_two_publication_visibility_rule(self):
         self.assertIn("`Online Store` and `Google & YouTube` visibility", shopify_sync.__doc__)
         self.assertIn("for active products only", shopify_sync.__doc__)
+        self.assertIn("--reconcile-google-youtube-stock-visibility", shopify_sync.__doc__)
 
     def test_gw_refresh_cache_runs_without_shopify_credentials(self):
         with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--gw-refresh-cache"]), \
@@ -1868,6 +1951,12 @@ class MainFlowTests(unittest.TestCase):
         self.assertIn("--reconcile-online-store-image-visibility", help_text)
         self.assertIn("Online Store", help_text)
         self.assertIn("Google & YouTube", help_text)
+
+    def test_help_text_describes_google_youtube_stock_visibility_reconcile(self):
+        help_text = shopify_sync.build_parser().format_help()
+
+        self.assertIn("--reconcile-google-youtube-stock-visibility", help_text)
+        self.assertIn("zero-stock products are unpublished regardless of status", help_text)
 
     def test_backfill_descriptions_runs_without_prepare_or_location_lookup(self):
         client = mock.Mock()
@@ -2160,6 +2249,83 @@ class MainFlowTests(unittest.TestCase):
             ["shopify_sync.py", "--reconcile-online-store-image-visibility", "--publish-online-store-backfill"],
         ):
             with self.assertRaisesRegex(RuntimeError, "--publish-online-store-backfill must run separately"):
+                shopify_sync.main()
+
+    def test_reconcile_google_youtube_stock_visibility_runs_without_prepare_or_location_lookup(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--reconcile-google-youtube-stock-visibility"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_reconcile_google_youtube_stock_visibility") as phase_reconcile, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_reconcile.assert_called_once_with(client, dry=False)
+        run_preflight.assert_not_called()
+        prepare_products.assert_not_called()
+
+    def test_reconcile_google_youtube_stock_visibility_dry_run_bypasses_plain_preview_flow(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--reconcile-google-youtube-stock-visibility", "--dry-run"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_reconcile_google_youtube_stock_visibility") as phase_reconcile, \
+             mock.patch("shopify_sync.prepare_products_for_import") as prepare_products, \
+             mock.patch("shopify_sync.run_preflight") as run_preflight:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        phase_reconcile.assert_called_once_with(client, dry=True)
+        prepare_products.assert_not_called()
+        run_preflight.assert_not_called()
+
+    def test_reconcile_google_youtube_stock_visibility_dry_run_logs_preview_message(self):
+        client = mock.Mock()
+
+        with mock.patch("shopify_sync.sys.argv", ["shopify_sync.py", "--reconcile-google-youtube-stock-visibility", "--dry-run"]), \
+             mock.patch("shopify_sync.load_env", return_value={
+                 "SHOPIFY_STORE": "example-store",
+                 "SHOPIFY_TOKEN": "shpat_test",
+             }), \
+             mock.patch("shopify_sync.Shopify", return_value=client), \
+             mock.patch("shopify_sync.phase_reconcile_google_youtube_stock_visibility"), \
+             mock.patch("shopify_sync.log") as log_mock:
+            result = shopify_sync.main()
+
+        self.assertEqual(result, 0)
+        logged_messages = [call.args[0] for call in log_mock.call_args_list]
+        self.assertTrue(
+            any(
+                "Google & YouTube stock-visibility dry-run complete. Review "
+                "google_youtube_stock_visibility_preview.csv" in message
+                for message in logged_messages
+            )
+        )
+
+    def test_reconcile_google_youtube_stock_visibility_rejects_publish_online_store_backfill_combination(self):
+        with mock.patch(
+            "shopify_sync.sys.argv",
+            ["shopify_sync.py", "--reconcile-google-youtube-stock-visibility", "--publish-online-store-backfill"],
+        ):
+            with self.assertRaisesRegex(RuntimeError, "--publish-online-store-backfill must run separately"):
+                shopify_sync.main()
+
+    def test_reconcile_online_store_image_visibility_rejects_google_youtube_stock_visibility_combination(self):
+        with mock.patch(
+            "shopify_sync.sys.argv",
+            ["shopify_sync.py", "--reconcile-online-store-image-visibility", "--reconcile-google-youtube-stock-visibility"],
+        ):
+            with self.assertRaisesRegex(RuntimeError, "--reconcile-online-store-image-visibility must run separately"):
                 shopify_sync.main()
 
     def test_all_flag_runs_prepare_then_preflight_then_delete_then_import(self):
@@ -3314,6 +3480,226 @@ class PhaseOnlineStoreImageVisibilityTests(unittest.TestCase):
             with mock.patch("shopify_sync.ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV", new=preview_path), \
                  mock.patch("shopify_sync.GENERAL_FAILURES_TSV", new=failures_path):
                 shopify_sync.phase_reconcile_online_store_image_visibility(self.client, dry=False)
+
+            preview = preview_path.read_text(encoding="utf-8")
+            failures = failures_path.read_text(encoding="utf-8")
+
+        self.assertIn("'=cmd", preview)
+        self.assertIn("'@SKU", preview)
+        self.assertIn("'@SKU", failures)
+        self.assertIn("'=cmd", failures)
+        self.assertIn("'-boom", failures)
+
+
+class PhaseGoogleYouTubeStockVisibilityTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+        self.preview_path = Path(tempfile.gettempdir()) / "_tmp_google_youtube_stock_visibility_preview.csv"
+        self.failures_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.failures_dir.cleanup)
+        self.failures_patcher = mock.patch(
+            "shopify_sync.GENERAL_FAILURES_TSV",
+            new=Path(self.failures_dir.name) / "failures.tsv",
+        )
+        self.failures_patcher.start()
+        self.addCleanup(self.failures_patcher.stop)
+
+    def test_dry_run_writes_only_action_rows_and_logs_summary_counts(self):
+        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/google"
+        self.client.iter_products_for_google_youtube_stock_visibility.return_value = iter([
+            {
+                "id": "gid://shopify/Product/1",
+                "title": "Active Needs Publish",
+                "status": "ACTIVE",
+                "total_inventory": 3,
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/google",
+                "skus": ["ACT-PUB"],
+            },
+            {
+                "id": "gid://shopify/Product/2",
+                "title": "Draft Zero Needs Unpublish",
+                "status": "DRAFT",
+                "total_inventory": 0,
+                "published_on_publication": True,
+                "publication_id": "gid://shopify/Publication/google",
+                "skus": ["DRF-UNPUB"],
+            },
+            {
+                "id": "gid://shopify/Product/3",
+                "title": "Archived In Stock Stays Hidden",
+                "status": "ARCHIVED",
+                "total_inventory": 5,
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/google",
+                "skus": ["ARC-SKIP"],
+            },
+        ])
+
+        with mock.patch("shopify_sync.GOOGLE_YOUTUBE_STOCK_VISIBILITY_PREVIEW_CSV", new=self.preview_path), \
+             mock.patch("shopify_sync.log") as log_mock:
+            shopify_sync.phase_reconcile_google_youtube_stock_visibility(self.client, dry=True)
+
+        self.client.publish_to_publication.assert_not_called()
+        self.client.unpublish_from_publication.assert_not_called()
+        with self.preview_path.open(encoding="utf-8") as fh:
+            preview_rows = list(csv.DictReader(fh))
+
+        self.assertEqual(len(preview_rows), 2)
+        self.assertEqual(
+            {row["title"] for row in preview_rows},
+            {"Active Needs Publish", "Draft Zero Needs Unpublish"},
+        )
+        self.assertEqual(
+            {row["status"] for row in preview_rows},
+            {"dry_run_publish", "dry_run_unpublish"},
+        )
+        self.assertEqual(
+            {row["product_status"] for row in preview_rows},
+            {"ACTIVE", "DRAFT"},
+        )
+        self.assertNotIn("Archived In Stock Stays Hidden", self.preview_path.read_text(encoding="utf-8"))
+        logged_messages = [call.args[0] for call in log_mock.call_args_list]
+        self.assertTrue(
+            any(
+                "GOOGLE & YOUTUBE STOCK VISIBILITY summary:" in message
+                and "candidates=3" in message
+                and "actions=2" in message
+                and "unchanged=1" in message
+                for message in logged_messages
+            )
+        )
+
+    def test_live_run_applies_stock_matrix_only_to_google_youtube(self):
+        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/google"
+        self.client.iter_products_for_google_youtube_stock_visibility.return_value = iter([
+            {
+                "id": "gid://shopify/Product/1",
+                "title": "Active Needs Publish",
+                "status": "ACTIVE",
+                "total_inventory": 2,
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/google",
+                "skus": ["ACT-2"],
+            },
+            {
+                "id": "gid://shopify/Product/2",
+                "title": "Archived Zero Needs Unpublish",
+                "status": "ARCHIVED",
+                "total_inventory": 0,
+                "published_on_publication": True,
+                "publication_id": "gid://shopify/Publication/google",
+                "skus": ["ARC-0"],
+            },
+            {
+                "id": "gid://shopify/Product/3",
+                "title": "Draft In Stock Stays Hidden",
+                "status": "DRAFT",
+                "total_inventory": 6,
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/google",
+                "skus": ["DRF-6"],
+            },
+            {
+                "id": "gid://shopify/Product/4",
+                "title": "Archived In Stock Already Published",
+                "status": "ARCHIVED",
+                "total_inventory": 4,
+                "published_on_publication": True,
+                "publication_id": "gid://shopify/Publication/google",
+                "skus": ["ARC-4"],
+            },
+        ])
+
+        with mock.patch("shopify_sync.GOOGLE_YOUTUBE_STOCK_VISIBILITY_PREVIEW_CSV", new=self.preview_path):
+            shopify_sync.phase_reconcile_google_youtube_stock_visibility(self.client, dry=False)
+
+        self.client.get_publication_id_by_name.assert_called_once_with("Google & YouTube")
+        self.assertEqual(
+            self.client.publish_to_publication.call_args_list,
+            [mock.call("gid://shopify/Product/1", "gid://shopify/Publication/google")],
+        )
+        self.assertEqual(
+            self.client.unpublish_from_publication.call_args_list,
+            [mock.call("gid://shopify/Product/2", "gid://shopify/Publication/google")],
+        )
+        preview = self.preview_path.read_text(encoding="utf-8")
+        self.assertIn("published", preview)
+        self.assertIn("unpublished", preview)
+        self.assertIn("Google & YouTube", preview)
+        self.assertNotIn("Draft In Stock Stays Hidden", preview)
+        self.assertNotIn("Archived In Stock Already Published", preview)
+
+    def test_live_run_continues_after_publish_and_unpublish_failures(self):
+        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/google"
+        self.client.iter_products_for_google_youtube_stock_visibility.return_value = iter([
+            {
+                "id": "gid://shopify/Product/1",
+                "title": "Publish Failure",
+                "status": "ACTIVE",
+                "total_inventory": 2,
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/google",
+                "skus": ["PUB-FAIL"],
+            },
+            {
+                "id": "gid://shopify/Product/2",
+                "title": "Unpublish Failure",
+                "status": "DRAFT",
+                "total_inventory": 0,
+                "published_on_publication": True,
+                "publication_id": "gid://shopify/Publication/google",
+                "skus": ["UNPUB-FAIL"],
+            },
+        ])
+        self.client.publish_to_publication.side_effect = RuntimeError("publish broke")
+        self.client.unpublish_from_publication.side_effect = RuntimeError("unpublish broke")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            preview_path = Path(tmp) / "preview.csv"
+            failures_path = Path(tmp) / "failures.tsv"
+            with mock.patch("shopify_sync.GOOGLE_YOUTUBE_STOCK_VISIBILITY_PREVIEW_CSV", new=preview_path), \
+                 mock.patch("shopify_sync.GENERAL_FAILURES_TSV", new=failures_path):
+                shopify_sync.phase_reconcile_google_youtube_stock_visibility(self.client, dry=False)
+
+            with preview_path.open(encoding="utf-8") as fh:
+                preview_rows = list(csv.DictReader(fh))
+            failures = failures_path.read_text(encoding="utf-8")
+
+        self.assertEqual(
+            {row["status"] for row in preview_rows},
+            {"publish_failed: publish broke", "unpublish_failed: unpublish broke"},
+        )
+        self.assertIn(
+            "google_youtube_stock_visibility_publish\tPUB-FAIL\tPublish Failure\tpublish broke",
+            failures,
+        )
+        self.assertIn(
+            "google_youtube_stock_visibility_unpublish\tUNPUB-FAIL\tUnpublish Failure\tunpublish broke",
+            failures,
+        )
+
+    def test_exports_sanitize_formula_like_titles_and_skus(self):
+        self.client.get_publication_id_by_name.return_value = "gid://shopify/Publication/google"
+        self.client.iter_products_for_google_youtube_stock_visibility.return_value = iter([
+            {
+                "id": "gid://shopify/Product/1",
+                "title": "=cmd",
+                "status": "ACTIVE",
+                "total_inventory": 1,
+                "published_on_publication": False,
+                "publication_id": "gid://shopify/Publication/google",
+                "skus": ["@SKU"],
+            },
+        ])
+        self.client.publish_to_publication.side_effect = RuntimeError("-boom")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            preview_path = Path(tmp) / "preview.csv"
+            failures_path = Path(tmp) / "failures.tsv"
+            with mock.patch("shopify_sync.GOOGLE_YOUTUBE_STOCK_VISIBILITY_PREVIEW_CSV", new=preview_path), \
+                 mock.patch("shopify_sync.GENERAL_FAILURES_TSV", new=failures_path):
+                shopify_sync.phase_reconcile_google_youtube_stock_visibility(self.client, dry=False)
 
             preview = preview_path.read_text(encoding="utf-8")
             failures = failures_path.read_text(encoding="utf-8")

@@ -125,6 +125,15 @@ python shopify_sync.py --reconcile-online-store-image-visibility
 
 This workflow reconciles `Online Store` and `Google & YouTube` together for active products only. Draft and archived products are skipped. Products with any Shopify media are published to both channels, products with no Shopify media are unpublished from both channels, and zero inventory does not block either action.
 
+### 6. Reconcile Google & YouTube visibility to stock
+
+```bash
+python shopify_sync.py --reconcile-google-youtube-stock-visibility --dry-run
+python shopify_sync.py --reconcile-google-youtube-stock-visibility
+```
+
+This workflow targets `Google & YouTube` only. Zero-stock products are unpublished regardless of whether they are `ACTIVE`, `DRAFT`, or `ARCHIVED`. Positive-stock products are republished only when they are `ACTIVE`. `Online Store` is not touched by this command.
+
 ## Generated Artifacts
 
 The repo intentionally keeps its operational outputs next to the code. Common artifacts include:
@@ -136,6 +145,7 @@ The repo intentionally keeps its operational outputs next to the code. Common ar
 - `collection_image_preview.csv`: planned or applied collection image updates.
 - `online_store_backfill_preview.csv`: publication backfill preview.
 - `online_store_image_visibility_preview.csv`: visibility reconciliation preview for `Online Store` and `Google & YouTube`.
+- `google_youtube_stock_visibility_preview.csv`: stock-based visibility reconciliation preview for `Google & YouTube`.
 - `photo_sync_preview.csv`: photo sync decisions and outcomes.
 - `photo_sync_manifest.json`: per-SKU photo-sync state tracking.
 - `photo_source_preview.csv`: zero-media sourcing decisions.

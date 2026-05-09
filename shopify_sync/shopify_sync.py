@@ -32,6 +32,10 @@ What it does:
                against product media for active products only: publishes
                products with any attached Shopify media and unpublishes
                products with none.
+  --reconcile-google-youtube-stock-visibility
+               Reconciles `Google & YouTube` visibility against stock:
+               unpublishes zero-stock products regardless of status and
+               republishes only positive-stock active products.
   --photo-sync-staged-local-all
                Applies curated staged local fallback images across the full
                catalog and writes the fallback-image audit metafield after
@@ -80,6 +84,8 @@ Usage:
   python shopify_sync.py --publish-online-store-backfill
   python shopify_sync.py --reconcile-online-store-image-visibility --dry-run
   python shopify_sync.py --reconcile-online-store-image-visibility
+  python shopify_sync.py --reconcile-google-youtube-stock-visibility --dry-run
+  python shopify_sync.py --reconcile-google-youtube-stock-visibility
   python shopify_sync.py --photo-source-web-all --dry-run
   python shopify_sync.py --photo-source-web-all
   python shopify_sync.py --recover-zero-media-images --dry-run
@@ -142,6 +148,7 @@ COLLECTION_GENERATION_UNMATCHED_CSV = HERE / "collection_generation_unmatched.cs
 COLLECTION_IMAGE_PREVIEW_CSV = HERE / "collection_image_preview.csv"
 ONLINE_STORE_BACKFILL_PREVIEW_CSV = HERE / "online_store_backfill_preview.csv"
 ONLINE_STORE_IMAGE_VISIBILITY_PREVIEW_CSV = HERE / "online_store_image_visibility_preview.csv"
+GOOGLE_YOUTUBE_STOCK_VISIBILITY_PREVIEW_CSV = HERE / "google_youtube_stock_visibility_preview.csv"
 COUNTRY_OF_ORIGIN_BACKFILL_PREVIEW_CSV = HERE / "country_of_origin_backfill_preview.csv"
 COUNTRY_OF_ORIGIN_VERIFICATION_CSV = HERE / "country_of_origin_verification.csv"
 DESCRIPTION_BACKFILL_PREVIEW_CSV = HERE / "description_backfill_preview.csv"
@@ -2494,7 +2501,12 @@ def warm_gw_official_archive_index(
     if dry:
         trade_feed_page_counts: dict[int, int] = {}
         for group in gw_cache_refresh.GW_TRADE_FEED_IMAGE_GROUPS:
-            payload = gw_cache_refresh.fetch_trade_feed_page(session, group=group, page=1)
+            # Wide group sweeps will hit non-existent groups; treat them as 0 pages.
+            try:
+                payload = gw_cache_refresh.fetch_trade_feed_page(session, group=group, page=1)
+            except RuntimeError:
+                trade_feed_page_counts[group] = 0
+                continue
             trade_feed_page_counts[group] = int(payload.get("page_count") or 0)
         by_code, _ = build_gw_official_resource_pack_indexes(packs, None)
         archive_count = sum(
@@ -4168,6 +4180,53 @@ class Shopify:
                     "published_on_publication": bool(node.get("publishedOnPublication")),
                     "publication_id": publication_id,
                     "has_media": bool(((node.get("media") or {}).get("edges") or [])),
+                    "skus": [
+                        (variant_edge.get("node") or {}).get("sku") or ""
+                        for variant_edge in (node.get("variants") or {}).get("edges") or []
+                        if ((variant_edge.get("node") or {}).get("sku") or "").strip()
+                    ],
+                }
+            if not data["products"]["pageInfo"]["hasNextPage"]:
+                break
+            cursor = data["products"]["pageInfo"]["endCursor"]
+
+    def iter_products_for_google_youtube_stock_visibility(self, publication_id: str) -> Iterable[dict[str, Any]]:
+        cursor = None
+        page_q = """
+            query($cursor: String, $publicationId: ID!) {
+              products(first: 100, after: $cursor) {
+                edges {
+                  cursor
+                  node {
+                    id
+                    title
+                    status
+                    totalInventory
+                    publishedOnPublication(publicationId: $publicationId)
+                    variants(first: 10) {
+                      edges {
+                        node {
+                          sku
+                        }
+                      }
+                    }
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+        """
+        while True:
+            data = self.gql(page_q, {"cursor": cursor, "publicationId": publication_id})
+            for edge in data["products"]["edges"]:
+                node = edge["node"]
+                yield {
+                    "id": node["id"],
+                    "title": node.get("title") or "",
+                    "status": (node.get("status") or "").strip().upper(),
+                    "total_inventory": int(node.get("totalInventory") or 0),
+                    "published_on_publication": bool(node.get("publishedOnPublication")),
+                    "publication_id": publication_id,
                     "skus": [
                         (variant_edge.get("node") or {}).get("sku") or ""
                         for variant_edge in (node.get("variants") or {}).get("edges") or []
@@ -5947,6 +6006,114 @@ def phase_reconcile_online_store_image_visibility(client: Shopify, dry: bool) ->
     )
 
 
+def phase_reconcile_google_youtube_stock_visibility(client: Shopify, dry: bool) -> None:
+    log("=== GOOGLE & YOUTUBE STOCK VISIBILITY phase: reconciling Google & YouTube against stock levels ===")
+    publication_id = client.get_publication_id_by_name(GOOGLE_YOUTUBE_PUBLICATION_NAME)
+    rows: list[dict[str, str]] = []
+    candidates = 0
+    actions = 0
+    published = 0
+    unpublished = 0
+    publish_failed = 0
+    unpublish_failed = 0
+    unchanged = 0
+
+    for candidate in client.iter_products_for_google_youtube_stock_visibility(publication_id):
+        candidates += 1
+        product_status = candidate["status"]
+        total_inventory = int(candidate["total_inventory"])
+        is_published = candidate["published_on_publication"]
+        desired_published = total_inventory > 0 and product_status == "ACTIVE"
+        should_publish = desired_published and not is_published
+        should_unpublish = total_inventory == 0 and is_published
+        row = {
+            "product_id": candidate["id"],
+            "title": _safe_spreadsheet_cell(candidate["title"]),
+            "skus": _safe_spreadsheet_cell("|".join(candidate["skus"])),
+            "publication_name": GOOGLE_YOUTUBE_PUBLICATION_NAME,
+            "publication_id": candidate["publication_id"],
+            "product_status": product_status,
+            "total_inventory": str(total_inventory),
+            "published_on_publication": "true" if is_published else "false",
+            "desired_published_on_publication": "true" if desired_published else "false",
+            "status": "",
+        }
+        if should_publish:
+            actions += 1
+            status = "dry_run_publish" if dry else "published"
+            if not dry:
+                try:
+                    client.publish_to_publication(candidate["id"], publication_id)
+                    published += 1
+                except Exception as e:
+                    publish_failed += 1
+                    status = f"publish_failed: {e}"
+                    log(
+                        f"  FAILED publish {candidate['title']!r} ({candidate['id']}) "
+                        f"to {GOOGLE_YOUTUBE_PUBLICATION_NAME!r}: {e}"
+                    )
+                    with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
+                        fh.write(
+                            "google_youtube_stock_visibility_publish\t"
+                            f"{_safe_spreadsheet_cell('|'.join(candidate['skus']))}\t"
+                            f"{_safe_spreadsheet_cell(candidate['title'])}\t"
+                            f"{_safe_spreadsheet_cell(e)}\n"
+                        )
+            row["status"] = status
+            rows.append(row)
+            continue
+        if should_unpublish:
+            actions += 1
+            status = "dry_run_unpublish" if dry else "unpublished"
+            if not dry:
+                try:
+                    client.unpublish_from_publication(candidate["id"], publication_id)
+                    unpublished += 1
+                except Exception as e:
+                    unpublish_failed += 1
+                    status = f"unpublish_failed: {e}"
+                    log(
+                        f"  FAILED unpublish {candidate['title']!r} ({candidate['id']}) "
+                        f"from {GOOGLE_YOUTUBE_PUBLICATION_NAME!r}: {e}"
+                    )
+                    with GENERAL_FAILURES_TSV.open("a", encoding="utf-8") as fh:
+                        fh.write(
+                            "google_youtube_stock_visibility_unpublish\t"
+                            f"{_safe_spreadsheet_cell('|'.join(candidate['skus']))}\t"
+                            f"{_safe_spreadsheet_cell(candidate['title'])}\t"
+                            f"{_safe_spreadsheet_cell(e)}\n"
+                        )
+            row["status"] = status
+            rows.append(row)
+            continue
+        unchanged += 1
+
+    cols = [
+        "product_id",
+        "title",
+        "skus",
+        "publication_name",
+        "publication_id",
+        "product_status",
+        "total_inventory",
+        "published_on_publication",
+        "desired_published_on_publication",
+        "status",
+    ]
+    with GOOGLE_YOUTUBE_STOCK_VISIBILITY_PREVIEW_CSV.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=cols)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    log(f"  wrote preview: {GOOGLE_YOUTUBE_STOCK_VISIBILITY_PREVIEW_CSV}")
+    log(
+        "GOOGLE & YOUTUBE STOCK VISIBILITY summary: "
+        f"candidates={candidates} actions={actions} published={published} "
+        f"unpublished={unpublished} unchanged={unchanged} "
+        f"publish_failed={publish_failed} unpublish_failed={unpublish_failed} dry_run={dry}"
+    )
+
+
 def _normalize_country_of_origin(value: Any) -> str:
     return str(value or "").strip().upper()
 
@@ -7425,6 +7592,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Make `Online Store` and `Google & YouTube` visibility follow media presence for active products only: products with media are published, products with none are unpublished. Draft and archived products are ignored. Run this after image cleanup.",
     )
+    publishing.add_argument(
+        "--reconcile-google-youtube-stock-visibility",
+        dest="do_reconcile_google_youtube_stock_visibility",
+        action="store_true",
+        help="Make `Google & YouTube` visibility follow stock only: zero-stock products are unpublished regardless of status, and only positive-stock active products are published. Run this as a separate Google & YouTube stock sync.",
+    )
 
     photos = parser.add_argument_group("photos and media")
     photos.add_argument(
@@ -7486,6 +7659,7 @@ def main() -> int:
             or args.do_generate_collections or args.do_update_collection_images
             or args.do_gw_refresh_cache or args.do_gw_build_archive_index or args.do_import or args.do_update or args.do_backfill_descriptions or args.do_publish_online_store_backfill
             or args.do_backfill_country_of_origin or args.do_reconcile_online_store_image_visibility
+            or args.do_reconcile_google_youtube_stock_visibility
             or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
             or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.all):
         parser.print_help()
@@ -7504,6 +7678,7 @@ def main() -> int:
             or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.do_gw_build_archive_index or args.do_update or args.do_import or args.delete
             or args.do_delete_collections or args.do_generate_collections or args.do_update_collection_images
             or args.do_publish_online_store_backfill or args.do_reconcile_online_store_image_visibility
+            or args.do_reconcile_google_youtube_stock_visibility
             or args.all or args.preflight
             or args.start_at != 0 or args.photo_root is not None
         )
@@ -7512,7 +7687,7 @@ def main() -> int:
                 "--gw-refresh-cache must run separately and cannot be combined with "
                 "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --photo-source-web-all, --gw-build-archive-index, --photo-sync-staged-local-all, --update, --import, --delete, --delete-collections, "
                 "--generate-collections, --update-collection-images, --publish-online-store-backfill, "
-                "--reconcile-online-store-image-visibility, --all, --preflight, --start-at, or --photo-root."
+                "--reconcile-online-store-image-visibility, --reconcile-google-youtube-stock-visibility, --all, --preflight, --start-at, or --photo-root."
             )
         refresh_gw_cache(
             resources_url=GW_RESOURCES_URL,
@@ -7531,6 +7706,7 @@ def main() -> int:
             or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all or args.do_gw_refresh_cache or args.do_update or args.do_import or args.delete
             or args.do_delete_collections or args.do_generate_collections or args.do_update_collection_images
             or args.do_publish_online_store_backfill or args.do_reconcile_online_store_image_visibility
+            or args.do_reconcile_google_youtube_stock_visibility
             or args.all or args.preflight
             or args.start_at != 0 or args.photo_root is not None
         )
@@ -7539,7 +7715,7 @@ def main() -> int:
                 "--gw-build-archive-index must run separately and cannot be combined with "
                 "--photo-sync, --photo-sync-existing-files, --photo-sync-existing-files-all, --photo-source-web-all, --gw-refresh-cache, --photo-sync-staged-local-all, --update, --import, --delete, --delete-collections, "
                 "--generate-collections, --update-collection-images, --publish-online-store-backfill, "
-                "--reconcile-online-store-image-visibility, --all, --preflight, --start-at, or --photo-root."
+                "--reconcile-online-store-image-visibility, --reconcile-google-youtube-stock-visibility, --all, --preflight, --start-at, or --photo-root."
             )
         warm_gw_official_archive_index(
             resources_url=GW_RESOURCES_URL,
@@ -7666,6 +7842,7 @@ def main() -> int:
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_update_collection_images or args.do_import or args.do_update
         or args.do_publish_online_store_backfill or args.do_reconcile_online_store_image_visibility
+        or args.do_reconcile_google_youtube_stock_visibility
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
         or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
@@ -7673,7 +7850,7 @@ def main() -> int:
         raise RuntimeError(
             "--backfill-descriptions must run separately from preflight/delete/delete-collections/"
             "generate-collections/update-collection-images/import/update/publish-online-store-backfill/"
-            "reconcile-online-store-image-visibility/photo-sync/photo-sync-existing-files/"
+            "reconcile-online-store-image-visibility/reconcile-google-youtube-stock-visibility/photo-sync/photo-sync-existing-files/"
             "photo-sync-existing-files-all/photo-source-web-all/recover-zero-media-images/"
             "photo-sync-staged-local-all/all and cannot be combined with --start-at or --photo-root."
         )
@@ -7681,20 +7858,21 @@ def main() -> int:
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_update_collection_images or args.do_import or args.do_update
         or args.do_backfill_country_of_origin or args.do_reconcile_online_store_image_visibility
+        or args.do_reconcile_google_youtube_stock_visibility
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
         or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
             "--publish-online-store-backfill must run separately from preflight/delete/delete-collections/"
-            "generate-collections/update-collection-images/import/update/backfill-country-of-origin/reconcile-online-store-image-visibility/photo-sync/photo-sync-existing-files/"
+            "generate-collections/update-collection-images/import/update/backfill-country-of-origin/reconcile-online-store-image-visibility/reconcile-google-youtube-stock-visibility/photo-sync/photo-sync-existing-files/"
             "photo-sync-existing-files-all/all and cannot be combined with --start-at or --photo-root."
         )
     if args.do_backfill_country_of_origin and (
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_update_collection_images or args.do_import or args.do_update
         or args.do_backfill_descriptions or args.do_publish_online_store_backfill
-        or args.do_reconcile_online_store_image_visibility
+        or args.do_reconcile_online_store_image_visibility or args.do_reconcile_google_youtube_stock_visibility
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
         or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
@@ -7702,7 +7880,7 @@ def main() -> int:
         raise RuntimeError(
             "--backfill-country-of-origin must run separately from preflight/delete/delete-collections/"
             "generate-collections/update-collection-images/import/update/backfill-descriptions/"
-            "publish-online-store-backfill/reconcile-online-store-image-visibility/photo-sync/photo-sync-existing-files/"
+            "publish-online-store-backfill/reconcile-online-store-image-visibility/reconcile-google-youtube-stock-visibility/photo-sync/photo-sync-existing-files/"
             "photo-sync-existing-files-all/photo-source-web-all/recover-zero-media-images/photo-sync-staged-local-all/all "
             "and cannot be combined with --start-at or --photo-root."
         )
@@ -7710,13 +7888,28 @@ def main() -> int:
         args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
         or args.do_update_collection_images or args.do_import or args.do_update
         or args.do_backfill_country_of_origin or args.do_publish_online_store_backfill
+        or args.do_reconcile_google_youtube_stock_visibility
         or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
         or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
         or args.all or args.start_at != 0 or args.photo_root is not None
     ):
         raise RuntimeError(
             "--reconcile-online-store-image-visibility must run separately from preflight/delete/delete-collections/"
-            "generate-collections/update-collection-images/import/update/backfill-country-of-origin/publish-online-store-backfill/photo-sync/"
+            "generate-collections/update-collection-images/import/update/backfill-country-of-origin/publish-online-store-backfill/reconcile-google-youtube-stock-visibility/photo-sync/"
+            "photo-sync-existing-files/photo-sync-existing-files-all/all and cannot be combined with --start-at or --photo-root."
+        )
+    if args.do_reconcile_google_youtube_stock_visibility and (
+        args.preflight or args.delete or args.do_delete_collections or args.do_generate_collections
+        or args.do_update_collection_images or args.do_import or args.do_update
+        or args.do_backfill_country_of_origin or args.do_publish_online_store_backfill
+        or args.do_reconcile_online_store_image_visibility
+        or args.do_photo_sync or args.do_photo_sync_existing_files or args.do_photo_sync_existing_files_all
+        or args.do_photo_source_web_all or args.do_recover_zero_media_images or args.do_photo_sync_staged_local_all
+        or args.all or args.start_at != 0 or args.photo_root is not None
+    ):
+        raise RuntimeError(
+            "--reconcile-google-youtube-stock-visibility must run separately from preflight/delete/delete-collections/"
+            "generate-collections/update-collection-images/import/update/backfill-country-of-origin/publish-online-store-backfill/reconcile-online-store-image-visibility/photo-sync/"
             "photo-sync-existing-files/photo-sync-existing-files-all/all and cannot be combined with --start-at or --photo-root."
         )
 
@@ -7739,6 +7932,7 @@ def main() -> int:
         and not args.do_publish_online_store_backfill
         and not args.do_backfill_country_of_origin
         and not args.do_reconcile_online_store_image_visibility
+        and not args.do_reconcile_google_youtube_stock_visibility
     ):
         prepare_products_for_import()
         log("Dry run complete. Review preview.csv, then re-run with --delete, --import, or --update.")
@@ -7800,6 +7994,15 @@ def main() -> int:
                 "Online Store backfill dry-run complete. Review "
                 "online_store_backfill_preview.csv, then re-run with "
                 "--publish-online-store-backfill (no --dry-run) to apply."
+            )
+        return 0
+    if args.do_reconcile_google_youtube_stock_visibility:
+        phase_reconcile_google_youtube_stock_visibility(client, dry=args.dry_run)
+        if args.dry_run:
+            log(
+                "Google & YouTube stock-visibility dry-run complete. Review "
+                "google_youtube_stock_visibility_preview.csv, then re-run with "
+                "--reconcile-google-youtube-stock-visibility (no --dry-run) to apply."
             )
         return 0
     if args.do_backfill_country_of_origin:

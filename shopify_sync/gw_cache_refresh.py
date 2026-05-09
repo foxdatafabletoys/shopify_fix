@@ -35,7 +35,39 @@ GENERIC_LABELS = {
 }
 
 GW_TRADE_FEED_BASE = "https://trade.games-workshop.com/wp-json/gw/v2/media"
-GW_TRADE_FEED_IMAGE_GROUPS: tuple[int, ...] = (46, 47)
+# Groups 46/47 are the documented "Product Images" buckets, but GW's trade feed
+# segments assets across many additional groups (Black Library covers, accessories,
+# wholesale single-pack paints whose multi-pack variants we sell, etc.). The
+# multi-pack base11 matcher in shopify_sync only works if we cache those single-pack
+# images, so we scan a wide candidate range. Empty/non-existent groups cost one
+# request each (~250 ms with the default rate-limit) and are skipped with a single
+# log line — see _safe_fetch_first_page below.
+#
+# Override at runtime via the GW_TRADE_FEED_GROUPS env var, e.g.
+#   GW_TRADE_FEED_GROUPS=46,47        # restore previous narrow scan
+#   GW_TRADE_FEED_GROUPS=1-120        # explicit range (inclusive)
+def _parse_groups_env(value: str | None) -> tuple[int, ...] | None:
+    if not value:
+        return None
+    parts: list[int] = []
+    for chunk in value.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if "-" in chunk:
+            lo, hi = chunk.split("-", 1)
+            parts.extend(range(int(lo.strip()), int(hi.strip()) + 1))
+        else:
+            parts.append(int(chunk))
+    return tuple(dict.fromkeys(parts)) or None  # dedup, preserve order
+
+
+import os as _os
+
+GW_TRADE_FEED_IMAGE_GROUPS: tuple[int, ...] = (
+    _parse_groups_env(_os.environ.get("GW_TRADE_FEED_GROUPS"))
+    or tuple(range(1, 100))
+)
 GW_TRADE_FEED_COUNTRY = 220
 GW_TRADE_FEED_LANG = "en"
 GW_TRADE_FEED_PAGE_SIZE = 24
@@ -521,14 +553,26 @@ def discover_trade_feed_packs(
 
     for group in groups:
         page = 1
-        first = fetch_trade_feed_page(
-            session, group=group, page=page, page_size=page_size, lang=lang, country=country
-        )
+        # When scanning a wide candidate range, individual groups may not exist
+        # (HTTP 4xx/5xx) or simply hold no image-mime-type assets. We tolerate
+        # both: log and continue rather than aborting the whole refresh.
+        try:
+            first = fetch_trade_feed_page(
+                session, group=group, page=page, page_size=page_size, lang=lang, country=country
+            )
+        except RuntimeError as exc:
+            log(f"GW trade feed group {group} skipped: {exc}")
+            page_count_by_group[str(group)] = 0
+            request_count += 1
+            continue
         request_count += 1
         total_page_count = int(first.get("page_count") or 0)
         if max_pages is not None:
             total_page_count = min(total_page_count, max_pages)
         page_count_by_group[str(group)] = total_page_count
+        if total_page_count == 0:
+            # Empty group — don't bother logging, would spam the log over a 99-group sweep.
+            continue
         log(f"GW trade feed group {group}: page_count={total_page_count}")
 
         def _ingest(payload: dict) -> int:
@@ -570,8 +614,13 @@ def discover_trade_feed_packs(
                     session, group=group, page=page, page_size=page_size, lang=lang, country=country
                 )
             except RuntimeError as exc:
-                log(f"GW trade feed group {group} page {page} failed: {exc}")
-                raise
+                # A wide group sweep may hit transient 5xx on individual pages.
+                # Surface and skip the rest of this group rather than aborting
+                # the entire refresh — partial coverage of a group is still
+                # useful and consistent with the rest-of-refresh "best effort"
+                # contract for trade-feed discovery.
+                log(f"GW trade feed group {group} page {page} failed, skipping rest of group: {exc}")
+                break
             request_count += 1
             ingested = _ingest(payload)
             image_count += ingested
